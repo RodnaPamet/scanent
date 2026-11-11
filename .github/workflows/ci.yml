@@ -1,0 +1,86 @@
+# CI for scanent.
+#
+#   checks  install, lint, type-check, build, test
+#   image   build deploy/Dockerfile, smoke-test the image, Trivy gate
+#
+# Nothing is published or deployed from here. Every action is pinned to a full
+# commit SHA; the version it was resolved from is in the trailing comment, and
+# Dependabot (.github/dependabot.yml) proposes the updates.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Read the repository, and nothing else. Neither job writes anywhere.
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, type-check, build, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      # Exactly the lockfile's tree, or a failure. No install script runs.
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  image:
+    name: Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Registry-less on purpose: a `ghcr.io/...` ref would let a typo scan an
+      # image pulled from a registry instead of the one just built.
+      IMAGE_REF: scanent:ci-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the image (no push)
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker build -f deploy/Dockerfile -t "${IMAGE_REF}" .
+
+      - name: Smoke-test the image
+        run: deploy/smoke.sh "${IMAGE_REF}"
+
+      # Blocking: CRITICAL and HIGH, fixed vulnerabilities only, no exemptions.
+      - name: "Gate: Trivy scan of the image (critical+high)"
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REF }}
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          timeout: "15m"
