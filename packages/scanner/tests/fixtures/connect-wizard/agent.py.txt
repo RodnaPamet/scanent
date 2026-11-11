@@ -1,0 +1,26 @@
+import os
+
+from claude_agent_sdk import ClaudeAgentOptions, query
+
+options = ClaudeAgentOptions(
+    mcp_servers={
+        "inflect": {
+            "type": "http",
+            "url": "https://inflect.acme.example/api/mcp",
+            "headers": {"Authorization": "Bearer " + os.environ["INFLECT_API_KEY"]},
+        }
+    },
+    allowed_tools=[
+        "mcp__inflect__list_risks",
+        "mcp__inflect__propose_risks",
+    ],
+    tools=[],
+    setting_sources=[],
+    strict_mcp_config=True,
+    permission_mode="dontAsk",
+)
+
+
+async def main() -> None:
+    async for message in query(prompt="Summarise our open risks.", options=options):
+        print(message)

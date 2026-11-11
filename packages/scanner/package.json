@@ -1,0 +1,27 @@
+{
+  "name": "@scanent/scanner",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "scanent, the Agent Estate Scanner: reads an estate's sources read-only and produces a signed inflect-agent-harness report.",
+  "author": "Inflect Ltd.",
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "scanent": "./dist/cli.js",
+    "aes": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "dependencies": {
+    "@scanent/contract": "0.0.0",
+    "js-yaml": "5.5.0",
+    "typescript": "5.9.3",
+    "zod": "4.6.7"
+  }
+}

@@ -1,0 +1,24 @@
+import { env, stdout } from "node:process";
+import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
+
+const options: Options = {
+  mcpServers: {
+    inflect: {
+      type: "http",
+      url: "https://inflect.acme.example/api/mcp",
+      headers: { Authorization: "Bearer " + env.INFLECT_API_KEY },
+    },
+  },
+  allowedTools: [
+      "mcp__inflect__list_risks",
+      "mcp__inflect__propose_risks",
+  ],
+  tools: [],
+  settingSources: [],
+  strictMcpConfig: true,
+  permissionMode: "dontAsk",
+};
+
+for await (const message of query({ prompt: "Summarise our open risks.", options })) {
+  if (message.type === "result") stdout.write(JSON.stringify(message) + "\n");
+}
