@@ -1,0 +1,32 @@
+{
+  "name": "@scanent/contract",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "The scanner report contract: the strict report schemas, the harness ladder, the findings planner, and the signature and canonical-JSON rules a report is verified by.",
+  "author": "Inflect Ltd.",
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "*": [
+        "dist/*"
+      ]
+    }
+  },
+  "sideEffects": false,
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}
