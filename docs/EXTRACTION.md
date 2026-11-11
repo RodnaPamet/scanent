@@ -204,12 +204,11 @@ passes it unchanged.
 
 ## Open items
 
-- `LICENSE` is a verbatim copy. Its "Licensed Work" parameter still names
-  Inflect Compliance and that repository, its Change Date is that work's, its
-  Additional Use Grant is worded for that work, and its licensing contact is
-  an individual's address. Restating the parameter block for scanent (the
-  terms below it stay verbatim) is the licensor's decision, to be made before
-  the first push.
+- `LICENSE` carries scanent's own parameter block (licensor decision,
+  2026-11-11): the Licensed Work is scanent (Agent Estate Scanner) in this
+  repository, and the Change Date is 2030-11-11. The Additional Use Grant, the
+  licensing contact and the terms below the parameters are the originating
+  repository's, unchanged.
 - The npm packages are private and unpublished. Before either is published,
   `LICENSE` and `NOTICE` must be copied into it; the image already carries
   both.
