@@ -1,0 +1,11 @@
+{
+  "name": "@scanent/report",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "Placeholder. Local report outputs for scanent arrive in Phase 2; this package contains no code yet.",
+  "author": "Inflect Ltd.",
+  "engines": {
+    "node": ">=22"
+  }
+}

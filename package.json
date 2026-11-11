@@ -1,0 +1,29 @@
+{
+  "name": "scanent",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "scanent, the Agent Estate Scanner: reads an estate's agent sources read-only and produces a signed harness report.",
+  "author": "Inflect Ltd.",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/contract",
+    "packages/scanner",
+    "packages/report"
+  ],
+  "scripts": {
+    "build": "tsc -b packages/contract packages/scanner",
+    "clean": "tsc -b --clean packages/contract packages/scanner",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@types/jest": "30.0.0",
+    "@types/node": "22.19.1",
+    "jest": "30.5.2",
+    "ts-jest": "29.4.15",
+    "typescript": "5.9.3"
+  }
+}

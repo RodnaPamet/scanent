@@ -1,0 +1,35 @@
+scanent (Agent Estate Scanner)
+Copyright (c) Inflect Ltd.
+
+This product includes third-party material as noted below.
+
+------------------------------------------------------------------------
+Agent-action receipts — pipelock (Apache License 2.0 CORE)
+------------------------------------------------------------------------
+`packages/contract/src/receipt-verification.ts` verifies mediator-signed
+AI-agent "action receipts" in the format produced by pipelock
+(https://github.com/luckyPipewrench/pipelock), an "AI agent firewall for MCP
+security".
+
+It uses ONLY the pipelock Apache-2.0-licensed CORE receipt format (the
+`action_record` container with a top-level Ed25519 `signature` / `signer_key`
+and hash-chain fields). It does NOT use, link, bundle, or depend on any pipelock
+feature governed by the Elastic License 2.0 (the "fleet" features, including the
+`fleet-receipt` DSSE envelope format).
+
+No pipelock source code is vendored or redistributed here. This product does not
+depend on any pipelock npm package (there is no TypeScript verifier SDK); the
+Ed25519 signature is verified natively using Node's built-in `crypto` module
+against the CORE receipt canonicalization. Portions of pipelock governed by the
+Elastic License 2.0 are NOT used by this product.
+
+------------------------------------------------------------------------
+Apache License, Version 2.0
+------------------------------------------------------------------------
+You may obtain a copy of the Apache License, Version 2.0 at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
