@@ -380,9 +380,10 @@ concludes nothing. Python is read by a bounded
 tokenizer and expression reader (`packages/scanner/src/sources/code/python.ts`); JavaScript and
 TypeScript by TypeScript's syntax-only parser (`packages/scanner/src/sources/code/javascript.ts`).
 Neither imports, evaluates or spawns anything, and the side-effect test in
-`packages/scanner/tests/langchain-code-source.test.ts` proves it. (The lint
-rule that refuses `child_process`, `vm`, `worker_threads`, `require()`,
-`import()` and `eval` in those files is not ported to this repository yet.) A file that does not parse, or a definition built from something the
+`packages/scanner/tests/langchain-code-source.test.ts` proves it. A lint
+rule in `eslint.config.mjs` refuses `child_process`, `vm`, `worker_threads`,
+`module`, `cluster`, `inspector`, `require()`, `import()`, `eval` and
+`Function` in those files. A file that does not parse, or a definition built from something the
 reader cannot see — a tool list returned by a function, a model passed in as a
 parameter, `**kwargs` — makes the source `INCOMPLETE` `UNPARSEABLE`, and the
 agent is still reported with what resolved.
@@ -627,5 +628,44 @@ the ingest host fails. The result is the scanner's own `H3.egress_enforced`.
 
 ## Container
 
-Not in this repository yet. The container image and its smoke test are the
-next step of the Phase 1 extraction.
+`deploy/Dockerfile` builds the image, from the repository root:
+
+```bash
+docker build -f deploy/Dockerfile -t scanent .
+```
+
+The image is built and checked in CI and is not published anywhere. Its build
+stage compiles the two packages with `tsc`; its runtime stage holds the
+compiled JavaScript, the two package manifests and the production dependencies
+(`zod`, `js-yaml` with `argparse`, and `typescript`, whose parser the `code`
+source reads JavaScript and TypeScript with). It holds no TypeScript source, no
+compiler step at start and no package manager: `npm`, `npx`, `corepack` and
+`yarn` are removed. The base image is `node:24-alpine`, pinned by digest, so
+the image does contain a shell (BusyBox); starting the scanner does not use it.
+
+- User: `node` (uid 1000). Nothing under `/app` is writable by it.
+- Entrypoint: `node /app/packages/scanner/dist/cli.js`, in exec form, so `node`
+  is PID 1 and receives the signal `docker stop` sends.
+- Default command: `schedule --config /etc/scanent/config.json`.
+- The scanner writes no file. Run it with a read-only root filesystem, every
+  capability dropped and no privilege gain:
+
+```bash
+docker run --rm \
+  --read-only --cap-drop ALL --security-opt no-new-privileges \
+  -e SCANNER_SIGNING_KEY -e INFLECT_INGEST_KEY \
+  -v /path/to/config-dir:/etc/scanent:ro \
+  scanent
+```
+
+Mount the configuration directory read-only, and each `code` root read-only at
+the path the configuration names. Secrets are passed as environment variables
+whose names the configuration gives; none is in the image.
+
+`deploy/smoke.sh <image>` is the image's smoke test. It builds nothing. It
+runs the image with those flags and no network, and checks the user, the
+absence of package managers and TypeScript source, `public-key`, a dry-run
+scan of a two-agent estate verified inside the image through the image's own
+contract module (`deploy/smoke-verify.js`), and that a scan with nowhere to
+post exits non-zero. CI runs it, followed by a Trivy scan that fails on a
+fixed CRITICAL or HIGH vulnerability.

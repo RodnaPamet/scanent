@@ -12,10 +12,10 @@ report.
 **Status: Phase 1 extraction.** This repository is the scanner carved out of
 the Inflect Compliance repository, with its behaviour unchanged. See
 [docs/EXTRACTION.md](docs/EXTRACTION.md) for exactly what was moved and what
-was not. There is no container image, CI or published package here yet, and
-the only output is the signed report (posted to an Inflect tenant, or printed
-with `--dry-run`). Local, human-readable report outputs are planned for
-Phase 2.
+was not. A container image is built and tested in CI; no image or package is
+published yet. The only output is the signed report (posted to an Inflect
+tenant, or printed with `--dry-run`). Local, human-readable report outputs are
+planned for Phase 2.
 
 ## Read-only by design
 
@@ -88,13 +88,53 @@ makes no network request. The `inflect` block is required by the configuration
 schema even for a dry run; without `--dry-run` the scanner posts the report
 there.
 
+## Quick start, container
+
+Needs Docker (or another runtime that builds a Dockerfile) and `openssl`.
+
+```bash
+docker build -f deploy/Dockerfile -t scanent .
+
+export SCANNER_SIGNING_KEY="$(openssl genpkey -algorithm ed25519)"
+
+# The example estate is mounted at /estate, so the configuration names that path.
+mkdir -p /tmp/scanent-config
+sed "s#__REPO__/examples/code-only/estate#/estate#" \
+  examples/code-only/config.template.json > /tmp/scanent-config/config.json
+
+docker run --rm \
+  --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  -e SCANNER_SIGNING_KEY \
+  -v /tmp/scanent-config:/etc/scanent:ro \
+  -v "$(pwd)/examples/code-only/estate:/estate:ro" \
+  scanent scan --dry-run --config /etc/scanent/config.json
+```
+
+The image runs as a non-root user, writes no file and needs no capability, so
+`--read-only --cap-drop ALL --security-opt no-new-privileges` is how it is
+meant to run everywhere. `--network none` suits this example only, because the
+`code` source reads local files; a source that reads an API needs a network.
+The mounted files must be readable by uid 1000.
+
+With no arguments the image runs `schedule --config /etc/scanent/config.json`:
+one scan at once, then one every `schedule.everyHours`, each posted to the
+`inflect` block's tenant. See [docs/scanner.md](docs/scanner.md), "Container".
+
+`deploy/smoke.sh scanent` runs the image's smoke test against the image you
+built.
+
 ## Development
 
 ```bash
-npm run build       # tsc, each package to its dist/
+npm run lint        # eslint: typescript-eslint recommended, plus the scanner's import boundaries
 npm run typecheck   # sources and tests, nothing emitted
+npm run build       # tsc, each package to its dist/
 npm test            # jest
 ```
+
+CI (`.github/workflows/ci.yml`) runs those four on every pull request and push
+to `main`, and in a second job builds the image, smoke-tests it and scans it
+with Trivy.
 
 ## Licence
 

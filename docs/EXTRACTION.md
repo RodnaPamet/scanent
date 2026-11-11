@@ -60,9 +60,20 @@ repository's paths, issue numbers (`#3686`, …) and lint configuration.
 | `LICENSE` | `LICENSE` (verbatim) |
 | `NOTICE` (the agent-action receipts section and the Apache pointer only) | `NOTICE` |
 
-Not copied: `packages/agent-harness-scanner/Dockerfile`,
-`Dockerfile.dockerignore` and `container/` (the image is rebuilt for this
-repository in the next step), and everything else in the original repository.
+Rebuilt rather than copied, because the original ran TypeScript source through
+a loader at start and this image runs compiled JavaScript:
+
+| Original | Here | What differs |
+|---|---|---|
+| `packages/agent-harness-scanner/Dockerfile` | `deploy/Dockerfile` | Same pinned base (`node:24-alpine` at the same digest), same removal of the package managers, same non-root user. A build stage now compiles with `tsc` and prunes to production dependencies; the runtime stage holds compiled JavaScript only. `tsx` and `esbuild` are gone; `TSX_DISABLE_CACHE` with them. `corepack` and `yarn` are asserted absent as well as `npm` and `npx`. The default configuration path is `/etc/scanent/config.json`. |
+| `packages/agent-harness-scanner/Dockerfile.dockerignore` | `.dockerignore` | The same allowlist idea, at the repository root (this repository has one image). |
+| `packages/agent-harness-scanner/container/smoke.sh` | `deploy/smoke.sh` | The five checks and the estate are the original's, line for line. Changed: the configuration mount path, the verify script's path and how it is run (plain `node`), a wider package-manager check, and one added check that the image holds no TypeScript source, `tsx` or `esbuild`. |
+| `packages/agent-harness-scanner/container/smoke-verify.ts` | `deploy/smoke-verify.js` | The same checks in plain JavaScript, requiring the image's compiled contract and scanner modules. |
+| `container/package.json`, `package-lock.json`, `tsconfig.json` | none | The image installs from the workspace's own lockfile. |
+| the scanner blocks of the original `eslint.config.mjs` | `eslint.config.mjs` | See "Lint" below. |
+| the image job of the original CI | `.github/workflows/ci.yml`, job `image` | Build, smoke test, Trivy gate at CRITICAL and HIGH, fixed only. No exemption file. |
+
+Nothing else of the original repository was copied.
 
 `docs/scanner.md` is the scanner's README with paths rewritten, issue numbers
 removed, and three parts replaced: "What it may import" (now the package
@@ -115,16 +126,63 @@ they are exercised through the contract and LangSmith suites.
 | `agent-sdk-code-source.test.ts`: "the connect wizard's own snippets are each found as one SDK agent…" | The two snippets were generated live by the application's connect wizard. They are now that generator's output for the same input, recorded byte for byte at the origin commit in `packages/scanner/tests/fixtures/connect-wizard/`. | The generator is not in this repository. The test no longer detects the wizard's output changing. |
 | `egress-proxy.test.ts` | The hostname used as test data was replaced with `inflect.example.com` throughout. No assertion changed. | The original value was a real hostname. |
 
+### Added with the image
+
+`packages/scanner/tests/image.test.ts` (11 tests) re-establishes the image
+half of the original `scanner-image.test.ts` for this repository's files: the
+build context allowlist equals the build stage's `COPY` sources, both stages
+use one digest-pinned base, the runtime stage copies only from the build stage
+and only compiled output and manifests, the package managers are removed, the
+user is `node`, the entrypoint is the compiled command line. It also holds
+every workflow action to a full commit SHA.
+
+With it the repository has 22 suites and 657 tests.
+
+One further edit to a carried-over test, made for lint: an unused type-only
+import line was removed from `langchain-code-source.test.ts`. No test changed.
+
+## Lint
+
+The original repository held the scanner's boundaries with two lint blocks.
+Both are ported in `eslint.config.mjs`:
+
+- **What the scanner may import.** The original allowlisted the application
+  modules the scanner could reach. Here the rule admits Node built-ins and the
+  dependencies `packages/scanner/package.json` declares (read from the
+  manifest when the configuration loads), and refuses any other bare import.
+  The contract package has the same rule over its own manifest.
+- **The `code` source never runs code.** `child_process`, `vm`,
+  `worker_threads`, `module`, `cluster`, `inspector` (bare and `node:`),
+  `import()`, `require()`, `eval` and `Function` are refused in
+  `packages/scanner/src/sources/code/**` and
+  `packages/scanner/src/sources/langchain.ts`. Same lists as the original.
+
+Not ported: the original block's application-wide syntax bans, which concern
+application code that is not here. The "one HTTP verb" property was never a
+lint rule; it is the type of `ReadOnlyHttp`.
+
+The rest of the configuration is `typescript-eslint`'s recommended set, with
+unused bindings allowed when their name starts with an underscore. The source
+passes it unchanged.
+
+## Checked against the original
+
+- With the same signing key and the same one-agent estate, the original
+  scanner (run from source at the origin commit) and this repository's image
+  printed dry-run reports that differ only in `scan.asOf`, `scan.id` and the
+  signature. This was one small `code` estate, not every source, and the
+  original was run from source, not from its image.
+- `scannerManifestHash()` is the same in both repositories.
+
 ## Open items
 
 - `LICENSE` is a verbatim copy. Its "Licensed Work" parameter still names
   Inflect Compliance and that repository, and its Change Date is that work's.
   Restating the parameters for scanent is the licensor's decision.
-- The lint rules that held the scanner's boundaries in the original repository
-  (one HTTP verb, no `child_process` / `vm` / `eval` in `sources/code`, the
-  import allowlist) are not ported. `package-closure.test.ts` covers the import
-  allowlist only.
-- No container image and no CI.
+- The base image is Alpine, so the image contains a shell even though nothing
+  uses one to start the scanner. A distroless base is a later step.
+- No image is published, signed or given an SBOM. The image is built for the
+  runner's architecture only.
 - Three drift checks against the Inflect application became recorded values
   (the "Changed" table). Once Inflect consumes `@scanent/contract`, the checks
   that compare the two sides belong in the application's repository.
