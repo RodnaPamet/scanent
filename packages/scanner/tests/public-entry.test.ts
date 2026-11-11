@@ -31,6 +31,9 @@ describe('the public entry point', () => {
                 // Local results (Phase 2): the reader table, the inventory file and the scoring of a scan.
                 'configuredSourceKinds', 'decodeInventoryCsv', 'inventoryFormatOf', 'loadConfiguredInventory', 'loadInventoryFile',
                 'scoreScanLocally',
+                // Outputs and the diff (Phase 2): where a run is delivered, the file writer and its refusal, and the comparison.
+                'DIFF_USAGE', 'DiffInputError', 'NOWHERE_TO_DELIVER', 'OutputRefusedLocally', 'OutputsError', 'SCAN_ID_PATTERN', 'ingestTarget',
+                'postSignedReport', 'resolveOutputs', 'runDiff', 'scanAndDeliver', 'writeRun',
             ].sort(),
         );
     });

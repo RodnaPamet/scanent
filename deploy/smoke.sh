@@ -19,7 +19,10 @@
 #   4. that report verifies against that key through the image's own contract
 #      module, speaks `/3`, and holds both agents (`smoke-verify.js`);
 #   5. `scan` without `--dry-run`, with nowhere to post to, exits non-zero:
-#      a scan that could not be delivered is never reported as a success.
+#      a scan that could not be delivered is never reported as a success;
+#   6. `scan --dry-run --out /out`, with the root filesystem still read-only
+#      and one writable mount, writes one directory per run holding the six
+#      files, and a second run leaves the first run's files as they were.
 #
 # The estate is written here rather than committed: a committed `.ts` fixture
 # would be type-checked and linted as this repository's own code.
@@ -28,7 +31,15 @@ set -euo pipefail
 IMAGE="${1:?usage: smoke.sh <image>}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
+# The runs of step 6 are written by the image's user, in directories this user
+# may not be able to enter, so they are removed the way they were made.
+cleanup() {
+    if [ -d "$WORK/out" ]; then
+        docker run --rm --network none -v "$WORK/out:/out" --entrypoint sh "$IMAGE" -c 'rm -rf /out/runs /out/latest.json' > /dev/null 2>&1 || true
+    fi
+    rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 fail() {
     echo "FAIL $*" >&2
@@ -142,5 +153,35 @@ if run -e SCANNER_SIGNING_KEY -e INFLECT_INGEST_KEY "${MOUNTS[@]}" "$IMAGE" scan
     fail "a scan that could not be posted exited 0"
 fi
 echo "ok   exited non-zero"
+
+echo "== 6. scan --out"
+# One writable mount; everything else, the root filesystem included, stays
+# read-only. The image's user is not this one, so the directory is opened up
+# for it, and what it wrote is read back through the image.
+mkdir -p "$WORK/out"
+chmod 0777 "$WORK/out"
+OUT=(-v "$WORK/out:/out")
+scan_out() {
+    run -e SCANNER_SIGNING_KEY "${MOUNTS[@]}" "${OUT[@]}" "$IMAGE" scan --dry-run --out /out --config /etc/scanent/config.json \
+        > /dev/null 2> "$WORK/out.log" || { cat "$WORK/out.log" >&2; fail "scan --out exited non-zero"; }
+}
+inspect() {
+    run "${OUT[@]}" --entrypoint sh "$IMAGE" -c "$1"
+}
+scan_out
+first="$(inspect 'ls /out/runs')"
+[ "$(printf '%s\n' "$first" | wc -l)" -eq 1 ] || fail "one run should have written one directory, found: $first"
+[[ "$first" =~ ^smoke-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || fail "the run directory is not named by a scan id: $first"
+files="$(inspect "ls /out/runs/$first" | sort | tr '\n' ' ')"
+[ "$files" = "agents.csv findings.csv manifest.json report.signed.json results.json summary.html " ] \
+    || fail "the run holds '$files', not the six files"
+inspect 'test -f /out/latest.json' || fail "no latest.json pointer was written"
+before="$(inspect "cd /out/runs/$first && sha256sum ./*")"
+echo "ok   six files in runs/$first"
+scan_out
+[ "$(inspect 'ls /out/runs | wc -l')" -eq 2 ] || fail "a second run should add a second directory"
+after="$(inspect "cd /out/runs/$first && sha256sum ./*")"
+[ "$before" = "$after" ] || fail "the second run changed the first run's files"
+echo "ok   a second run left the first as it was"
 
 echo "smoke: passed"

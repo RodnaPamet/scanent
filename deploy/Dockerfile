@@ -116,8 +116,9 @@ COPY --from=build /src/packages/scanner/dist ./packages/scanner/dist
 COPY --from=build /src/packages/scanner/node_modules ./packages/scanner/node_modules
 
 # The image's `node` user (uid 1000), never root. Nothing under /app is
-# writable by it, and the scanner writes no file: it runs with a read-only
-# root filesystem.
+# writable by it, and the scanner writes only under the file output's
+# directory (`--out`, or the configuration's `outputs`), which is a mounted
+# volume: it runs with a read-only root filesystem.
 USER node
 
 # Exec form, one process: `node` is PID 1, so the signal `docker stop` sends

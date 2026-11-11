@@ -2,9 +2,15 @@
 /**
  * `scanent` (alias `aes`) — the command line of the Agent Estate Scanner.
  *
- *   scan        --config <file> [--dry-run]   one scan; posts it, or prints it with --dry-run
- *   schedule    --config <file>               scan now, then every `schedule.everyHours`
- *   public-key  --config <file>               print the raw public key to register in the tenant
+ *   scan        --config <file> [--out <dir>] [--dry-run]   one scan, delivered to the outputs in effect
+ *   schedule    --config <file> [--out <dir>]               scan now, then every `schedule.everyHours`
+ *   public-key  --config <file>                             print the raw public key to register in the tenant
+ *   diff        <old> <new> [...]                           what changed between two runs (`diff-command.ts`)
+ *   help                                                    the commands
+ *
+ * Where a run's results go is the configuration's `outputs`, adjusted by the
+ * two flags (`outputs.ts`): `--out <dir>` writes the run's files under a
+ * directory, and `--dry-run` posts nothing and prints the signed report.
  *
  * Run it after `npm run build`: as `npx scanent` or `npx aes` (both are the
  * launcher `bin/scanent.js`, which starts this file's `run`), or directly as
@@ -15,9 +21,11 @@
 import { readFileSync } from 'fs';
 
 import { parseScannerConfig } from './config';
+import { runDiff } from './diff-command';
 import { jsonLineLog } from './log';
+import { OutputsError, resolveOutputs, scanAndDeliver } from './outputs';
 import { rawPublicKeyHex } from './report';
-import { loadSigningKey, runScan, scanAndPost } from './scan';
+import { loadSigningKey } from './scan';
 import { runOnSchedule } from './schedule';
 
 function arg(argv: readonly string[], name: string): string | null {
@@ -25,15 +33,63 @@ function arg(argv: readonly string[], name: string): string | null {
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null;
 }
 
+/** The usage error, as it has always read. `help` prints the full set of commands. */
+const USAGE = 'usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n';
+
+export const HELP = `scanent, the Agent Estate Scanner (alias: aes)
+
+  scanent scan       --config <file> [--out <dir>] [--dry-run]
+  scanent schedule   --config <file> [--out <dir>]
+  scanent public-key --config <file>
+  scanent diff <old> <new> [--format text|json] [--trust-key <hex>] [--allow-different-scanner]
+  scanent help
+
+  scan         One scan, delivered to the configuration's outputs.
+               --out <dir>   also write the run's files under <dir>/runs/<scanId>/
+                             (report.signed.json, results.json, agents.csv,
+                             findings.csv, summary.html, manifest.json)
+               --dry-run     post nothing; print the signed report to stdout
+  schedule     Scan now, then every schedule.everyHours.
+  public-key   Print the raw public key of the signing key.
+  diff         Compare two runs: results.json files or signed reports.
+               Exit 0 no difference, 1 a difference, 2 an error,
+               3 no difference found but not everything could be compared.
+
+Credentials are read from the environment variables the configuration names.
+`;
+
 export async function main(argv: readonly string[], env: NodeJS.ProcessEnv): Promise<number> {
     const log = jsonLineLog();
     const [command] = argv;
+    // The two commands that read no configuration.
+    if (command === 'help' || command === '--help' || command === '-h') {
+        process.stdout.write(HELP);
+        return 0;
+    }
+    if (command === 'diff') {
+        return runDiff(argv.slice(1), {
+            stdout: (text) => void process.stdout.write(text),
+            stderr: (text) => void process.stderr.write(text),
+        });
+    }
     const file = arg(argv, '--config');
     if (!command || !file) {
-        process.stderr.write('usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n');
+        process.stderr.write(USAGE);
         return 2;
     }
     const config = parseScannerConfig(JSON.parse(readFileSync(file, 'utf8')) as unknown);
+
+    /** The outputs this call delivers to, or null (with one line on stderr) when it names none or names one wrongly. */
+    const outputsFor = (dryRun: boolean) => {
+        try {
+            if (argv.includes('--out') && arg(argv, '--out') === null) throw new OutputsError('--out takes a directory');
+            return resolveOutputs(config, { out: arg(argv, '--out'), dryRun });
+        } catch (err) {
+            if (!(err instanceof OutputsError)) throw err;
+            process.stderr.write(`${err.message}\n`);
+            return null;
+        }
+    };
 
     switch (command) {
         case 'public-key': {
@@ -43,22 +99,22 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv): Pro
             return 0;
         }
         case 'scan': {
-            if (argv.includes('--dry-run')) {
-                const { raw } = await runScan({ config, env, log });
-                process.stdout.write(`${raw}\n`);
-                return 0;
-            }
-            return (await scanAndPost({ config, env, log })).ok ? 0 : 1;
+            const outputs = outputsFor(argv.includes('--dry-run'));
+            if (outputs === null) return 2;
+            return (await scanAndDeliver({ config, env, log, outputs })).ok ? 0 : 1;
         }
-        case 'schedule':
+        case 'schedule': {
+            const outputs = outputsFor(false);
+            if (outputs === null) return 2;
             await runOnSchedule({
                 everyHours: config.schedule.everyHours,
                 log,
                 run: async () => {
-                    await scanAndPost({ config, env, log });
+                    await scanAndDeliver({ config, env, log, outputs });
                 },
             });
             return 0;
+        }
         default:
             process.stderr.write(`unknown command: ${command}\n`);
             return 2;

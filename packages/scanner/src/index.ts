@@ -2,7 +2,16 @@
  * `@scanent/scanner` — the reference harness scanner (#3678).
  * See README.md for what it reads, what it may import, and how to run it.
  */
-export { parseScannerConfig, ScannerConfigSchema, ConfigError, credentialEnvNames, sourceCredentialEnv, type ScannerConfig } from './config';
+export {
+    parseScannerConfig,
+    ScannerConfigSchema,
+    ConfigError,
+    credentialEnvNames,
+    sourceCredentialEnv,
+    type OutputConfig,
+    type ScannerConfig,
+    type ScannerConfigWithInflect,
+} from './config';
 export {
     addressReachable,
     assertResolvesReachable,
@@ -20,11 +29,22 @@ export {
     MAX_INVENTORY_BYTES,
     type InventoryFileDeps,
 } from './inventory-file';
+export { DIFF_USAGE, DiffInputError, runDiff, type DiffIo } from './diff-command';
+export { OutputRefusedLocally, SCAN_ID_PATTERN, writeRun, type FileOutputDeps, type WrittenRun } from './file-output';
 export { loadConfiguredInventory, scoreScanLocally } from './local-results';
+export {
+    NOWHERE_TO_DELIVER,
+    OutputsError,
+    resolveOutputs,
+    scanAndDeliver,
+    type DeliverDeps,
+    type DeliveryResult,
+    type OutputKind,
+} from './outputs';
 export { jsonLineLog, type ScannerLog } from './log';
 export { postReport, ingestUrl, type PostResult } from './post';
 export { buildReportBody, signReport, rawPublicKeyHex, ReportRefusedLocally, type ScanIdentity } from './report';
-export { buildSources, loadSigningKey, runScan, scanAndPost, type Env, type ScanDeps } from './scan';
+export { buildSources, ingestTarget, loadSigningKey, postSignedReport, runScan, scanAndPost, type Env, type ScanDeps } from './scan';
 export { isDeclaredRequest, scannerManifestHash, SCANNER_SURFACE, SCANNER_VERSION } from './scanner-surface';
 export { runOnSchedule } from './schedule';
 export {

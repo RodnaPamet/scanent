@@ -16,7 +16,7 @@ import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from '
 
 import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
 
-import { sourceCredentialEnv, type ScannerConfig } from './config';
+import { sourceCredentialEnv, type InflectConfig, type ScannerConfig } from './config';
 import type { ResolveHost } from './customer-host';
 import { createSourceWire, type FetchLike } from './http';
 import type { ScannerLog } from './log';
@@ -78,14 +78,16 @@ export function buildSources(
         }
         if (s.kind === 'inflect-register') {
             // Read with the ingest key, from the tenant the report is posted to.
-            const apiKey = env[config.inflect.apiKeyEnv];
-            if (typeof apiKey !== 'string' || apiKey.trim() === '') {
+            // The schema refuses this source without an `inflect` block.
+            const inflect = config.inflect;
+            const apiKey = inflect === undefined ? undefined : env[inflect.apiKeyEnv];
+            if (inflect === undefined || typeof apiKey !== 'string' || apiKey.trim() === '') {
                 unreadable.push(sourceResult(s.kind, 0, [], new SourceReadError('AUTH_FAILED', 'the ingest key is not set')));
             } else {
                 sources.push(
                     inflectRegisterSource({
-                        baseUrl: config.inflect.baseUrl,
-                        tenantSlug: config.inflect.tenantSlug,
+                        baseUrl: inflect.baseUrl,
+                        tenantSlug: inflect.tenantSlug,
                         apiKey: apiKey.trim(),
                         scannerAgentId: config.scanner.agentId,
                         egressProof: seams.egressProof,
@@ -183,7 +185,7 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
     const deadline = asOf.getTime() + config.timeBoxSeconds * 1000;
     // The egress proof, once per scan and before any source reads, so a scan
     // taken outside its confinement says so in the same report (#5004).
-    const egressProof = config.egress
+    const egressProof = config.egress && config.inflect
         ? await proveEgress({
               proxyUrl: config.egress.proxyUrl,
               allowedHost: new URL(config.inflect.baseUrl).hostname,
@@ -229,21 +231,36 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
     return { raw, body };
 }
 
-/** One scheduled run: scan, then post to the tenant's ingest. */
-export async function scanAndPost(deps: ScanDeps): Promise<PostResult> {
-    const apiKey = requiredEnv(deps.env, deps.config.inflect.apiKeyEnv, 'the ingest API key');
-    const { raw, body } = await runScan(deps);
+/** The `inflect` block and the ingest key it names, or a refusal that names what is missing. */
+export function ingestTarget(config: ScannerConfig, env: Env): { inflect: InflectConfig; apiKey: string } {
+    if (config.inflect === undefined) throw new Error('the configuration has no inflect block to post to');
+    return { inflect: config.inflect, apiKey: requiredEnv(env, config.inflect.apiKeyEnv, 'the ingest API key') };
+}
+
+/** Post one signed report to the tenant's ingest, and log the answer. */
+export async function postSignedReport(
+    deps: Pick<ScanDeps, 'fetchImpl' | 'log'>,
+    target: { readonly inflect: InflectConfig; readonly apiKey: string },
+    scan: { readonly raw: string; readonly body: HarnessReportBodyV3 },
+): Promise<PostResult> {
     const result = await postReport({
-        baseUrl: deps.config.inflect.baseUrl,
-        tenantSlug: deps.config.inflect.tenantSlug,
-        apiKey,
-        raw,
+        baseUrl: target.inflect.baseUrl,
+        tenantSlug: target.inflect.tenantSlug,
+        apiKey: target.apiKey,
+        raw: scan.raw,
         fetchImpl: deps.fetchImpl ?? ((url, init) => fetch(url, init)),
     });
     if (result.ok) {
-        deps.log.info('report ingested', { scan: body.scan.id, complete: result.complete, agents: result.agentCount });
+        deps.log.info('report ingested', { scan: scan.body.scan.id, complete: result.complete, agents: result.agentCount });
     } else {
-        deps.log.error('report refused', { scan: body.scan.id, status: result.status, refusal: result.refusal });
+        deps.log.error('report refused', { scan: scan.body.scan.id, status: result.status, refusal: result.refusal });
     }
     return result;
+}
+
+/** One scheduled run: scan, then post to the tenant's ingest. */
+export async function scanAndPost(deps: ScanDeps): Promise<PostResult> {
+    // The key is asked for before the scan: without it there is nowhere to send a report.
+    const target = ingestTarget(deps.config, deps.env);
+    return postSignedReport(deps, target, await runScan(deps));
 }
