@@ -1,7 +1,8 @@
 # Phase 2 design: standalone results
 
-Status: design, not yet implemented. Written against the code at commit
-`6a1df72`. Where this note and the code disagree, the code is right and the
+Status: design. Steps 1 and 2 of section 8 are implemented; section 10 records
+what was built and where the code differs from this note. Written against the
+code at commit `6a1df72`. Where this note and the code disagree, the code is right and the
 note is to be corrected in the pull request that finds the difference.
 
 Phase 2 lets somebody with no Inflect tenant run one command and open a
@@ -1107,3 +1108,64 @@ Each step ends with `npm run lint`, `npm run typecheck`, `npm run build` and
    `discoveredId`. This design says no: an exact id is the only match that
    cannot attach one agent's owner to another.
 4. Default retention is "keep everything" (2.3).
+
+## 10. Implementation record
+
+Kept as the phase is built. Where the code settled a point differently from the
+sections above, it is listed here and the code is right.
+
+### Step 1 and step 2 (ladder version, local scoring, inventory): built
+
+Built: `LADDER_VERSION` (section 5), the widened secret walker, `@scanent/report`
+with `results/types`, `results/schema`, `results/score`, `results/inventory`
+and `results/judgement`, and in the scanner `criterion-readers.ts`,
+`inventory-file.ts`, `local-results.ts` and the `inventory` configuration
+field. Not built yet: `outputs`, the optional `inflect` block, the renderers,
+the file writer, `--out`, `diff` and `help`.
+
+Differences from the sections above:
+
+1. **Declared verdicts go through the planner** (1.2, 1.7). The planner is
+   called over the body with each matched agent's declared verdicts appended
+   after its observed ones, not over the bare body. Otherwise the planner's
+   `HARNESS_SHORTFALL` title would state the observed level while the results
+   state the level with declarations, and one file would give two levels for
+   one agent. `observedLevel` is `scoreHarness` over the observed verdicts
+   alone, as designed. When the two differ, the shortfall's description gains
+   one sentence saying the level rests in part on the operator's declaration
+   and what it is on observation alone. That is a third local wording rule
+   beside the two of 1.7.
+2. **The local `SHADOW_AGENT` wording applies when the report lists no
+   `inflect-register` source** (1.7, rule 2). With that source listed, "no row
+   in the agent register" is true as the planner words it, inventory or not.
+3. **A kind in `discoveredVia` that the report does not list** makes the agent
+   not judged with `SOURCE_INCOMPLETE:<kind>:NOT_LISTED` (1.4). The scanner's
+   own builder never produces this; a report from elsewhere can.
+4. **`metBy` for `H2.credential_bound` leaves out `okta-app`** (1.6). Okta's
+   only verdict on that criterion is about an API token that acts as a person,
+   and it is always NOT MET, so Okta alone does not make the criterion
+   readable. The static test that reads each source's verdict literals found
+   it.
+5. **The property behind 1.4 is stated per criterion** (7.1). "Deleting
+   verdicts never raises a level" is false for a body that answers one
+   criterion twice: deleting the NOT MET of a pair raises it. That is the very
+   case 1.4 describes, and the reason for the rule. A report holds one verdict
+   per criterion (the scanner's builder collapses them), so the property tested
+   is that leaving any set of criteria unanswered never raises a level.
+6. **`scoreReportLocally`'s input** is
+   `{ body, inventory, readers: { table, configuredSources }, meta }`. The
+   scorer adds `'inventory'` to the configured readers itself when an inventory
+   is supplied.
+7. **`ladderVersionOf(ladder)` is exported beside `LADDER_VERSION`** (5), so the
+   test can hash a changed copy of the ladder by the same function.
+8. **Two more existing tests had their expected lists lengthened**, beside
+   `image.test.ts` (section 6): `public-entry.test.ts`, because the scanner's
+   entry point now exports the reader table, the inventory loader and
+   `scoreScanLocally`; and `package-closure.test.ts`, which gained the report
+   package's cases and changed none.
+9. **CSV row numbers count records**, so a blank line between two rows is not
+   counted (1.5).
+
+Not verified in this step: a `docker build` of `deploy/Dockerfile` (no daemon
+was available). The prune step's commands were run by hand over a copy of the
+build context and passed.

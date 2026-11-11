@@ -83,6 +83,16 @@ function closureOf(pkg: string): Closure {
     return { files: files.map((f) => path.relative(src, f)), packages: [...packages].sort(), escapes, aliased };
 }
 
+/** Every Node built-in a package's source imports at run time, as `file -> specifier`. */
+function builtinImportsOf(pkg: string): string[] {
+    const src = path.join(REPO_ROOT, 'packages', pkg, 'src');
+    return sourceFiles(src).flatMap((file) =>
+        runtimeSpecifiers(file)
+            .filter((spec) => BUILTINS.has(spec))
+            .map((spec) => `${path.relative(REPO_ROOT, file)} -> ${spec}`),
+    );
+}
+
 const manifest = (pkg: string) =>
     JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'packages', pkg, 'package.json'), 'utf8')) as {
         dependencies?: Record<string, string>;
@@ -136,6 +146,43 @@ describe('each package ships its import closure, and nothing else', () => {
                 expect(`${name}@${version}`).toMatch(/@\d+\.\d+\.\d+$/);
             }
         }
+    });
+
+    describe('the report package', () => {
+        const report = closureOf('report');
+
+        it('computes a closure at all', () => {
+            expect(report.files).toEqual(expect.arrayContaining(['results/score.ts', 'results/inventory.ts']));
+            expect(report.files.length).toBeGreaterThanOrEqual(5);
+        });
+
+        it('reaches outside its own source by no relative path and no application alias', () => {
+            expect(report.escapes).toEqual([]);
+            expect(report.aliased).toEqual([]);
+        });
+
+        it('imports the contract and zod, and no other package', () => {
+            expect(report.packages).toEqual(['@scanent/contract', 'zod']);
+        });
+
+        it('imports no Node built-in: local results are functions of their input', () => {
+            expect(builtinImportsOf('report')).toEqual([]);
+            // The reader is not vacuous: the scanner does import built-ins.
+            expect(builtinImportsOf('scanner').length).toBeGreaterThan(0);
+        });
+
+        it('declares exactly what it imports, each third-party package at an exact version', () => {
+            expect(Object.keys(manifest('report').dependencies ?? {}).sort()).toEqual(report.packages);
+            expect(manifest('report').devDependencies).toBeUndefined();
+            expect(manifest('report').dependencies?.zod).toMatch(/^\d+\.\d+\.\d+$/);
+            // One zod across the repository: a second copy would be a second set of schema classes.
+            expect(manifest('report').dependencies?.zod).toBe(manifest('contract').dependencies?.zod);
+        });
+
+        it('is imported by the scanner and never by the contract', () => {
+            expect(scanner.packages).toContain('@scanent/report');
+            expect(contract.packages).not.toContain('@scanent/report');
+        });
     });
 
     it('runs the CLI the closure was computed from, under both of its names', () => {

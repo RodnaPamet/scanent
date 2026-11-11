@@ -82,10 +82,48 @@ import {
 } from './harness-contract-rules';
 import {
     ALL_HARNESS_CRITERIA,
+    HARNESS_CRITERIA,
+    HARNESS_LEVELS,
     isHarnessCriterionId,
+    shortfallBarFor,
     type CriterionVerdict,
     type HarnessCriterionId,
 } from './harness-ladder';
+
+/**
+ * What a ladder is, as far as a result depends on it: the rungs in order, which
+ * criterion sits on which rung (and in what order, which `blockingNextRung`
+ * follows), and the report-only bar for each reach. Display names are not part
+ * of it: renaming a rung changes no level.
+ */
+export function ladderVersionOf(ladder: {
+    readonly levels: readonly string[];
+    readonly criteria: Readonly<Record<string, readonly string[]>>;
+    readonly bars: Readonly<Record<'read-only' | 'write-or-external' | 'unknown', string>>;
+}): string {
+    const material = { levels: ladder.levels, criteria: ladder.criteria, bars: ladder.bars };
+    return `sha256:${createHash('sha256').update(canonicalJson(material), 'utf8').digest('hex')}`;
+}
+
+/**
+ * THE LADDER'S VERSION: a hash of the ladder this module was built with. Two
+ * results are comparable level for level only when they carry the same one.
+ * Derived, never typed in: a change to the ladder changes it, and the test that
+ * pins its value makes that change a reviewed diff in two places.
+ *
+ * It is NOT a member of any signed report body. Every accepted schema is
+ * strict, so a body carrying it would be refused by every existing verifier; a
+ * report that names its ladder is a new contract id.
+ */
+export const LADDER_VERSION: string = ladderVersionOf({
+    levels: HARNESS_LEVELS,
+    criteria: HARNESS_CRITERIA,
+    bars: {
+        'read-only': shortfallBarFor('read-only'),
+        'write-or-external': shortfallBarFor('write-or-external'),
+        unknown: shortfallBarFor('unknown'),
+    },
+});
 /**
  * Two view types the stored-row readers below return. The originating
  * application declares them in its read model; these are structurally

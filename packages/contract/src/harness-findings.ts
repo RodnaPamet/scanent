@@ -163,8 +163,11 @@ import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
  * stores most of them. So the ingest refuses a report in which ANY string
  * matches, and names the member, never the value: the refusal reaches a log
  * line, and repeating the secret there would be the leak it prevents.
+ *
+ * It walks any JSON-shaped value, so the same function checks whatever else is
+ * about to be written beside a report: local results, an inventory, a diff.
  */
-export function firstSecretShapedMember(body: HarnessReportBody): string | null {
+export function firstSecretShapedMember(body: unknown): string | null {
     const walk = (node: unknown, path: string): string | null => {
         if (typeof node === 'string') return looksLikeSecret(node) ? path : null;
         if (Array.isArray(node)) {

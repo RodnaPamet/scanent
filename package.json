@@ -14,8 +14,8 @@
     "packages/report"
   ],
   "scripts": {
-    "build": "tsc -b packages/contract packages/scanner",
-    "clean": "tsc -b --clean packages/contract packages/scanner",
+    "build": "tsc -b packages/contract packages/report packages/scanner",
+    "clean": "tsc -b --clean packages/contract packages/report packages/scanner",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest",

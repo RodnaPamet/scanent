@@ -12,6 +12,15 @@ export {
     type ResolveHost,
 } from './customer-host';
 export { createSourceWire, MAX_RESPONSE_BYTES, MAX_SOURCE_BYTES, type FetchLike, type ReadOnlyHttp, type TokenExchange } from './http';
+export { configuredSourceKinds, CRITERION_READERS } from './criterion-readers';
+export {
+    decodeInventoryCsv,
+    inventoryFormatOf,
+    loadInventoryFile,
+    MAX_INVENTORY_BYTES,
+    type InventoryFileDeps,
+} from './inventory-file';
+export { loadConfiguredInventory, scoreScanLocally } from './local-results';
 export { jsonLineLog, type ScannerLog } from './log';
 export { postReport, ingestUrl, type PostResult } from './post';
 export { buildReportBody, signReport, rawPublicKeyHex, ReportRefusedLocally, type ScanIdentity } from './report';

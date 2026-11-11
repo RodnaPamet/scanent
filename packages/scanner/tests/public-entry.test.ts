@@ -20,14 +20,17 @@ describe('the public entry point', () => {
     it('exports exactly this surface', () => {
         expect(Object.keys(api).sort()).toEqual(
             [
-                'ConfigError', 'GCP_IAM_ORIGIN', 'GCP_READ_PATHS', 'GITHUB_API_ORIGIN', 'GITHUB_READ_PATHS', 'GOOGLE_OAUTH_ORIGIN',
-                'LANGSMITH_CLOUD_ORIGINS', 'LANGSMITH_READ_PATHS', 'MAX_RESPONSE_BYTES', 'MAX_SOURCE_BYTES', 'ReportRefusedLocally',
+                'CRITERION_READERS', 'ConfigError', 'GCP_IAM_ORIGIN', 'GCP_READ_PATHS', 'GITHUB_API_ORIGIN', 'GITHUB_READ_PATHS', 'GOOGLE_OAUTH_ORIGIN',
+                'LANGSMITH_CLOUD_ORIGINS', 'LANGSMITH_READ_PATHS', 'MAX_INVENTORY_BYTES', 'MAX_RESPONSE_BYTES', 'MAX_SOURCE_BYTES', 'ReportRefusedLocally',
                 'SCANNER_SURFACE', 'SCANNER_VERSION', 'ScannerConfigSchema', 'SourceReadError', 'addressReachable', 'analyseWorkflow',
                 'assertResolvesReachable', 'azureKeyVaultSource', 'buildReportBody', 'buildSources', 'createSourceWire',
                 'credentialEnvNames', 'customerOriginProblem', 'gcpServiceAccountSource', 'githubActionsSource', 'ingestUrl',
                 'isDeclaredRequest', 'jsonLineLog', 'langSmithSource', 'langchainCodeSource', 'loadSigningKey', 'oktaSource',
                 'parsePrivateCidrAllowlist', 'parseScannerConfig', 'postReport', 'rawPublicKeyHex', 'runOnSchedule', 'runScan',
                 'scanAndPost', 'scanLangChainCode', 'scannerManifestHash', 'signReport', 'sourceCredentialEnv',
+                // Local results (Phase 2): the reader table, the inventory file and the scoring of a scan.
+                'configuredSourceKinds', 'decodeInventoryCsv', 'inventoryFormatOf', 'loadConfiguredInventory', 'loadInventoryFile',
+                'scoreScanLocally',
             ].sort(),
         );
     });

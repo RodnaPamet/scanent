@@ -88,6 +88,9 @@ describe('deploy/Dockerfile', () => {
             '/src/packages/contract/dist',
             '/src/packages/contract/node_modules',
             '/src/packages/contract/package.json',
+            '/src/packages/report/dist',
+            '/src/packages/report/node_modules',
+            '/src/packages/report/package.json',
             '/src/packages/scanner/dist',
             '/src/packages/scanner/node_modules',
             '/src/packages/scanner/package.json',
@@ -146,6 +149,11 @@ describe('deploy/Dockerfile', () => {
             expect(prune).toMatch(new RegExp(`mkdir -p [^&]*${source.slice('/src/'.length)}( |$)`));
         }
         expect(prune).toContain("for (const m of ['@scanent/contract/harness-contract', 'js-yaml', 'typescript', 'zod']) require(m)");
+        // The scanner runs the report package's compiled code, and that package its own dependencies.
+        expect(prune).toContain("test -f node_modules/@scanent/report/dist/results/score.js");
+        expect(prune).toContain("require('@scanent/report/results/score')");
+        expect(prune).toContain("for (const m of ['@scanent/contract/harness-ladder', 'zod']) require(m)");
+        expect(prune).not.toContain('rm -rf node_modules/@scanent');
     });
 
     it('carries the licence: LICENSE and NOTICE in the image, and the licence label', () => {

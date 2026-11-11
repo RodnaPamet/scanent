@@ -360,6 +360,20 @@ export const ScannerConfigSchema = z
             })
             .strict()
             .optional(),
+        /**
+         * The operator's inventory of the agents the estate knows: who owns
+         * each and what it is for. Optional. It is what lets a run with no
+         * register show an agent as registered, and everything it supplies is
+         * labelled as declared, never as observed (`inventory-file.ts`). The
+         * file is a `.json` or a `.csv`, read once per scan; it never enters
+         * the signed report.
+         */
+        inventory: z
+            .object({
+                path: absolutePath.refine((v) => /\.(json|csv)$/i.test(v), 'a .json or a .csv file'),
+            })
+            .strict()
+            .optional(),
         sources: z.array(SourceConfigSchema).min(1).max(SOURCE_KINDS.length),
     })
     .strict()

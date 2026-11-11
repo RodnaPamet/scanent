@@ -3,9 +3,31 @@
   "version": "0.0.0",
   "private": true,
   "license": "BUSL-1.1",
-  "description": "Placeholder. Local report outputs for scanent arrive in Phase 2; this package contains no code yet.",
+  "description": "Local results for scanent: scores a signed scan against the harness ladder without a tenant, from the report and an optional operator inventory. Pure functions only.",
   "author": "Inflect Ltd.",
   "engines": {
     "node": ">=22"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./package.json": "./package.json",
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "*": [
+        "dist/*"
+      ]
+    }
+  },
+  "sideEffects": false,
+  "dependencies": {
+    "@scanent/contract": "0.0.0",
+    "zod": "4.6.7"
   }
 }

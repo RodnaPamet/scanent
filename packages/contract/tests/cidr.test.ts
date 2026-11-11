@@ -94,6 +94,25 @@ describe('2. IPv6', () => {
     ])('refuses %s', (_label, text) => {
         expect(parseAddress(text)).toBeNull();
     });
+
+    // A `::` among more than eight groups left a negative count to fill, and
+    // `Array(-1)` throws: a parser that refuses must refuse by returning.
+    it.each([
+        ['nine groups around a compression', '1:2:3:4::5:6:7:8:9'],
+        ['nine groups before a trailing compression', '1:2:3:4:5:6:7:8:9::'],
+        ['nine groups after a leading compression', '::1:2:3:4:5:6:7:8:9'],
+        ['many groups around a compression', `${'1:'.repeat(40)}:1`],
+        ['a v4 tail that makes nine groups around a compression', '1:2:3:4::5:6:7:1.2.3.4'],
+        ['the same, in brackets', '[1:2:3:4::5:6:7:8:9]'],
+    ])('refuses %s without throwing', (_label, text) => {
+        expect(() => parseAddress(text)).not.toThrow();
+        expect(parseAddress(text)).toBeNull();
+    });
+
+    it('refuses a CIDR over such a literal without throwing', () => {
+        expect(() => parseCidr('1:2:3:4::5:6:7:8:9/64')).not.toThrow();
+        expect(parseCidr('1:2:3:4::5:6:7:8:9/64')).toBeNull();
+    });
 });
 
 describe('3. a CIDR', () => {

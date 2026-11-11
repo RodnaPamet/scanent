@@ -2,9 +2,9 @@
 //
 //   1. typescript-eslint's recommended set over every package's source and
 //      tests;
-//   2. the scanner's structural boundaries, which a type-check cannot hold:
-//      what the scanner may import, and that the `code` source reads an
-//      estate's code and never runs it.
+//   2. the structural boundaries a type-check cannot hold: what each package
+//      may import, that the `code` source reads an estate's code and never
+//      runs it, and that local results are pure functions of their input.
 //
 // The boundary blocks were ported from the repository scanent was extracted
 // from (docs/EXTRACTION.md). There the boundary was an allowlist of
@@ -32,10 +32,13 @@ const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
  * A regex rather than a `group` with negations: gitignore semantics cannot
  * re-include a name under an excluded parent.
  */
-function onlyDeclaredImports(allowed, message) {
+function onlyDeclaredImports(allowed, message, { builtins: admitBuiltins = true } = {}) {
     const builtins = builtinModules.filter((m) => !m.startsWith('_')).map(escapeRegex);
     const names = allowed.map(escapeRegex);
-    const admitted = [`(node:)?(${builtins.join('|')})(/.*)?`, ...(names.length > 0 ? [`(${names.join('|')})(/.*)?`] : [])];
+    const admitted = [
+        ...(admitBuiltins ? [`(node:)?(${builtins.join('|')})(/.*)?`] : []),
+        ...(names.length > 0 ? [`(${names.join('|')})(/.*)?`] : []),
+    ];
     return { regex: `^(?!\\.{1,2}(/|$))(?!(${admitted.join('|')})$)`, message };
 }
 
@@ -53,8 +56,16 @@ const CONTRACT_IMPORT_PATTERNS = [
     ),
 ];
 
+const REPORT_IMPORT_PATTERNS = [
+    onlyDeclaredImports(
+        declaredDependencies('./packages/report/package.json'),
+        'Local results are pure functions: @scanent/contract and the dependencies packages/report/package.json declares, and no Node built-in.',
+        { builtins: false },
+    ),
+];
+
 /**
- * A module loaded at run time is an import the two rules above cannot see: a
+ * A module loaded at run time is an import the rules above cannot see: a
  * computed specifier names nothing a pattern can match. Neither package's
  * source loads one, so both forms are refused outright.
  */
@@ -95,6 +106,40 @@ export default tseslint.config(
         rules: {
             'no-restricted-imports': ['error', { patterns: CONTRACT_IMPORT_PATTERNS }],
             'no-restricted-syntax': ['error', ...NO_RUNTIME_MODULE_LOADING],
+        },
+    },
+    {
+        // ── Local results are a function of their input ──
+        //
+        // Scoring, the inventory rules and (later) the renderers turn data
+        // into data or text. The same scan must give the same results on any
+        // machine at any time, so nothing here may reach a file, the network,
+        // the process, the clock or a random source: the scanner does the
+        // reading and the hashing and hands the values in. No Node built-in
+        // is importable at all.
+        files: ['packages/report/src/**/*.ts'],
+        rules: {
+            'no-restricted-imports': ['error', { patterns: REPORT_IMPORT_PATTERNS }],
+            'no-restricted-syntax': [
+                'error',
+                ...NO_RUNTIME_MODULE_LOADING,
+                {
+                    selector: "NewExpression[callee.name='Date'][arguments.length=0]",
+                    message: 'Local results read no clock: take the time from the scan (`asOf`).',
+                },
+            ],
+            'no-restricted-globals': [
+                'error',
+                ...['process', 'fetch', 'Buffer', 'setTimeout', 'setInterval'].map((name) => ({
+                    name,
+                    message: 'Local results are pure: no process, network, buffer or timer.',
+                })),
+            ],
+            'no-restricted-properties': [
+                'error',
+                { object: 'Date', property: 'now', message: 'Local results read no clock: take the time from the scan (`asOf`).' },
+                { object: 'Math', property: 'random', message: 'Local results are deterministic.' },
+            ],
         },
     },
     {

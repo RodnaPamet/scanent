@@ -1,6 +1,7 @@
 /**
- * One Jest project over every package's tests. `@scanent/contract/*` is mapped
- * to the contract's source, so the tests run without a prior build.
+ * One Jest project over every package's tests. `@scanent/contract/*` and
+ * `@scanent/report/*` are mapped to source, so the tests run without a prior
+ * build.
  */
 module.exports = {
     testEnvironment: 'node',
@@ -8,6 +9,7 @@ module.exports = {
     testMatch: ['**/tests/**/*.test.ts'],
     moduleNameMapper: {
         '^@scanent/contract/(.*)$': '<rootDir>/packages/contract/src/$1',
+        '^@scanent/report/(.*)$': '<rootDir>/packages/report/src/$1',
     },
     // Every source file counts, including one no test loads: a file that is
     // never imported would otherwise be absent from the denominator.

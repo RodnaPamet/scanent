@@ -589,6 +589,75 @@ With an allowlist, an internal name such as `langsmith.corp.internal` is
 accepted, because the question becomes the address rather than the name. Each
 entry must be a CIDR, or the configuration is refused.
 
+### The inventory
+
+Optional. An estate with no register has nothing that says an agent is known or
+who owns it, so every agent the scanner finds would read as a shadow agent. The
+inventory is the operator's own list:
+
+```json
+"inventory": { "path": "/etc/scanent/inventory.json" }
+```
+
+The path is absolute, and the file is a `.json` or a `.csv` (told apart by the
+extension), at most 5 MiB and 5,000 rows. JSON:
+
+```json
+{
+  "inventory": "scanent-inventory/1",
+  "agents": [
+    {
+      "discoveredId": "entra:sp:00000000-0000-0000-0000-000000000000",
+      "name": "Invoice triage",
+      "owner": "finance-operations",
+      "purpose": "Sorts incoming invoices into queues",
+      "axes": { "autonomy": "human-approves", "dataClass": "confidential", "reach": "write" },
+      "riskTier": "MEDIUM",
+      "riskAssessedOn": "2026-09-30"
+    }
+  ]
+}
+```
+
+CSV is RFC 4180, UTF-8, with a header row holding
+`discoveredId,name,owner,purpose` and any of
+`autonomy,dataClass,reach,riskTier,riskAssessedOn`. An empty optional cell is an
+absent value.
+
+| Field | Required | Rule |
+|---|---|---|
+| `discoveredId` | yes | The id the scan reports, 1 to 256 characters, once in the file |
+| `name`, `owner` | yes | 1 to 256 characters, no control character |
+| `purpose` | yes | 1 to 512 characters, no control character |
+| `axes` | no | All three or none. `autonomy`: `human-approves`, `human-reviews`, `autonomous`. `dataClass`: `public`, `internal`, `confidential`, `restricted`. `reach`: `read-only`, `write`, `external` |
+| `riskTier` | no | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`, with `riskAssessedOn` or not at all |
+| `riskAssessedOn` | no | `YYYY-MM-DD` |
+
+What holds it:
+
+- **It matches by exact `discoveredId` and nothing else.** No case folding, no
+  trimming, no prefix, no name. A row that matches no agent in the scan is
+  listed as declared and not found; it is not a finding.
+- **Everything it supplies is declared by the operator, never observed.** Local
+  results label it so, and keep a level that rests on a declaration apart from
+  the level the sources observed alone.
+- **It evidences the four H1 criteria and nothing above H1.** A matched row
+  declares the agent registered and owned; its axes when all three are given;
+  and its risk tier as fresh when the assessment is dated on or before the scan
+  and at most 365 days before it. A declared "met" never outvotes a source that
+  observed NOT MET.
+- **It never enters the signed report** and is never posted.
+- **A file that is missing, too large, malformed or refused is an error, never
+  an empty inventory.** Scoring against half an inventory would report known
+  agents as shadow agents. A refusal names the row and the field, never the
+  value, and a secret-shaped value anywhere in the file is refused by path.
+
+The inventory is read by local scoring (`loadConfiguredInventory` and
+`scoreScanLocally` in `@scanent/scanner`, over `@scanent/report`; see
+`docs/design/phase-2-standalone-results.md`). The command line does not run
+local scoring yet, so today `scanent scan` checks the field's shape and does
+not open the file.
+
 ## Running
 
 From a checkout, after `npm ci && npm run build`:

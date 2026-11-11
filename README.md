@@ -61,7 +61,7 @@ against fakes of the product's API.
 |---|---|
 | `packages/contract` (`@scanent/contract`) | The report contract: strict schemas, the harness ladder, the findings planner, canonical JSON and signature verification |
 | `packages/scanner` (`@scanent/scanner`) | The scanner and its command line |
-| `packages/report` (`@scanent/report`) | A placeholder; local report outputs arrive in Phase 2 |
+| `packages/report` (`@scanent/report`) | Local results: scores a signed scan against the ladder with no tenant, from the report and an optional operator inventory. Pure functions; the output files arrive later in Phase 2 |
 
 ## Quick start, from source
 

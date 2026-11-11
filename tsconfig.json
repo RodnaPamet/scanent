@@ -1,5 +1,5 @@
 // The whole-repository type-check: every package's source and tests, nothing
-// emitted. `@scanent/contract/*` resolves to the contract's SOURCE here, so a
+// emitted. `@scanent/contract/*` and `@scanent/report/*` resolve to SOURCE here, so a
 // type-check needs no prior build. `npm run build` uses each package's own
 // tsconfig instead.
 {
@@ -11,7 +11,8 @@
     "types": ["node", "jest"],
     "baseUrl": ".",
     "paths": {
-      "@scanent/contract/*": ["packages/contract/src/*"]
+      "@scanent/contract/*": ["packages/contract/src/*"],
+      "@scanent/report/*": ["packages/report/src/*"]
     }
   },
   "include": ["packages/*/src/**/*.ts", "packages/*/tests/**/*.ts"]

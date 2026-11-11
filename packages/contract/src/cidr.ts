@@ -61,9 +61,13 @@ function parseV6(text: string): Uint8Array | null {
     if (halves.length > 2) return null;
     const head = halves[0] === '' ? [] : halves[0].split(':');
     const tail = halves.length === 2 ? (halves[1] === '' ? [] : halves[1].split(':')) : [];
+    // More than eight groups around a `::` leaves a negative count to fill:
+    // not an address, and never an exception (`Array(-1)` throws).
+    const elided = 8 - head.length - tail.length;
+    if (halves.length === 2 && elided < 0) return null;
     const groups: string[] =
         halves.length === 2
-            ? [...head, ...Array(8 - head.length - tail.length).fill('0'), ...tail]
+            ? [...head, ...Array(elided).fill('0'), ...tail]
             : head;
     if (groups.length !== 8) return null;
     const out = new Uint8Array(16);
