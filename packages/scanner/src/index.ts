@@ -1,5 +1,5 @@
 /**
- * `@inflect/agent-harness-scanner` — the reference harness scanner (#3678).
+ * `@scanent/scanner` — the reference harness scanner (#3678).
  * See README.md for what it reads, what it may import, and how to run it.
  */
 export { parseScannerConfig, ScannerConfigSchema, ConfigError, credentialEnvNames, sourceCredentialEnv, type ScannerConfig } from './config';

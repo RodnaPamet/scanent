@@ -11,10 +11,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "scanent": "./dist/cli.js",
-    "aes": "./dist/cli.js"
+    "scanent": "./bin/scanent.js",
+    "aes": "./bin/scanent.js"
   },
   "files": [
+    "bin",
     "dist"
   ],
   "sideEffects": false,

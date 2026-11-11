@@ -4,6 +4,8 @@
 # signing key, a built dist/) never reaches a build.
 # packages/scanner/tests/image.test.ts holds this list to the COPY lines.
 *
+!LICENSE
+!NOTICE
 !package.json
 !package-lock.json
 !tsconfig.base.json

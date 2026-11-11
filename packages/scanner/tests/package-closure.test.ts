@@ -139,7 +139,11 @@ describe('each package ships its import closure, and nothing else', () => {
     });
 
     it('runs the CLI the closure was computed from, under both of its names', () => {
-        expect(manifest('scanner').bin).toEqual({ scanent: './dist/cli.js', aes: './dist/cli.js' });
+        // Both names are the committed launcher, and the launcher starts the
+        // compiled form of the file the closure was computed from.
+        expect(manifest('scanner').bin).toEqual({ scanent: './bin/scanent.js', aes: './bin/scanent.js' });
+        const launcher = fs.readFileSync(path.join(REPO_ROOT, 'packages/scanner/bin/scanent.js'), 'utf8');
+        expect(launcher).toContain("path.join(__dirname, '..', 'dist', 'cli.js')");
         expect(scanner.files).toContain('cli.ts');
     });
 });

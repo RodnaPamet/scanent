@@ -23,15 +23,31 @@ files and their originals is:
    That import is replaced by local, structurally identical declarations (with
    the `HarnessModelEndpointView` type the second one refers to).
 3. `packages/scanner/src/cli.ts`: a `#!/usr/bin/env node` first line, the
-   header comment, and the usage line's program name, now `scanent`.
+   header comment, and the usage line's program name, now `scanent`. The
+   block that ran under `require.main === module` is now an exported `run()`
+   that the same condition calls, so the `scanent` / `aes` launcher
+   (`packages/scanner/bin/scanent.js`) starts the process through the same
+   lines.
 
 Kept exactly as they were, because they are on the wire or in the signed
 report: `SCANNER_VERSION` (`0.12.0`), `SCANNER_NAME`
 (`inflect-agent-harness-scanner`), the MCP client name and the GitHub
 `User-Agent`, and the contract ids `inflect-agent-harness/2` and `/3`.
 
-Comments in the source were not rewritten. They still mention the original
-repository's paths, issue numbers (`#3686`, …) and lint configuration.
+Comments in the source were not rewritten, with one exception: the package
+name in the header of `packages/scanner/src/index.ts`. The rest still refer to
+the original repository, and those references do not resolve here:
+
+- issue and pull-request numbers (`#3686`, …) are that repository's, not this
+  one's, whatever a code host links them to;
+- "owner decision", "Decision 10", "DPIA condition N" and similar refer to
+  decisions recorded there;
+- document paths such as `docs/agent-harness-contract.md`,
+  `docs/agentic-iam-roadmap.md`, `docs/agentic-harness-scanner-dpia.md` and
+  `docs/claude-agent-sdk-design.md` are files of that repository. This
+  repository's `docs/` holds `scanner.md` and this file;
+- paths and lint-configuration names are the original layout's (the file
+  mapping below translates them).
 
 ## File mapping
 
@@ -105,7 +121,13 @@ Every carried-over file had its import specifiers rewritten. Beyond that:
 | `harness-contract.test.ts`: "every reason an accepted id can carry has a label in each locale the harness tab renders" | 1 | Reads the Inflect application's translation files. |
 | `harness-contract.test.ts`: "an estate may declare exactly the kinds a report can carry: the newest migration's CHECK lists SOURCE_KINDS" | 1 | Reads the Inflect application's database migrations. |
 
-These stay in the original repository, where the files they read are.
+These stay in the original repository, where the files they read are. The two
+`harness-contract.test.ts` cases are cross-checks between the contract and the
+application (a label per reason, a database CHECK per source kind). When the
+application takes the contract from `@scanent/contract`, they must stay there
+and be pointed at the package, or a new reason or source kind can ship without
+its label or CHECK. The deployment-template suite has no counterpart here until
+this repository has deployment templates of its own.
 
 Tests in the original repository that touch one of the eight contract files
 but also need the application were not candidates and stay there: the
@@ -136,7 +158,9 @@ and only compiled output and manifests, the package managers are removed, the
 user is `node`, the entrypoint is the compiled command line. It also holds
 every workflow action to a full commit SHA.
 
-With it the repository has 22 suites and 657 tests.
+With it the repository had 22 suites and 657 tests. Later additions to that
+file (the nested `node_modules` copies, the licence files and label, the
+command launcher) are this repository's own and are not counted here.
 
 One further edit to a carried-over test, made for lint: an unused type-only
 import line was removed from `langchain-code-source.test.ts`. No test changed.
@@ -151,6 +175,10 @@ Both are ported in `eslint.config.mjs`:
   dependencies `packages/scanner/package.json` declares (read from the
   manifest when the configuration loads), and refuses any other bare import.
   The contract package has the same rule over its own manifest.
+- **No module loaded at run time.** `import()` and `require()` are refused in
+  both packages' source, because a computed specifier is an import the rule
+  above cannot see. The original had this for the `code` source only; the
+  source used neither anywhere, so nothing changed to pass it.
 - **The `code` source never runs code.** `child_process`, `vm`,
   `worker_threads`, `module`, `cluster`, `inspector` (bare and `node:`),
   `import()`, `require()`, `eval` and `Function` are refused in
@@ -177,8 +205,14 @@ passes it unchanged.
 ## Open items
 
 - `LICENSE` is a verbatim copy. Its "Licensed Work" parameter still names
-  Inflect Compliance and that repository, and its Change Date is that work's.
-  Restating the parameters for scanent is the licensor's decision.
+  Inflect Compliance and that repository, its Change Date is that work's, its
+  Additional Use Grant is worded for that work, and its licensing contact is
+  an individual's address. Restating the parameter block for scanent (the
+  terms below it stay verbatim) is the licensor's decision, to be made before
+  the first push.
+- The npm packages are private and unpublished. Before either is published,
+  `LICENSE` and `NOTICE` must be copied into it; the image already carries
+  both.
 - The base image is Alpine, so the image contains a shell even though nothing
   uses one to start the scanner. A distroless base is a later step.
 - No image is published, signed or given an SBOM. The image is built for the

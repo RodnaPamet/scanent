@@ -23,9 +23,15 @@ permissions:
 
 jobs:
   checks:
-    name: Lint, type-check, build, test
+    name: Lint, type-check, build, test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22 is the floor every package.json's `engines` declares; 24 is the
+        # version the image runs.
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,7 +39,7 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 24
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       # Exactly the lockfile's tree, or a failure. No install script runs.

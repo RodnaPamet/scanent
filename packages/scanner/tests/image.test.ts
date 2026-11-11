@@ -7,6 +7,7 @@
  * copies, the base is pinned by digest, the runtime stage takes nothing from
  * the checkout, and the workflow's actions are pinned by commit.
  */
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
@@ -81,8 +82,11 @@ describe('deploy/Dockerfile', () => {
     it('copies compiled output and manifests into the runtime stage, and no source', () => {
         const sources = runtime.lines.filter((line) => line.startsWith('COPY ')).map((line) => line.split(' ')[2]);
         expect([...sources].sort()).toEqual([
+            '/src/LICENSE',
+            '/src/NOTICE',
             '/src/node_modules',
             '/src/packages/contract/dist',
+            '/src/packages/contract/node_modules',
             '/src/packages/contract/package.json',
             '/src/packages/scanner/dist',
             '/src/packages/scanner/node_modules',
@@ -93,7 +97,12 @@ describe('deploy/Dockerfile', () => {
     it('installs with the lockfile and no install scripts, and prunes to production before the runtime copies', () => {
         const installs = build.lines.filter((line) => /\bnpm (ci|install|i)\b/.test(line));
         expect(installs).toHaveLength(2);
-        for (const line of installs) expect(line).toMatch(/^RUN npm ci (--omit=dev )?--ignore-scripts /);
+        // The only thing before `npm ci` is the optional build-time CA secret.
+        const optionalCa = 'RUN --mount=type=secret,id=ca,required=false NODE_EXTRA_CA_CERTS=/run/secrets/ca ';
+        for (const line of installs) {
+            expect(line.startsWith(optionalCa)).toBe(true);
+            expect(line.slice(optionalCa.length)).toMatch(/^npm ci (--omit=dev )?--ignore-scripts /);
+        }
         expect(installs[1]).toContain('--omit=dev');
         expect(runtime.lines.some((line) => /\bnpm (ci|install|i)\b/.test(line))).toBe(false);
     });
@@ -121,9 +130,48 @@ describe('deploy/Dockerfile', () => {
         expect(JSON.parse(cmd!.slice('CMD '.length))).toEqual(['schedule', '--config', '/etc/scanent/config.json']);
     });
 
-    it('declares the command line the entrypoint names as the scanner package bins', () => {
-        const manifest = JSON.parse(read('packages/scanner/package.json')) as { bin: Record<string, string> };
-        expect(manifest.bin).toEqual({ scanent: './dist/cli.js', aes: './dist/cli.js' });
+    it('copies every nested node_modules directory the lockfile gives a package that runs, and makes each exist', () => {
+        const lock = JSON.parse(read('package-lock.json')) as { packages: Record<string, unknown> };
+        const nested = new Set(
+            Object.keys(lock.packages)
+                .map((key) => /^(packages\/[^/]+\/node_modules)\//.exec(key)?.[1])
+                .filter((dir): dir is string => dir !== undefined),
+        );
+        const copied = runtime.lines.filter((line) => line.startsWith('COPY ')).map((line) => line.split(' ')[2]);
+        for (const dir of nested) expect(copied).toContain(`/src/${dir}`);
+        // Whichever way a later lockfile hoists, the directories the runtime
+        // stage copies exist in the build stage.
+        const prune = build.lines.find((line) => line.includes('npm ci --omit=dev'));
+        for (const source of copied.filter((s) => /^\/src\/packages\/[^/]+\/node_modules$/.test(s))) {
+            expect(prune).toMatch(new RegExp(`mkdir -p [^&]*${source.slice('/src/'.length)}( |$)`));
+        }
+        expect(prune).toContain("for (const m of ['@scanent/contract/harness-contract', 'js-yaml', 'typescript', 'zod']) require(m)");
+    });
+
+    it('carries the licence: LICENSE and NOTICE in the image, and the licence label', () => {
+        expect(runtime.lines).toContain('COPY --from=build /src/LICENSE ./LICENSE');
+        expect(runtime.lines).toContain('COPY --from=build /src/NOTICE ./NOTICE');
+        expect(runtime.lines.find((line) => line.startsWith('LABEL '))).toContain('org.opencontainers.image.licenses="BUSL-1.1"');
+    });
+});
+
+describe('the scanent and aes commands', () => {
+    const manifest = JSON.parse(read('packages/scanner/package.json')) as { bin: Record<string, string>; files: string[] };
+
+    it('are one committed launcher, not a file the build writes', () => {
+        expect(manifest.bin).toEqual({ scanent: './bin/scanent.js', aes: './bin/scanent.js' });
+        expect(manifest.files).toContain('bin');
+        const tracked = execFileSync('git', ['ls-files', '-s', 'packages/scanner/bin/scanent.js'], { cwd: REPO_ROOT, encoding: 'utf8' });
+        // Mode 100755 in the index: executable in every checkout, before any build.
+        expect(tracked).toMatch(/^100755 /);
+    });
+
+    it('start the compiled command line the image entrypoint names, through its exported run', () => {
+        const launcher = read('packages/scanner/bin/scanent.js');
+        expect(launcher.startsWith('#!/usr/bin/env node\n')).toBe(true);
+        expect(launcher).toContain("path.join(__dirname, '..', 'dist', 'cli.js')");
+        expect(launcher).toContain('require(compiled).run();');
+        expect(read('packages/scanner/src/cli.ts')).toMatch(/^export function run\(\): void \{$/m);
     });
 });
 

@@ -24,6 +24,24 @@ against the CORE receipt canonicalization. Portions of pipelock governed by the
 Elastic License 2.0 are NOT used by this product.
 
 ------------------------------------------------------------------------
+Run-time dependencies
+------------------------------------------------------------------------
+scanent's source does not vendor these packages. The container image built
+from `deploy/Dockerfile` installs them from the npm registry, unmodified, at
+the versions `package-lock.json` pins, and redistributes them. Each travels in
+the image with its own licence file, under `/app/node_modules/<name>/` or
+`/app/packages/scanner/node_modules/<name>/`.
+
+  zod          MIT License          Copyright (c) 2025 Colin McDonnell
+  js-yaml      MIT License          Copyright (C) 2011-2015 by Vitaly Puzrin
+  argparse     Python Software      A port of Python's argparse module;
+               Foundation License   see the package's LICENSE for the PSF
+               2.0 (PSF-2.0)        copyright notice and the summary of changes
+  typescript   Apache License 2.0   Copyright (c) Microsoft Corporation;
+                                    third-party notices are in the package's
+                                    ThirdPartyNoticeText.txt
+
+------------------------------------------------------------------------
 Apache License, Version 2.0
 ------------------------------------------------------------------------
 You may obtain a copy of the Apache License, Version 2.0 at:

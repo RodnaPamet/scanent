@@ -53,6 +53,19 @@ const CONTRACT_IMPORT_PATTERNS = [
     ),
 ];
 
+/**
+ * A module loaded at run time is an import the two rules above cannot see: a
+ * computed specifier names nothing a pattern can match. Neither package's
+ * source loads one, so both forms are refused outright.
+ */
+const NO_RUNTIME_MODULE_LOADING = [
+    { selector: 'ImportExpression', message: 'No module is loaded at run time: use a static import, which the import boundary checks.' },
+    {
+        selector: "CallExpression[callee.name='require']",
+        message: 'No module is loaded at run time: use a static import, which the import boundary checks.',
+    },
+];
+
 /** Modules that run code, load code or start another process. */
 const CODE_RUNNING_MODULES = ['child_process', 'vm', 'worker_threads', 'module', 'cluster', 'inspector'];
 
@@ -81,6 +94,7 @@ export default tseslint.config(
         files: ['packages/contract/src/**/*.ts'],
         rules: {
             'no-restricted-imports': ['error', { patterns: CONTRACT_IMPORT_PATTERNS }],
+            'no-restricted-syntax': ['error', ...NO_RUNTIME_MODULE_LOADING],
         },
     },
     {
@@ -94,6 +108,7 @@ export default tseslint.config(
         files: ['packages/scanner/src/**/*.ts'],
         rules: {
             'no-restricted-imports': ['error', { patterns: SCANNER_IMPORT_PATTERNS }],
+            'no-restricted-syntax': ['error', ...NO_RUNTIME_MODULE_LOADING],
         },
     },
     {
@@ -107,8 +122,9 @@ export default tseslint.config(
         // The side-effect test in packages/scanner/tests/langchain-code-source.test.ts
         // is the behavioural half.
         //
-        // This block REPLACES the scanner block's `no-restricted-imports` for
-        // these files, so it carries the same patterns.
+        // This block REPLACES the scanner block's `no-restricted-imports` and
+        // `no-restricted-syntax` for these files, so it carries the same
+        // patterns and its own, wider, syntax list.
         files: ['packages/scanner/src/sources/code/**/*.ts', 'packages/scanner/src/sources/langchain.ts'],
         rules: {
             'no-restricted-imports': [

@@ -6,8 +6,9 @@
  *   schedule    --config <file>               scan now, then every `schedule.everyHours`
  *   public-key  --config <file>               print the raw public key to register in the tenant
  *
- * Run the compiled `dist/cli.js` (the `scanent` and `aes` bin entries point at
- * it) after `npm run build`.
+ * Run it after `npm run build`: as `npx scanent` or `npx aes` (both are the
+ * launcher `bin/scanent.js`, which starts this file's `run`), or directly as
+ * `node dist/cli.js`.
  * Credentials come from the environment variables the configuration names.
  * The CLI passes no `fetchImpl`: that seam belongs to the tests.
  */
@@ -64,7 +65,12 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv): Pro
     }
 }
 
-if (require.main === module) {
+/**
+ * Start the command line as a process: the signal handlers, then `main`, then
+ * the exit code. `node dist/cli.js` and the `scanent` / `aes` launcher
+ * (`bin/scanent.js`) both start here.
+ */
+export function run(): void {
     // In the container the scanner is process 1, and process 1 is not stopped
     // by a signal it has no handler for: `docker stop` would wait out its grace
     // period and kill it. A scan cut short posts nothing, and a post cut short
@@ -80,3 +86,5 @@ if (require.main === module) {
         },
     );
 }
+
+if (require.main === module) run();

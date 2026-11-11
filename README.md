@@ -82,6 +82,14 @@ node packages/scanner/dist/cli.js public-key --config /tmp/scanent-example.json
 node packages/scanner/dist/cli.js scan --dry-run --config /tmp/scanent-example.json
 ```
 
+`npm ci` also links the two commands, so after the build the same thing is
+`npx scanent` or `npx aes`:
+
+```bash
+npx scanent scan --dry-run --config /tmp/scanent-example.json
+npx aes public-key --config /tmp/scanent-example.json
+```
+
 `--dry-run` prints the signed report on stdout and posts nothing; the log is
 JSON lines on stderr. The `code` source reads local files only, so this example
 makes no network request. The `inflect` block is required by the configuration
@@ -120,6 +128,14 @@ With no arguments the image runs `schedule --config /etc/scanent/config.json`:
 one scan at once, then one every `schedule.everyHours`, each posted to the
 `inflect` block's tenant. See [docs/scanner.md](docs/scanner.md), "Container".
 
+Behind a TLS-inspecting proxy, give the build that proxy's certificate
+authority as the optional `ca` build secret; it is used by the two `npm ci`
+steps only and reaches no layer:
+
+```bash
+docker build --secret id=ca,src=/path/to/ca.pem -f deploy/Dockerfile -t scanent .
+```
+
 `deploy/smoke.sh scanent` runs the image's smoke test against the image you
 built.
 
@@ -132,9 +148,9 @@ npm run build       # tsc, each package to its dist/
 npm test            # jest
 ```
 
-CI (`.github/workflows/ci.yml`) runs those four on every pull request and push
-to `main`, and in a second job builds the image, smoke-tests it and scans it
-with Trivy.
+CI (`.github/workflows/ci.yml`) runs those four on Node.js 22 and 24 on every
+pull request and push to `main`, and in a second job builds the image,
+smoke-tests it and scans it with Trivy.
 
 ## Licence
 
@@ -144,4 +160,6 @@ licence. **It is not an open-source licence**: production use is subject to the
 licence's Additional Use Grant, and each version converts to the Apache License
 2.0 on its Change Date.
 
-[NOTICE](NOTICE) carries the third-party attribution.
+[NOTICE](NOTICE) carries the third-party attribution: the receipt format the
+contract verifies, and the run-time dependencies the image redistributes. The
+image holds both files in `/app`.
