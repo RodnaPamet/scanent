@@ -1,0 +1,16 @@
+# The image's build context: an allowlist. Everything in the checkout is left
+# out, and only what deploy/Dockerfile COPYs is let back in, so a file kept
+# beside a checkout (a scanner configuration, an environment file holding the
+# signing key, a built dist/) never reaches a build.
+# packages/scanner/tests/image.test.ts holds this list to the COPY lines.
+*
+!package.json
+!package-lock.json
+!tsconfig.base.json
+!packages/contract/package.json
+!packages/contract/tsconfig.json
+!packages/contract/src
+!packages/scanner/package.json
+!packages/scanner/tsconfig.json
+!packages/scanner/src
+!packages/report/package.json
