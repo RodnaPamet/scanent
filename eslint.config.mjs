@@ -1,0 +1,151 @@
+// scanent's lint rules. Two jobs:
+//
+//   1. typescript-eslint's recommended set over every package's source and
+//      tests;
+//   2. the scanner's structural boundaries, which a type-check cannot hold:
+//      what the scanner may import, and that the `code` source reads an
+//      estate's code and never runs it.
+//
+// The boundary blocks were ported from the repository scanent was extracted
+// from (docs/EXTRACTION.md). There the boundary was an allowlist of
+// application modules; here it is the package's own declared dependencies.
+import { readFileSync } from 'node:fs';
+import { builtinModules } from 'node:module';
+
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+/** A package's declared run-time dependencies, read from its manifest so the rule cannot drift from it. */
+function declaredDependencies(manifestPath) {
+    const manifest = JSON.parse(readFileSync(new URL(manifestPath, import.meta.url), 'utf8'));
+    return Object.keys(manifest.dependencies ?? {});
+}
+
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+
+/**
+ * One `no-restricted-imports` pattern that refuses every bare specifier other
+ * than a Node built-in or one of `allowed` (the package itself or a subpath).
+ * Relative imports are left to `package-closure.test.ts`, which resolves them
+ * and refuses one that leaves the package's `src`.
+ *
+ * A regex rather than a `group` with negations: gitignore semantics cannot
+ * re-include a name under an excluded parent.
+ */
+function onlyDeclaredImports(allowed, message) {
+    const builtins = builtinModules.filter((m) => !m.startsWith('_')).map(escapeRegex);
+    const names = allowed.map(escapeRegex);
+    const admitted = [`(node:)?(${builtins.join('|')})(/.*)?`, ...(names.length > 0 ? [`(${names.join('|')})(/.*)?`] : [])];
+    return { regex: `^(?!\\.{1,2}(/|$))(?!(${admitted.join('|')})$)`, message };
+}
+
+const SCANNER_IMPORT_PATTERNS = [
+    onlyDeclaredImports(
+        declaredDependencies('./packages/scanner/package.json'),
+        'The scanner runs in a client estate. It imports @scanent/contract, Node built-ins and the dependencies packages/scanner/package.json declares, and nothing else.',
+    ),
+];
+
+const CONTRACT_IMPORT_PATTERNS = [
+    onlyDeclaredImports(
+        declaredDependencies('./packages/contract/package.json'),
+        'The contract is pure: Node built-ins and the dependencies packages/contract/package.json declares, and nothing else.',
+    ),
+];
+
+/** Modules that run code, load code or start another process. */
+const CODE_RUNNING_MODULES = ['child_process', 'vm', 'worker_threads', 'module', 'cluster', 'inspector'];
+
+export default tseslint.config(
+    {
+        ignores: ['**/dist/**', '**/node_modules/**', 'coverage/**', 'examples/**', '**/tests/fixtures/**'],
+    },
+    {
+        linterOptions: { reportUnusedDisableDirectives: 'error' },
+    },
+    js.configs.recommended,
+    ...tseslint.configs.recommended,
+    {
+        files: ['**/*.ts'],
+        rules: {
+            // A leading underscore marks a parameter or binding kept for its
+            // position or its name; everything else unused is an error.
+            '@typescript-eslint/no-unused-vars': [
+                'error',
+                { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_', ignoreRestSiblings: true },
+            ],
+        },
+    },
+    {
+        // ── What the contract may import ──
+        files: ['packages/contract/src/**/*.ts'],
+        rules: {
+            'no-restricted-imports': ['error', { patterns: CONTRACT_IMPORT_PATTERNS }],
+        },
+    },
+    {
+        // ── What the scanner may import ──
+        //
+        // The scanner runs in a CLIENT's estate, with that estate's
+        // credentials and its own signing key beside it. Whatever it can
+        // import is what an estate has to trust, so the set is the manifest's
+        // and no wider: a new dependency is a reviewed line in
+        // packages/scanner/package.json before it is an import.
+        files: ['packages/scanner/src/**/*.ts'],
+        rules: {
+            'no-restricted-imports': ['error', { patterns: SCANNER_IMPORT_PATTERNS }],
+        },
+    },
+    {
+        // ── The `code` source READS an estate's code and never runs it ──
+        //
+        // The LangChain, LangGraph and Agent SDK detector parses files it did
+        // not write, from a repository a client controls. Loading one (a
+        // `require`, a dynamic `import()`, an interpreter, `eval`) would hand
+        // that repository code execution inside the scanner, beside its
+        // signing key. So nothing in the source's files can reach any of them.
+        // The side-effect test in packages/scanner/tests/langchain-code-source.test.ts
+        // is the behavioural half.
+        //
+        // This block REPLACES the scanner block's `no-restricted-imports` for
+        // these files, so it carries the same patterns.
+        files: ['packages/scanner/src/sources/code/**/*.ts', 'packages/scanner/src/sources/langchain.ts'],
+        rules: {
+            'no-restricted-imports': [
+                'error',
+                {
+                    paths: CODE_RUNNING_MODULES.flatMap((name) =>
+                        [name, `node:${name}`].map((n) => ({
+                            name: n,
+                            message: 'The code source reads code and never runs it: no subprocess, VM, worker or module loader.',
+                        })),
+                    ),
+                    patterns: SCANNER_IMPORT_PATTERNS,
+                },
+            ],
+            'no-restricted-syntax': [
+                'error',
+                { selector: 'ImportExpression', message: 'The code source never loads a module at run time.' },
+                { selector: "CallExpression[callee.name='require']", message: 'The code source never loads a module at run time.' },
+                { selector: "CallExpression[callee.name='eval']", message: 'The code source never evaluates text.' },
+                {
+                    selector: "NewExpression[callee.name='Function'], CallExpression[callee.name='Function']",
+                    message: 'The code source never evaluates text.',
+                },
+            ],
+        },
+    },
+    {
+        files: ['**/*.mjs'],
+        languageOptions: { globals: { URL: 'readonly', process: 'readonly', console: 'readonly' } },
+    },
+    {
+        // Plain Node scripts: the Jest configuration and the image's smoke check.
+        files: ['**/*.js', '**/*.cjs'],
+        languageOptions: {
+            sourceType: 'commonjs',
+            globals: { require: 'readonly', module: 'writable', process: 'readonly', __dirname: 'readonly', console: 'readonly' },
+        },
+        rules: { '@typescript-eslint/no-require-imports': 'off' },
+    },
+);

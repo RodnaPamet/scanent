@@ -41,7 +41,6 @@ import type { CodeFs } from '../src/sources/code/files';
 import { MAX_FILE_BYTES } from '../src/sources/code/files';
 import type { DetectedAgent } from '../src/sources/code/recognize';
 import { langchainCodeSource, scanLangChainCode } from '../src/sources/langchain';
-import type { McpListingWire, ReadOnlyHttp, RegisterReadWire, TokenExchange } from '../src/http';
 import type { SourceContext, SourceRead } from '../src/source';
 
 const REAL_FS: CodeFs = { lstat: (p) => lstat(p), readdir: (p) => readdir(p), readFile: (p) => readFile(p) };
