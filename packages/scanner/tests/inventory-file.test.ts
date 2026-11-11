@@ -234,6 +234,35 @@ describe('4. a file that cannot be read whole', () => {
         expect(refusal(() => loadInventoryFile(path.join(dir, 'inventory.json')))).toEqual(['(file): could not be read (EISDIR)']);
     });
 
+    it('is refused by its size before a byte of it is read', () => {
+        const big = path.join(dir, 'inventory.csv');
+        // Sparse: one byte over the cap on disk, nothing allocated for it here.
+        fs.closeSync(fs.openSync(big, 'w'));
+        fs.truncateSync(big, MAX_INVENTORY_BYTES + 1);
+        const reads = jest.spyOn(jest.requireActual<typeof fs>('fs'), 'readSync');
+        const whole = jest.spyOn(jest.requireActual<typeof fs>('fs'), 'readFileSync');
+        try {
+            expect(refusal(() => loadInventoryFile(big))).toEqual([`(file): larger than ${MAX_INVENTORY_BYTES} bytes`]);
+            expect(reads).not.toHaveBeenCalled();
+            expect(whole).not.toHaveBeenCalled();
+            // A file under the cap is read through the same descriptor, in full.
+            const small = write('small.csv', `${HEADER}\n${ROW}\n`);
+            expect(loadInventoryFile(small).rows).toHaveLength(1);
+            expect(reads).toHaveBeenCalled();
+            expect(whole).not.toHaveBeenCalled();
+        } finally {
+            reads.mockRestore();
+            whole.mockRestore();
+        }
+    });
+
+    it('is refused when it is not a regular file, without reading it', () => {
+        // A device that never ends, under an inventory's name.
+        const link = path.join(dir, 'inventory.json');
+        fs.symlinkSync('/dev/zero', link);
+        expect(refusal(() => loadInventoryFile(link))).toEqual(['(file): not a regular file']);
+    });
+
     it('is refused when the read fails with no code to name', () => {
         const readFile = () => {
             throw new Error(`cannot open ${dir}/inventory.json`);

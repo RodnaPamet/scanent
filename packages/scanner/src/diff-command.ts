@@ -19,8 +19,9 @@ import { readFileSync, statSync } from 'fs';
 
 import { harnessKeyFingerprint, verifyAndParseHarnessReport, type HarnessReportBody } from '@scanent/contract/harness-contract';
 import { firstSecretShapedMember, type HarnessSourceKind } from '@scanent/contract/harness-findings';
-import { diffExitCode, DiffRefused, diffResults } from '@scanent/report/diff/diff';
+import { diffExitCode, DiffRefused, diffResults, type ResultsDiff } from '@scanent/report/diff/diff';
 import { renderDiffText } from '@scanent/report/render/diff-text';
+import { terminalJson } from '@scanent/report/render/escape';
 import { stableJson } from '@scanent/report/render/results-json';
 import { LocalResultsSchema } from '@scanent/report/results/schema';
 import { scoreReportLocally } from '@scanent/report/results/score';
@@ -47,6 +48,12 @@ export interface DiffIo {
     readonly stderr: (text: string) => void;
     /** A TEST SEAM: production reads the file system. */
     readonly readFile?: (path: string) => string;
+    /** How the comparison becomes text. A TEST SEAM: production uses the report package's two renderers. */
+    readonly render?: (diff: ResultsDiff, format: 'text' | 'json') => string;
+}
+
+function renderDiff(diff: ResultsDiff, format: 'text' | 'json'): string {
+    return format === 'json' ? terminalJson(stableJson(diff)) : renderDiffText(diff);
 }
 
 function readCapped(path: string): string {
@@ -150,7 +157,7 @@ export function runDiff(argv: readonly string[], io: DiffIo): number {
         const diff = diffResults(sides[0], sides[1], { allowDifferentScanner: args.allowDifferentScanner });
         // The same two checks every output passes: the data, then the text.
         assertNoSecretShape(diff, 'the diff');
-        const text = args.format === 'json' ? stableJson(diff) : renderDiffText(diff);
+        const text = (io.render ?? renderDiff)(diff, args.format);
         assertNoSecretShape(text, 'the diff output');
         io.stdout(text);
         return diffExitCode(diff);

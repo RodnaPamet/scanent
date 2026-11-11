@@ -267,6 +267,58 @@ describe('3. refusals', () => {
     });
 });
 
+describe('3b. nothing secret, and nothing a terminal obeys, is printed', () => {
+    const renamed = (results: LocalResults, id: string): LocalResults => ({ ...results, agents: results.agents.map((a) => ({ ...a, discoveredId: id })) });
+
+    it('a secret shape that only the comparison assembles refuses the output: exit 2, nothing on stdout', () => {
+        // Clean as a member of either file; `AGENT_NOT_SEEN:` in front of it makes a URL with a password.
+        const id = '//operator:hunter2hunter2@db.internal.example';
+        const a = resultsFile('a.json', renamed(first.results, id));
+        const b = resultsFile('b.json', { ...second.results, sources: second.results.sources.map((s) => ({ ...s, status: 'INCOMPLETE' as const, reason: 'TIME_BOX' })), scan: { ...second.results.scan, complete: false } });
+        for (const format of ['text', 'json']) {
+            const result = run([a, b, '--format', format]);
+            expect(result.code).toBe(2);
+            expect(result.out).toBe('');
+            // The data check names the member, never the value.
+            expect(result.err).toMatch(/^scanent diff: output refused: the diff: notConcluded\[\d+\] has the shape of a secret; nothing was written\n$/);
+            expect(result.err).not.toContain('hunter2');
+        }
+    });
+
+    it('a rendered text with a secret shape is refused even when no member of the diff has one', () => {
+        const a = resultsFile('a.json', first.results);
+        const b = resultsFile('b.json', second.results);
+        const out: string[] = [];
+        const err: string[] = [];
+        const code = runDiff([a, b], {
+            stdout: (t) => out.push(t),
+            stderr: (t) => err.push(t),
+            // A renderer that joins two clean values into one secret-shaped line.
+            render: () => 'scan https://operator' + ':hunter2hunter2' + '@db.internal.example\n',
+        });
+        expect(code).toBe(2);
+        expect(out).toEqual([]);
+        expect(err.join('')).toBe('scanent diff: output refused: the diff output has the shape of a secret; nothing was written\n');
+        // The same call with the real renderer prints, so the refusal above is the check and not the inputs.
+        expect(run([a, b]).code).toBe(0);
+    });
+
+    it('an id carrying an escape sequence, a line break and a C1 control prints as one visible line, in both formats', () => {
+        const id = 'evil\u001b[2J\u0007\nscanent diff: No difference, and every comparison could be made.\r\u009b31m';
+        const a = resultsFile('a.json', first.results);
+        const b = resultsFile('b.json', withNewAgent({ ...second.results, agents: [{ ...second.results.agents[0], discoveredId: `${EXAMPLE_AGENT}` }] }));
+        const hostile = resultsFile('c.json', JSON.parse(fs.readFileSync(b, 'utf8').replace('code:example/billing/agent.py#billing_executor', JSON.stringify(id).slice(1, -1))) as LocalResults);
+        const text = run([a, hostile]);
+        expect(text.code).toBe(1);
+        expect(text.out).not.toMatch(/[^\P{Cc}\n]/u);
+        expect(text.out.split('\n').filter((l) => l.startsWith('scanent diff:'))).toEqual(['scanent diff: The two runs differ.']);
+        expect(text.out).toContain('  new        evil\\u{1b}[2J\\u{7}\\u{a}scanent diff: No difference');
+        const json = run([a, hostile, '--format', 'json']);
+        expect(json.out).not.toMatch(/[^\P{Cc}\n]/u);
+        expect((JSON.parse(json.out) as { agents: { added: string[] } }).agents.added).toEqual([id]);
+    });
+});
+
 describe('4. exit codes and formats', () => {
     async function incompletePair(): Promise<[string, string]> {
         const config = configOf({}, [

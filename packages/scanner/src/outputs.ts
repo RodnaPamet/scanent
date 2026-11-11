@@ -18,7 +18,7 @@ import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
 import type { ParsedInventory } from '@scanent/report/results/inventory';
 
 import type { OutputConfig, ScannerConfig } from './config';
-import { OutputRefusedLocally, writeRun, type FileOutputDeps } from './file-output';
+import { OutputRefusedLocally, PointerNotUpdated, writeRun, type FileOutputDeps } from './file-output';
 import { loadConfiguredInventory, scoreScanLocally } from './local-results';
 import { ingestTarget, postSignedReport, runScan, type ScanDeps } from './scan';
 
@@ -86,7 +86,7 @@ export interface DeliveryResult {
 
 /** What a failed output is logged as: our own refusals in full (they hold paths only), anything else by its name and code. */
 function failureOf(err: unknown): string {
-    if (err instanceof OutputRefusedLocally) return err.message;
+    if (err instanceof OutputRefusedLocally || err instanceof PointerNotUpdated) return err.message;
     if (err instanceof Error) {
         const code = (err as NodeJS.ErrnoException).code;
         return typeof code === 'string' ? `${err.name} ${code}` : err.name;

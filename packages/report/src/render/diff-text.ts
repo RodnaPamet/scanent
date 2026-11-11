@@ -7,7 +7,12 @@
  * seen", with the reason, and the words for a concluded absence are kept for
  * the entries that earned them. A closing block lists every comparison that
  * could not be made.
+ *
+ * The strings in a diff are scanned data, and the reader is a terminal: every
+ * line is passed through `terminalLine`, so an id can neither forge a line of
+ * this output nor send the terminal an escape sequence.
  */
+import { terminalLine } from './escape';
 import type { AgentNotSeen, FindingChange, OrphanChange, ResultsDiff } from '../diff/diff';
 
 const SUMMARY: Readonly<Record<ResultsDiff['outcome'], string>> = {
@@ -19,6 +24,7 @@ const SUMMARY: Readonly<Record<ResultsDiff['outcome'], string>> = {
 const WARNING_TEXT: Readonly<Record<string, string>> = {
     INVENTORY_DIFFERS: 'the two runs were scored against different inventories (or one had none), so declared criteria and registrations show as changes',
     SCANNER_DIFFERS: 'the two runs are from different scanners, so nothing absent from the new run is concluded',
+    ESTATE_DIFFERS: 'the two runs name different estates, so nothing absent from the new run is concluded',
     SIGNER_NOT_PINNED: 'the signed report was verified against the key it carries itself: integrity, not origin',
     REGISTER_CLAIMS_NOT_VERIFIED: 'the report’s register links are taken as stated, not read by the run that scored it',
 };
@@ -54,9 +60,13 @@ function section(title: string, lines: readonly string[]): string[] {
 function notSeenLine(a: AgentNotSeen): string {
     const because = a.differentScanner
         ? 'the runs are from different scanners'
-        : a.unread.length === 0
-            ? 'it was found through no listed source'
-            : a.unread.map((u) => `${u.kind} ${u.status === 'ABSENT' ? 'was not listed' : 'was not read in full'}`).join('; ');
+        : a.differentEstate
+            ? 'the runs name different estates'
+            : a.unread.length > 0
+                ? a.unread.map((u) => `${u.kind} ${u.status === 'ABSENT' ? 'was not listed' : 'was not read in full'}`).join('; ')
+                : a.newScanEmpty
+                    ? 'the new run found no agent at all'
+                    : 'it was found through no listed source';
     return `not seen   ${a.discoveredId}  (${because}; nothing is concluded)`;
 }
 
@@ -127,7 +137,8 @@ export function renderDiffText(diff: ResultsDiff): string {
         ...section('Findings', d.findings.map(findingLine)),
         ...section('Not concluded', d.notConcluded),
     );
-    return `${lines.join('\n')}\n`;
+    // Every line is one line: whatever a scanned string carried, it is shown, not obeyed.
+    return `${lines.map(terminalLine).join('\n')}\n`;
 }
 
 function cell(c: { readonly state: string; readonly basis: string | null }): string {

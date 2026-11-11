@@ -12,6 +12,7 @@ import { ALL_HARNESS_CRITERIA } from '@scanent/contract/harness-ladder';
 
 import { DIFF_SCHEMA, diffExitCode, DiffRefused, diffResults, type ResultsDiff } from '../src/diff/diff';
 import { renderDiffText } from '../src/render/diff-text';
+import { terminalJson, terminalLine } from '../src/render/escape';
 import { stableJson } from '../src/render/results-json';
 import { scoreReportLocally } from '../src/results/score';
 import type { LocalResults } from '../src/results/types';
@@ -122,7 +123,7 @@ describe('agents', () => {
         const diff = diffResults(plainResults(), next(change));
         expect(diff.agents.gone).toEqual([]);
         const entry = diff.agents.notSeen.find((a) => a.discoveredId === BRAVO);
-        expect(entry).toEqual({ discoveredId: BRAVO, unread, differentScanner: false });
+        expect(entry).toEqual({ discoveredId: BRAVO, unread, differentScanner: false, differentEstate: false, newScanEmpty: words === 'was not listed' });
         expect(diff.notConcluded).toContain(`AGENT_NOT_SEEN:${BRAVO}`);
         const lines = renderDiffText(diff).split('\n').filter((l) => l.includes(BRAVO));
         expect(lines.some((l) => l.includes(`not seen   ${BRAVO}  (entra-sp ${words}; nothing is concluded)`))).toBe(true);
@@ -135,7 +136,7 @@ describe('agents', () => {
         const odd: LocalResults = { ...prev, agents: prev.agents.map((a) => (a.discoveredId === BRAVO ? { ...a, discoveredVia: [] } : a)) };
         const diff = diffResults(odd, next(without(BRAVO)));
         expect(diff.agents.gone).toEqual([]);
-        expect(diff.agents.notSeen).toEqual([{ discoveredId: BRAVO, unread: [], differentScanner: false }]);
+        expect(diff.agents.notSeen).toEqual([{ discoveredId: BRAVO, unread: [], differentScanner: false, differentEstate: false, newScanEmpty: false }]);
         expect(renderDiffText(diff)).toContain('it was found through no listed source');
     });
 });
@@ -385,6 +386,125 @@ describe('findings close only on positive evidence', () => {
     });
 });
 
+describe('review: what a run could not have shown closes nothing', () => {
+    const noTools = (b: HarnessReportBodyV3): HarnessReportBodyV3 => ({ ...b, agents: b.agents.map((a) => ({ ...a, tools: [] })) });
+    const onlyEntra = (b: HarnessReportBodyV3): HarnessReportBodyV3 => ({ ...b, population: { sources: b.population.sources.filter((s) => s.kind === 'entra-sp') } });
+
+    it('an unpinned-tool finding is not closed by a complete run that no longer lists the source its tools were read from', () => {
+        const dropped = next((b) => onlyEntra(noTools(b)));
+        // The run is complete: every source it lists was read in full. `mcp` is not one of them.
+        expect(dropped.scan.complete).toBe(true);
+        const diff = diffResults(plainResults(), dropped);
+        expect(diff.findings.find((f) => f.code === 'UNPINNED_WRITE_TOOL')).toMatchObject({ discoveredId: BRAVO, change: 'NOT_CONCLUDED', why: 'SOURCE_ABSENT' });
+        expect(diff.notConcluded).toContain(`FINDING_NOT_CONCLUDED:UNPINNED_WRITE_TOOL:${BRAVO}`);
+        const text = renderDiffText(diff);
+        expect(text).toContain(`no longer reported, not concluded   UNPINNED_WRITE_TOOL UNPINNED_WRITE_TOOL:${BRAVO}  (SOURCE_ABSENT)`);
+        expect(text).not.toMatch(/closed +UNPINNED_WRITE_TOOL/);
+        // With `mcp` listed and read in full, the same absence is evidence.
+        expect(diffResults(plainResults(), next(noTools)).findings.find((f) => f.code === 'UNPINNED_WRITE_TOOL')).toMatchObject({ change: 'CLOSED' });
+    });
+
+    it('a tool defined in code is judged by the code source, and one served over MCP is not closed by it', () => {
+        const viaCode = (b: HarnessReportBodyV3): HarnessReportBodyV3 => ({
+            ...b,
+            population: { sources: [{ kind: 'code', status: 'COMPLETE', rows: 2 }] },
+            // A `code://` server is a tool the agent's code defines: the `code` read is its evidence.
+            agents: b.agents.map((a) => ({ ...a, discoveredVia: ['code'], tools: a.tools.map((t) => ({ ...t, server: `code://example/agent.py#${t.name}` })) })),
+        });
+        const before = score(viaCode(standaloneBody()));
+        expect(before.findings.some((f) => f.code === 'UNPINNED_WRITE_TOOL')).toBe(true);
+        const closed = diffResults(before, next((b) => noTools(viaCode(b))));
+        expect(closed.findings.find((f) => f.code === 'UNPINNED_WRITE_TOOL')).toMatchObject({ change: 'CLOSED' });
+        // The agent was found through `entra-sp` before: where its tools were is `mcp`, in either run.
+        const moved = diffResults(plainResults(), next((b) => noTools(viaCode(b))));
+        expect(moved.findings.find((f) => f.code === 'UNPINNED_WRITE_TOOL')).toMatchObject({ change: 'NOT_CONCLUDED', why: 'SOURCE_ABSENT' });
+    });
+
+    it('an empty new run shows no agent as gone and closes no orphan credential, whatever it says it read', () => {
+        const withOrphan = score({ ...standaloneBody(), unboundCredentials: UNBOUND });
+        const empty = next((b) => ({ ...b, agents: [] }));
+        expect(empty.scan.complete).toBe(true);
+        const diff = diffResults(withOrphan, empty);
+        expect(diff.agents.gone).toEqual([]);
+        expect(diff.agents.notSeen).toEqual([
+            { discoveredId: ALPHA, unread: [], differentScanner: false, differentEstate: false, newScanEmpty: true },
+            { discoveredId: BRAVO, unread: [], differentScanner: false, differentEstate: false, newScanEmpty: true },
+        ]);
+        expect(diff.notConcluded).toEqual(expect.arrayContaining([`AGENT_NOT_SEEN:${ALPHA}`, `AGENT_NOT_SEEN:${BRAVO}`]));
+        expect(diff.orphanCredentials).toEqual([{ ...UNBOUND[0], change: 'NOT_CONCLUDED', why: 'NEW_SCAN_EMPTY' }]);
+        expect(diff.findings.find((f) => f.code === 'EMPTY_SCAN')).toMatchObject({ change: 'OPENED' });
+        expect(diff.findings.every((f) => f.change !== 'CLOSED')).toBe(true);
+        const text = renderDiffText(diff);
+        expect(text).toContain(`not seen   ${BRAVO}  (the new run found no agent at all; nothing is concluded)`);
+        expect(text).not.toMatch(/\bgone\b|\bclosed\b/);
+    });
+
+    it('two estates under one scanner id are compared with a warning, and nothing absent is concluded', () => {
+        const renamed = (b: HarnessReportBodyV3): HarnessReportBodyV3 => ({ ...b, agents: b.agents.map((a) => ({ ...a, discoveredId: `${a.discoveredId}-other` })) });
+        const elsewhere = scoreReportLocally(input(laterBody(renamed), { meta: { ...META, estate: 'other-estate' } }));
+        const withOrphan = score({ ...standaloneBody(), unboundCredentials: UNBOUND });
+        const diff = diffResults(withOrphan, elsewhere);
+        expect(diff.warnings).toEqual(['ESTATE_DIFFERS']);
+        expect(diff.agents.gone).toEqual([]);
+        expect(diff.agents.notSeen.map((a) => [a.discoveredId, a.differentEstate])).toEqual([[ALPHA, true], [BRAVO, true]]);
+        expect(diff.orphanCredentials).toEqual([expect.objectContaining({ change: 'NOT_CONCLUDED', why: 'DIFFERENT_ESTATE' })]);
+        expect(diff.findings.filter((f) => f.change !== 'OPENED').map((f) => [f.change, f.why])).toEqual(
+            withOrphan.findings.filter((f) => f.code !== 'ORPHAN_CREDENTIAL').map(() => ['NOT_CONCLUDED', 'DIFFERENT_ESTATE']),
+        );
+        const text = renderDiffText(diff);
+        expect(text).toContain('ESTATE_DIFFERS: the two runs name different estates, so nothing absent from the new run is concluded');
+        expect(text).toContain(`not seen   ${ALPHA}  (the runs name different estates; nothing is concluded)`);
+        // A side with no estate label (a signed report) says nothing about which estate it is: no warning.
+        const unlabelled = scoreReportLocally(input(laterBody(), { meta: { ...META, estate: null } }));
+        expect(diffResults(plainResults(), unlabelled).warnings).toEqual([]);
+    });
+
+    it('completeness is read from the sources, not from the stored flag', () => {
+        const partial = next((b) => withSource(b, 'mcp', 'TIME_BOX'));
+        const dropped: LocalResults = { ...partial, findings: partial.findings.filter((f) => f.code !== 'UNPINNED_WRITE_TOOL') };
+        const lying: LocalResults = { ...dropped, scan: { ...dropped.scan, complete: true } };
+        const diff = diffResults(plainResults(), lying);
+        expect(diff.new.complete).toBe(false);
+        expect(diff.notConcluded).toContain('SCAN_INCOMPLETE:new');
+        expect(diff.findings.find((f) => f.code === 'UNPINNED_WRITE_TOOL')).toMatchObject({ change: 'NOT_CONCLUDED', why: 'SCAN_INCOMPLETE' });
+    });
+});
+
+describe('review: a diff is read on a terminal', () => {
+    const NASTY = 'evil\u001b[2J\u001b[31mRED\u0007\nscanent diff: No difference, and every comparison could be made.\r\u009b31m\u202etxt\u2028x';
+
+    it('a control character in an id, a finding reference or a credential reference is shown, never sent', () => {
+        const rename = (r: LocalResults): LocalResults => ({
+            ...r,
+            agents: r.agents.map((a) => (a.discoveredId === BRAVO ? { ...a, discoveredId: NASTY } : a)),
+            findings: [...r.findings, { code: 'LEVEL_DROP', sourceRef: `LEVEL_DROP:${NASTY}`, severity: 'LOW', type: 'OBSERVATION', discoveredId: null, title: NASTY, description: NASTY }],
+            estate: { ...r.estate, orphanCredentials: [{ ref: NASTY, sourceKind: 'entra-sp' }] },
+        });
+        const clean = diffResults(plainResults(), next());
+        const diff = diffResults(plainResults(), rename(next()));
+        const text = renderDiffText(diff);
+        // No control, line-separator or bidirectional character but the line feeds scanent wrote.
+        expect(text).not.toMatch(/[^\P{Cc}\n]|[\u2028\u2029\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u);
+        const lines = text.split('\n');
+        expect(lines.filter((l) => l.startsWith('scanent diff:'))).toEqual(['scanent diff: The two runs differ.']);
+        // One line per entry: the id's own line feed adds none.
+        const entries = 1 + diff.agents.notSeen.length + diff.orphanCredentials.length + diff.findings.length + diff.notConcluded.length;
+        expect(lines.filter((l) => l.includes('evil'))).toHaveLength(entries);
+        expect(lines.length).toBeGreaterThan(renderDiffText(clean).split('\n').length);
+        // What was there can still be read.
+        expect(text).toContain('new        evil\\u{1b}[2J\\u{1b}[31mRED\\u{7}\\u{a}scanent diff: No difference, and every comparison could be made.\\u{d}\\u{9b}31m\\u{202e}txt\\u{2028}x');
+
+        // As JSON the value is the same, and no raw control reaches the terminal.
+        const json = terminalJson(stableJson(diff));
+        expect(json).not.toMatch(/[^\P{Cc}\n]|[\u2028\u2029\u202a-\u202e]/u);
+        expect(JSON.parse(json)).toEqual(diff);
+        expect(json).toContain('\\u009b31m\\u202etxt\\u2028x');
+        // Text with nothing to escape is unchanged.
+        expect(terminalJson(stableJson(clean))).toBe(stableJson(clean));
+        expect(terminalLine('agent ü — 名')).toBe('agent ü — 名');
+    });
+});
+
 describe('what may not be compared', () => {
     it.each([
         ['the new scan is not later', plainResults(), plainResults(), {}, 'NOT_LATER'],
@@ -410,7 +530,7 @@ describe('what may not be compared', () => {
         const diff = diffResults(withOrphan, other, { allowDifferentScanner: true });
         expect(diff.warnings).toContain('SCANNER_DIFFERS');
         expect(diff.agents.gone).toEqual([]);
-        expect(diff.agents.notSeen).toEqual([{ discoveredId: BRAVO, unread: [], differentScanner: true }]);
+        expect(diff.agents.notSeen).toEqual([{ discoveredId: BRAVO, unread: [], differentScanner: true, differentEstate: false, newScanEmpty: false }]);
         expect(diff.orphanCredentials).toEqual([expect.objectContaining({ change: 'NOT_CONCLUDED', why: 'DIFFERENT_SCANNER' })]);
         expect(diff.findings.every((f) => f.change !== 'CLOSED')).toBe(true);
         expect(diff.findings.filter((f) => f.change === 'NOT_CONCLUDED').every((f) => f.why === 'DIFFERENT_SCANNER')).toBe(true);

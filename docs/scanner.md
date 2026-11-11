@@ -619,10 +619,15 @@ effect for the run.
 
 Two flags adjust the outputs for one call:
 
-- `--out <dir>` (an absolute path) sets the file output's directory, adding a
-  file output if the configuration has none.
+- `--out <dir>` (an absolute path; `--out=<dir>` is the same) sets the file
+  output's directory, adding a file output if the configuration has none.
 - `--dry-run` removes the `inflect` output and adds `stdout`: post nothing,
   print the report. With `--out` it writes the files as well.
+
+An argument `scan`, `schedule` or `public-key` does not know is refused with
+exit code 2 before the configuration is read, so a mistyped flag never runs a
+scan that delivers somewhere other than where it was told. `--help` or `-h`
+after any of the three prints the commands.
 
 A call left with no output is refused before anything is read: exit code 2
 and `nowhere to deliver: configure outputs, or pass --out or --dry-run`.
@@ -749,7 +754,10 @@ The file output writes one directory per run and a pointer to the newest:
 A run is rendered in memory, checked, written under a temporary name and
 renamed into place, so a run directory is whole or absent. Nothing that exists
 is replaced except `latest.json`, and that by a rename; a run whose directory
-already exists fails. Directories are created `0750` and files `0640`. Nothing
+already exists fails. Directories are created `0750` and files `0640`, one
+level at a time; a `runs` that is a link to somewhere else is refused. If the
+run is in place and only `latest.json` cannot be replaced, the run is kept and
+the output fails, saying so: the pointer then names an earlier run. Nothing
 is ever removed unless `retainRuns` is set; then, after a successful write, the
 oldest runs beyond that number are removed, and only a directory whose name is
 a scan id and that holds a `manifest.json`.
@@ -810,16 +818,22 @@ Absence is evidence only on a full read:
 |---|---|
 | agent `new` | in the newer run and not the older |
 | agent `gone` | in the older run only, and every source it was found through was read in full by the newer run |
-| agent `not seen` | in the older run only, and one of those sources was incomplete or not listed. Nothing is concluded |
+| agent `not seen` | in the older run only, and one of those sources was incomplete or not listed, or the newer run found no agent at all. Nothing is concluded |
 | level up or down | only when both runs judged the agent |
-| orphan credential or finding `closed` | only on the evidence that would close it: its source read in full, the agent present and judged, the scan complete where the rule needs it |
+| orphan credential or finding `closed` | only on the evidence that would close it: its source read in full, the agent present and judged, the scan complete where the rule needs it. An unpinned write tool closes only when the source its tools were read from (`code`, or `mcp`) is listed and read in full. An empty newer run closes no orphan credential |
 | `no longer reported, not concluded` | everything else that is absent from the newer run |
 
 Refused, with exit code 2: a file that cannot be read or is neither kind, a
 results file that fails its schema, a report that fails verification, a newer
 run that is not later than the older, different ladder versions, and different
 scanners unless `--allow-different-scanner` (and then nothing absent is
-concluded).
+concluded). Two runs that name different estates are compared with the warning
+`ESTATE_DIFFERS`, and nothing absent is concluded either.
+
+The strings in a diff are scanned data. In the text output every control
+character, line separator and bidirectional control is written as a visible
+`\u{..}`, so an id cannot add a line or send the terminal an escape sequence;
+in the JSON output they are `\uXXXX` escapes, and the values are unchanged.
 
 | Exit code | Meaning |
 |---|---|
@@ -864,7 +878,10 @@ the image does contain a shell (BusyBox); starting the scanner does not use it.
 - The scanner writes only under the file output's directory. Run it with a
   read-only root filesystem, every capability dropped and no privilege gain,
   and mount that directory as the one writable volume (`-v <host dir>:/out`,
-  writable by uid 1000) when the file output is used:
+  writable by the user the container runs as: uid 1000, or the one given with
+  `--user`) when the file output is used. Keep that directory private to its
+  owner: the runs are evidence, and a directory every local user can write
+  lets any of them replace a run or the pointer:
 
 ```bash
 docker run --rm \

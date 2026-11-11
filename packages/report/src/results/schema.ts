@@ -11,7 +11,9 @@
  *   • every agent answers every criterion of the ladder the file names, once
  *     and in ladder order;
  *   • an unanswered criterion has no basis and no evidence, and an answered
- *     one has a basis.
+ *     one has a basis;
+ *   • `scan.complete` is what the listed sources say, and the estate's counts
+ *     (agents, judged, per level, shortfalls) are those of the agents listed.
  *
  * PURE: no clock, no I/O.
  */
@@ -197,6 +199,24 @@ export const LocalResultsSchema: z.ZodType<LocalResults> = z
         const judged = r.agents.filter((a) => a.judgement.state === 'JUDGED').length;
         if (r.estate.agentCount !== r.agents.length || r.estate.judgedCount !== judged || r.estate.notJudgedCount !== r.agents.length - judged) {
             ctx.addIssue({ code: 'custom', message: 'the counts are the agents listed', path: ['estate'] });
+        }
+        // What a reader acts on must be what the file lists: a `complete` beside an
+        // incomplete source, or a tally that is not the agents', is refused.
+        if (r.scan.complete !== (r.sources.length > 0 && r.sources.every((s) => s.status === 'COMPLETE'))) {
+            ctx.addIssue({ code: 'custom', message: 'complete means every listed source was read in full, and only that', path: ['scan', 'complete'] });
+        }
+        const tally = Object.fromEntries(HARNESS_LEVELS.map((l) => [l, 0])) as Record<(typeof HARNESS_LEVELS)[number], number>;
+        let shortfalls = 0;
+        for (const a of r.agents) {
+            if (a.judgement.state !== 'JUDGED') continue;
+            tally[a.judgement.level] += 1;
+            if (a.judgement.shortfall) shortfalls += 1;
+        }
+        if (HARNESS_LEVELS.some((l) => r.estate.byLevel[l] !== tally[l])) {
+            ctx.addIssue({ code: 'custom', message: 'the agents per level are the judged agents listed', path: ['estate', 'byLevel'] });
+        }
+        if (r.estate.shortfallCount !== shortfalls) {
+            ctx.addIssue({ code: 'custom', message: 'the shortfall count is the judged agents below their bar', path: ['estate', 'shortfallCount'] });
         }
         if (r.estate.empty !== (r.agents.length === 0)) {
             ctx.addIssue({ code: 'custom', message: 'empty means no agents, and only that', path: ['estate', 'empty'] });

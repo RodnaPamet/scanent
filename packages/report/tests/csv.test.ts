@@ -31,6 +31,17 @@ describe('1. formula injection', () => {
         ['spaces then @', ' @x'],
         ['a tab then =', '\t=1+1'],
         ['a line feed then =', '\n=1+1'],
+        ['a no-break space then =', '\u00a0=1+1'],
+        ['a byte-order mark then =', '\ufeff=1+1'],
+        ['a zero-width space then =', '\u200b=1+1'],
+        ['a word joiner then +', '\u2060+1'],
+        ['a right-to-left mark then @', '\u200f@SUM(1)'],
+        ['an ideographic space then -', '\u3000-1'],
+        ['a full-width =', '\uff1d1+1'],
+        ['a full-width +', '\uff0b1'],
+        ['a full-width -', '\uff0d1'],
+        ['a full-width @', '\uff20SUM(1)'],
+        ['a C1 control then =', '\u0085=1'],
     ])('a cell starting with %s is written starting with a single quote', (_label, value) => {
         const cell = csvCell(value);
         expect(cell.startsWith('"\'')).toBe(true);
@@ -39,6 +50,19 @@ describe('1. formula injection', () => {
 
     it.each(['agent', 'a=b', 'x+y', 'me@example.com', 'entra:sp:alpha', '', ' leading space', '0', "'quoted"])('an ordinary cell %j is left as it is', (value) => {
         expect(csvCell(value)).toBe(`"${value}"`);
+    });
+
+    it('a bidirectional control is replaced, and a C1 control becomes a space, so a cell reads as it is written', () => {
+        expect(csvCell('agent\u202etxt.exe\u202c')).toBe('"agent\ufffdtxt.exe\ufffd"');
+        expect(csvCell('a\u2066b\u2069\u200e\u200f\u061c')).toBe('"a\ufffdb\ufffd\ufffd\ufffd\ufffd"');
+        expect(csvCell('a\u009bb\u007fc')).toBe('"a b c"');
+        for (const attack of ['\u202e=1', 'x\u2067y']) {
+            const armed = hostile(plainResults(), attack);
+            for (const csv of [renderAgentsCsv(armed), renderFindingsCsv(armed)]) {
+                expect(csv).not.toMatch(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/);
+                for (const cell of body(csv).flat()) expect(cell).not.toMatch(/^[\s\ufffd]*[=+\-@]/);
+            }
+        }
     });
 
     it('a number is written as its digits', () => {

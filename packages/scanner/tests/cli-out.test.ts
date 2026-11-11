@@ -329,6 +329,50 @@ describe('diff and help', () => {
         }
     });
 
+    it.each([
+        ['scan', '--help'],
+        ['schedule', '-h'],
+        ['public-key', '--help'],
+    ])('%s %s prints the commands and exits 0, reading no configuration', async (command, flag) => {
+        expect(await main([command, flag], {})).toBe(0);
+        expect(out.join('')).toBe(HELP);
+        expect(err).toEqual([]);
+        expect(await main([command, '--config', path.join(dir, 'no-such-config.json'), flag], {})).toBe(0);
+    });
+
+    it('--out=<dir> writes the run where it names, as --out <dir> does', async () => {
+        const config = writeConfig(configJson());
+        const equals = path.join(dir, 'equals');
+        expect(await main(['scan', `--config=${config}`, `--out=${equals}`, '--dry-run'], LOCAL_ENV)).toBe(0);
+        expect(fs.readdirSync(path.join(equals, 'runs'))).toHaveLength(1);
+        expect(fs.existsSync(path.join(equals, 'latest.json'))).toBe(true);
+        // With no directory after the sign it is refused, as a bare --out is.
+        err.length = 0;
+        expect(await main(['scan', '--config', config, '--out=', '--dry-run'], LOCAL_ENV)).toBe(2);
+        expect(err.join('')).toBe('--out takes a directory\n');
+    });
+
+    it.each([
+        ['a flag the command does not have', ['--bogus']],
+        ['a flag of another command', ['--format', 'json']],
+        ['a mistyped flag with a value', ['--output=/tmp/x']],
+        ['a stray word', ['immediately']],
+    ])('scan and schedule refuse %s before anything is read or run', async (_label, extra) => {
+        const config = writeConfig(configJson());
+        for (const command of ['scan', 'schedule']) {
+            err.length = 0;
+            expect(await main([command, '--config', config, '--out', outDir, ...extra], LOCAL_ENV)).toBe(2);
+            expect(err.join('')).toBe(
+                'usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n'
+                + `unknown argument for ${command}; run 'scanent help' for every command and flag\n`,
+            );
+            // The argument itself is not repeated: it may be a mistyped secret.
+            expect(err.join('')).not.toContain(extra[0]);
+        }
+        expect(out).toEqual([]);
+        expect(fs.existsSync(outDir)).toBe(false);
+    });
+
     it('the usage error is what it always was, byte for byte', async () => {
         expect(await main(['scan'], {})).toBe(2);
         expect(err.join('')).toBe('usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n');

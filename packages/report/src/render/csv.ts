@@ -9,25 +9,37 @@
  *
  *   • a cell that a spreadsheet would read as a formula (it starts with `=`,
  *     `+`, `-`, `@`, a tab or a carriage return, with or without leading
- *     white space) is prefixed with a single quote, so it is shown and never
- *     evaluated. The rule has no exception for cells scanent wrote itself;
- *   • every control character becomes a space, so one record is one line.
+ *     white space or invisible characters, the full-width forms of the
+ *     operators included) is prefixed with a single quote, so it is shown and
+ *     never evaluated. The rule has no exception for cells scanent wrote itself;
+ *   • every control character becomes a space, so one record is one line, and
+ *     a bidirectional control becomes U+FFFD, so a cell reads as it is written.
  */
 import { ALL_HARNESS_CRITERIA } from '@scanent/contract/harness-ladder';
 
+import { isBidiControl } from './escape';
 import type { LocalAgentResult, LocalCriterionCell, LocalResults } from '../results/types';
 
 export const CSV_BOM = '﻿';
 const CRLF = '\r\n';
 
+/**
+ * A cell some spreadsheet may read as a formula: an operator, ASCII or
+ * full-width, after any run of white space (Unicode's, a no-break space and a
+ * byte-order mark included), control characters and invisible format
+ * characters. Importers differ on which of those they trim, so all are skipped.
+ */
+const FORMULA_START = /^[\s\p{Cc}\p{Cf}]*[=+\-@\uff1d\uff0b\uff0d\uff20]/u;
+
 /** One cell, neutralised and quoted. */
 export function csvCell(value: string | number): string {
     const text = String(value);
-    const formula = /^[ \t\r\n]*[=+\-@]/.test(text) || /^[\t\r]/.test(text);
+    const formula = FORMULA_START.test(text) || /^[\t\r]/.test(text);
     let clean = '';
     for (const ch of text) {
         const code = ch.codePointAt(0) as number;
-        clean += code < 0x20 || code === 0x7f || code === 0x2028 || code === 0x2029 ? ' ' : ch;
+        if (isBidiControl(code)) clean += '\ufffd';
+        else clean += code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029 ? ' ' : ch;
     }
     return `"${(formula ? `'${clean}` : clean).replace(/"/g, '""')}"`;
 }

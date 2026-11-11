@@ -218,6 +218,11 @@ export interface LocalResults {
             readonly sourceKind: string;
             readonly why: UnboundNotConcludedWhy;
         }[];
+        /**
+         * Two registrations of one agent that disagree. Always empty from the
+         * local scorer: an inventory row carries no register id, so an agent in
+         * both the register and the inventory is an overlap, not a conflict.
+         */
         readonly registrationConflicts: readonly IntakeConflict[];
     };
     /** Sorted by `discoveredId`, by code unit. */

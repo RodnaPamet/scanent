@@ -133,6 +133,17 @@ describe('1. scanned strings never become markup', () => {
         }
     });
 
+    it('no bidirectional control reaches the page: an id cannot be made to read as another', () => {
+        expect(escapeHtml('agent\u202etxt.exe\u202c \u2066x\u2069\u200e\u200f\u061c')).toBe('agent\ufffdtxt.exe\ufffd \ufffdx\ufffd\ufffd\ufffd\ufffd');
+        // Tab and line feed stay; every other control is replaced, as before.
+        expect(escapeHtml('a\tb\nc\u001b\u009b\u2028')).toBe('a\tb\nc\ufffd\ufffd\ufffd');
+        for (const base of [plainResults(), inventoryResults(), notJudgedResults(), emptyResults()]) {
+            const page = renderSummaryHtml(hostile(base, '\u202etxt.exe\u202c\u2066x\u2069'));
+            assertSafe(page);
+            expect(page).not.toMatch(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/);
+        }
+    });
+
     it('a URL-shaped string is text, never a link or an attribute other than a title', () => {
         const page = renderSummaryHtml(hostile(inventoryResults(), 'javascript:alert(1)'));
         const { tags } = assertSafe(page);

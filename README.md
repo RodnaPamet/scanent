@@ -106,33 +106,40 @@ at all.
 export SCANNER_SIGNING_KEY="$(openssl genpkey -algorithm ed25519)"
 sed "s#__REPO__#$(pwd)#" examples/code-only/config.local.template.json > /tmp/scanent-local.json
 
-npx scanent scan --config /tmp/scanent-local.json --out /tmp/scanent-out
+npx scanent scan --config /tmp/scanent-local.json --out "$HOME/scanent-out"
 ```
 
 The same with the container. The output directory is the one writable mount;
-the root filesystem stays read-only. The container writes as uid 1000, so the
-directory is opened up for it here (on a host where you can, `chown 1000` it
-instead):
+the root filesystem stays read-only. The results are evidence, so the directory
+is private to you (`0700`, not a world-writable one under `/tmp`), and the
+container runs as you (`--user`), so it can write there and you can read what
+it wrote:
 
 ```bash
-mkdir -p /tmp/scanent-config /tmp/scanent-out && chmod 0777 /tmp/scanent-out
+mkdir -p /tmp/scanent-config && mkdir -m 0700 -p "$HOME/scanent-out"
 sed "s#__REPO__/examples/code-only#/example#" \
   examples/code-only/config.local.template.json > /tmp/scanent-config/config.json
 
-docker run --rm \
+docker run --rm --user "$(id -u):$(id -g)" \
   --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
   -e SCANNER_SIGNING_KEY \
   -v /tmp/scanent-config:/etc/scanent:ro \
   -v "$(pwd)/examples/code-only:/example:ro" \
-  -v /tmp/scanent-out:/out \
+  -v "$HOME/scanent-out:/out" \
   scanent scan --config /etc/scanent/config.json --out /out
 ```
+
+Without `--user` the image runs as uid 1000, and the run's directories (`0750`)
+and files (`0640`) are readable by uid 1000 and root only: give it a directory
+owned by uid 1000 (`chown 1000`), never one that every user can write. Rootless
+Docker and Podman map users differently; there, run it as the user that maps to
+you (Podman: `--userns=keep-id`).
 
 Each run is one new directory, written whole or not at all, and nothing that
 exists is ever overwritten except the `latest.json` pointer:
 
 ```
-/tmp/scanent-out/
+<output directory>/
   latest.json                  which run is the newest
   runs/<scanId>/
     summary.html               open this one
@@ -167,7 +174,7 @@ only, and never enters the signed report.
 Compare two runs:
 
 ```bash
-npx scanent diff /tmp/scanent-out/runs/<older>/results.json /tmp/scanent-out/runs/<newer>/results.json
+npx scanent diff "$HOME/scanent-out"/runs/<older>/results.json "$HOME/scanent-out"/runs/<newer>/results.json
 ```
 
 `diff` takes `results.json` files or signed reports. It calls an agent "gone",
@@ -207,7 +214,8 @@ directory and needs no capability, so
 `--read-only --cap-drop ALL --security-opt no-new-privileges` is how it is
 meant to run everywhere. `--network none` suits this example only, because the
 `code` source reads local files; a source that reads an API needs a network.
-The mounted files must be readable by uid 1000.
+The mounted files must be readable by the user the container runs as (uid 1000
+unless `--user` says otherwise).
 
 With no arguments the image runs `schedule --config /etc/scanent/config.json`:
 one scan at once, then one every `schedule.everyHours`, each delivered to the

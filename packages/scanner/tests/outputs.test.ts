@@ -245,6 +245,20 @@ describe('4. delivery', () => {
         expect(tree(dir)).toEqual({});
     });
 
+    it('a run written whose pointer could not be replaced is a failed output that names the run, not "nothing written"', async () => {
+        const { log, lines, text } = capturedLog();
+        fs.mkdirSync(path.join(dir, 'latest.json'));
+        const result = await scanAndDeliver({ config: configOf(), env: ENV, log, outputs: [{ kind: 'file', dir }], fetchImpl: noFetch });
+        const id = result.scan.body.scan.id;
+        expect(result).toMatchObject({ ok: false, delivered: [{ kind: 'file', ok: false }] });
+        const [failed] = lines().filter((l) => l.msg === 'output failed');
+        expect(failed).toMatchObject({ output: 'file', scan: id });
+        expect(failed.error).toMatch(new RegExp(`^results written to runs/${id}, but latest\\.json was not updated \\([A-Z]+\\); it does not name this run$`));
+        expect(text()).not.toContain(dir);
+        // The run is there, whole.
+        expect(fs.readdirSync(path.join(dir, 'runs', id))).toHaveLength(6);
+    });
+
     it('a failed post is one error line, and the file output still stands', async () => {
         const { log, lines } = capturedLog();
         const result = await scanAndDeliver({

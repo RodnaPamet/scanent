@@ -62,9 +62,13 @@ export interface SourceChange {
 
 export interface AgentNotSeen {
     readonly discoveredId: string;
-    /** Why its absence concludes nothing: the sources not read in full, or a different scanner. */
+    /** Why its absence concludes nothing: the sources not read in full, a different scanner or estate, or an empty new run. */
     readonly unread: readonly { readonly kind: string; readonly status: 'INCOMPLETE' | 'ABSENT' }[];
     readonly differentScanner: boolean;
+    /** The two runs name different estates: "read in full" is about another place. */
+    readonly differentEstate: boolean;
+    /** The new run found no agent at all, which evidences nothing about any one of them. */
+    readonly newScanEmpty: boolean;
 }
 
 export interface LevelChange {
@@ -99,7 +103,7 @@ export interface OrphanChange {
     readonly ref: string;
     readonly sourceKind: string;
     readonly change: ClosureChange;
-    /** For `NOT_CONCLUDED`: `STILL_SEEN_UNBOUND`, `SOURCE_INCOMPLETE`, `SOURCE_ABSENT` or `DIFFERENT_SCANNER`. */
+    /** For `NOT_CONCLUDED`: `STILL_SEEN_UNBOUND`, `SOURCE_INCOMPLETE`, `SOURCE_ABSENT`, `DIFFERENT_SCANNER`, `DIFFERENT_ESTATE` or `NEW_SCAN_EMPTY`. */
     readonly why: string | null;
 }
 
@@ -120,7 +124,7 @@ export interface ResultsDiff {
     readonly ladderVersion: string;
     readonly old: DiffSide;
     readonly new: DiffSide;
-    /** `INVENTORY_DIFFERS`, `SCANNER_DIFFERS`, `SIGNER_NOT_PINNED:<side>`, `REGISTER_CLAIMS_NOT_VERIFIED:<side>`. */
+    /** `INVENTORY_DIFFERS`, `SCANNER_DIFFERS`, `ESTATE_DIFFERS`, `SIGNER_NOT_PINNED:<side>`, `REGISTER_CLAIMS_NOT_VERIFIED:<side>`. */
     readonly warnings: readonly string[];
     readonly sources: readonly SourceChange[];
     readonly agents: {
@@ -145,12 +149,21 @@ function sideOf(r: LocalResults): DiffSide {
         asOf: r.scan.asOf,
         estate: r.scan.estate,
         scannerAgentId: r.scan.scanner.agentId,
-        complete: r.scan.complete,
+        complete: readInFull(r),
         agentCount: r.estate.agentCount,
         inventorySha256: r.inventory === null ? null : r.inventory.sha256,
         signerPinned: r.report.signerPinned,
         registerClaimsVerified: r.scan.registerClaimsVerified,
     };
+}
+
+/**
+ * Whether a run read every source it lists in full. Derived from the sources,
+ * never read from the stored `scan.complete`: a results file is untrusted
+ * input, and what a diff closes must rest on the statuses themselves.
+ */
+function readInFull(r: LocalResults): boolean {
+    return r.sources.length > 0 && r.sources.every((s) => s.status === 'COMPLETE');
 }
 
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -162,7 +175,14 @@ function sourceStates(r: LocalResults): Map<string, { status: SourceReadState; r
 const ABSENT = { status: 'ABSENT' as const, reason: null };
 
 /** Why a finding that is no longer reported is not closed, or null when it is. */
-function findingStillOpenWhy(finding: LocalFinding, next: LocalResults, nextAgents: ReadonlyMap<string, LocalAgentResult>, gone: ReadonlySet<string>): string | null {
+function findingStillOpenWhy(
+    finding: LocalFinding,
+    next: LocalResults,
+    prevAgents: ReadonlyMap<string, LocalAgentResult>,
+    nextAgents: ReadonlyMap<string, LocalAgentResult>,
+    gone: ReadonlySet<string>,
+): string | null {
+    const complete = readInFull(next);
     if (finding.discoveredId !== null) {
         const agent = nextAgents.get(finding.discoveredId);
         if (agent === undefined) return gone.has(finding.discoveredId) ? 'AGENT_GONE' : 'AGENT_NOT_SEEN';
@@ -170,12 +190,23 @@ function findingStillOpenWhy(finding: LocalFinding, next: LocalResults, nextAgen
             // A link the register holds closes it on any scan; one the operator
             // declared closes it only on a complete scan (the planner's rule).
             if (agent.registration.basis === 'OBSERVED_REGISTER') return null;
-            if (agent.registration.basis === 'DECLARED_INVENTORY') return next.scan.complete ? null : 'SCAN_INCOMPLETE';
+            if (agent.registration.basis === 'DECLARED_INVENTORY') return complete ? null : 'SCAN_INCOMPLETE';
             return 'AGENT_NOT_REGISTERED';
         }
         if (agent.judgement.state !== 'JUDGED') return 'AGENT_NOT_JUDGED';
-        // A tool's absence closes nothing unless every source was read in full.
-        if (finding.code === 'UNPINNED_WRITE_TOOL' && !next.scan.complete) return 'SCAN_INCOMPLETE';
+        if (finding.code === 'UNPINNED_WRITE_TOOL') {
+            // A tool's absence closes nothing unless the source that would have
+            // reported it was read in full (the planner's `toolEvidenceSourcesOf`,
+            // over where the agent was found in either run): `code` for an agent
+            // found through `code`, `mcp` for one found through any other kind.
+            // A source the new run does not list was not read at all. Results
+            // carry no tool's server, so every listed source must be complete too.
+            const via = [...(prevAgents.get(finding.discoveredId)?.discoveredVia ?? []), ...agent.discoveredVia];
+            const evidence = [...new Set(via.map((kind) => (kind === 'code' ? 'code' : 'mcp')))];
+            if (evidence.some((kind) => !next.sources.some((s) => s.kind === kind))) return 'SOURCE_ABSENT';
+            // A listed source that was not read in full is an incomplete scan.
+            if (!complete) return 'SCAN_INCOMPLETE';
+        }
         return null;
     }
     if (finding.code === 'EMPTY_SCAN') return next.estate.agentCount > 0 ? null : 'NO_AGENTS';
@@ -184,7 +215,7 @@ function findingStillOpenWhy(finding: LocalFinding, next: LocalResults, nextAgen
         const state = next.sources.find((s) => s.kind === kind);
         return state === undefined ? 'SOURCE_ABSENT' : state.status === 'COMPLETE' ? null : 'SOURCE_INCOMPLETE';
     }
-    return next.scan.complete ? null : 'SCAN_INCOMPLETE';
+    return complete ? null : 'SCAN_INCOMPLETE';
 }
 
 /**
@@ -203,10 +234,17 @@ export function diffResults(prev: LocalResults, next: LocalResults, opts: { read
     const warnings: string[] = [];
     if ((prev.inventory?.sha256 ?? null) !== (next.inventory?.sha256 ?? null)) warnings.push('INVENTORY_DIFFERS');
     if (differentScanner) warnings.push('SCANNER_DIFFERS');
+    // Two estates under one scanner id: what the new run read in full is another place.
+    const differentEstate = prev.scan.estate !== null && next.scan.estate !== null && prev.scan.estate !== next.scan.estate;
+    if (differentEstate) warnings.push('ESTATE_DIFFERS');
+    // An empty population is what a scanner reading the wrong place looks like: it closes nothing.
+    const newScanEmpty = next.agents.length === 0;
+    /** Why the two runs are not of one population, so that nothing absent from the new one is concluded; null when they are. */
+    const otherPopulation = differentScanner ? 'DIFFERENT_SCANNER' : differentEstate ? 'DIFFERENT_ESTATE' : null;
     for (const [side, r] of [['old', prev], ['new', next]] as const) {
         if (!r.report.signerPinned) warnings.push(`SIGNER_NOT_PINNED:${side}`);
         if (!r.scan.registerClaimsVerified) warnings.push(`REGISTER_CLAIMS_NOT_VERIFIED:${side}`);
-        if (!r.scan.complete) notConcluded.push(`SCAN_INCOMPLETE:${side}`);
+        if (!readInFull(r)) notConcluded.push(`SCAN_INCOMPLETE:${side}`);
     }
 
     // ── Completeness, first ──
@@ -244,9 +282,9 @@ export function diffResults(prev: LocalResults, next: LocalResults, opts: { read
             return status === 'COMPLETE' ? [] : [{ kind, status }];
         });
         // An agent found through no source at all proves nothing by its absence.
-        if (unread.length === 0 && agent.discoveredVia.length > 0 && !differentScanner) gone.push(agent.discoveredId);
+        if (unread.length === 0 && agent.discoveredVia.length > 0 && otherPopulation === null && !newScanEmpty) gone.push(agent.discoveredId);
         else {
-            notSeen.push({ discoveredId: agent.discoveredId, unread, differentScanner });
+            notSeen.push({ discoveredId: agent.discoveredId, unread, differentScanner, differentEstate, newScanEmpty });
             notConcluded.push(`AGENT_NOT_SEEN:${agent.discoveredId}`);
         }
     }
@@ -322,15 +360,17 @@ export function diffResults(prev: LocalResults, next: LocalResults, opts: { read
     for (const c of prev.estate.orphanCredentials) {
         if (orphansNow.has(keyOf(c))) continue;
         const status = (now.get(c.sourceKind) ?? ABSENT).status;
-        const why = differentScanner
-            ? 'DIFFERENT_SCANNER'
+        const why = otherPopulation !== null
+            ? otherPopulation
             : stillUnbound.has(keyOf(c))
                 ? 'STILL_SEEN_UNBOUND'
-                : status === 'COMPLETE'
-                    ? null
-                    : status === 'INCOMPLETE'
-                        ? 'SOURCE_INCOMPLETE'
-                        : 'SOURCE_ABSENT';
+                : status === 'INCOMPLETE'
+                    ? 'SOURCE_INCOMPLETE'
+                    : status === 'ABSENT'
+                        ? 'SOURCE_ABSENT'
+                        : newScanEmpty
+                            ? 'NEW_SCAN_EMPTY'
+                            : null;
         orphanCredentials.push({ ref: c.ref, sourceKind: c.sourceKind, change: why === null ? 'CLOSED' : 'NOT_CONCLUDED', why });
         if (why !== null) notConcluded.push(`ORPHAN_NOT_CONCLUDED:${c.sourceKind}:${c.ref}`);
     }
@@ -345,7 +385,8 @@ export function diffResults(prev: LocalResults, next: LocalResults, opts: { read
     }
     for (const f of prev.findings) {
         if (f.code === 'ORPHAN_CREDENTIAL' || refsNow.has(f.sourceRef)) continue;
-        const why = differentScanner ? 'DIFFERENT_SCANNER' : findingStillOpenWhy(f, next, nextAgents, goneSet);
+        // A different scanner or estate concludes nothing; an empty run still shows a source now read in full.
+        const why = otherPopulation ?? findingStillOpenWhy(f, next, prevAgents, nextAgents, goneSet);
         findings.push({ sourceRef: f.sourceRef, code: f.code, discoveredId: f.discoveredId, title: f.title, change: why === null ? 'CLOSED' : 'NOT_CONCLUDED', why });
         if (why !== null) notConcluded.push(`FINDING_NOT_CONCLUDED:${f.sourceRef}`);
     }

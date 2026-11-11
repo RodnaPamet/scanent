@@ -345,7 +345,12 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
             shadowAgents: findings.flatMap((f) => (f.code === 'SHADOW_AGENT' && f.discoveredId !== null ? [f.discoveredId] : [])).sort(byCodeUnit),
             orphanCredentials,
             unboundNotConcluded,
-            registrationConflicts: plan.intakeConflicts,
+            // Every intake claim here is an inventory row, whose id (`inventory:row-<n>`)
+            // is never a register id: the planner's "the two differ" is true of every
+            // agent in both, and says nothing. An inventory names an agent; it holds no
+            // registration to disagree with. The overlap is on the agent itself
+            // (`declared` beside an OBSERVED_REGISTER registration).
+            registrationConflicts: [],
         },
         agents,
         findings,

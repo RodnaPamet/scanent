@@ -127,12 +127,27 @@ export default tseslint.config(
                     selector: "NewExpression[callee.name='Date'][arguments.length=0]",
                     message: 'Local results read no clock: take the time from the scan (`asOf`).',
                 },
+                {
+                    // `Date()` called as a function is the current time as text.
+                    selector: "CallExpression[callee.name='Date']",
+                    message: 'Local results read no clock: take the time from the scan (`asOf`).',
+                },
+                {
+                    // `const D = Date; new D()` would pass the two rules above.
+                    selector: "VariableDeclarator[init.name='Date'], AssignmentExpression[right.name='Date']",
+                    message: 'Local results read no clock: `Date` is not given another name.',
+                },
             ],
             'no-restricted-globals': [
                 'error',
-                ...['process', 'fetch', 'Buffer', 'setTimeout', 'setInterval'].map((name) => ({
+                // `globalThis` (and its older names) reaches every one of the others by another path.
+                ...[
+                    'process', 'fetch', 'Buffer', 'setTimeout', 'setInterval', 'setImmediate', 'queueMicrotask',
+                    'crypto', 'performance', 'navigator', 'WebSocket', 'XMLHttpRequest', 'EventSource',
+                    'globalThis', 'global', 'self', 'window',
+                ].map((name) => ({
                     name,
-                    message: 'Local results are pure: no process, network, buffer or timer.',
+                    message: 'Local results are pure: no process, network, buffer, timer, clock or random source.',
                 })),
             ],
             'no-restricted-properties': [

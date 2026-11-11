@@ -36,6 +36,15 @@ export const l = setTimeout(() => undefined, 1);
 export const m = fetch('https://example.com');
 export const n = Date.parse('2026-01-01');
 export const o = Date.UTC(2026, 0, 1);
+export const p = crypto.randomUUID();
+export const q = performance.now();
+export const r = globalThis.process.env.HOME;
+export const s = globalThis.fetch('https://example.com');
+export const t = Date();
+export const u = new WebSocket('wss://example.com');
+export const Clock = Date;
+export const v = new Clock();
+export const w = new XMLHttpRequest();
 `;
 
 interface LintMessage {
@@ -78,6 +87,14 @@ describe('under packages/report/src', () => {
         ['a buffer', 'Buffer.from', 'no-restricted-globals'],
         ['a timer', 'setTimeout(', 'no-restricted-globals'],
         ['the network', "fetch('https", 'no-restricted-globals'],
+        ['a random source, by the crypto global', 'crypto.randomUUID()', 'no-restricted-globals'],
+        ['the clock, by the performance global', 'performance.now()', 'no-restricted-globals'],
+        ['the process, through globalThis', 'globalThis.process', 'no-restricted-globals'],
+        ['the network, through globalThis', 'globalThis.fetch', 'no-restricted-globals'],
+        ['the clock, by Date called as a function', 't = Date();', 'no-restricted-syntax'],
+        ['the clock, by Date under another name', 'Clock = Date;', 'no-restricted-syntax'],
+        ['the network, by a socket', 'new WebSocket(', 'no-restricted-globals'],
+        ['the network, by a request object', 'new XMLHttpRequest(', 'no-restricted-globals'],
     ])('refuses %s', (_label, text, rule) => {
         expect(lineOf(text)).toBeGreaterThan(0);
         expect(at(text)).toContain(rule);

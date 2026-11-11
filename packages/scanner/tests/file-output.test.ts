@@ -19,7 +19,7 @@ import { RUN_FILE_NAMES } from '@scanent/report/render/files';
 import { LocalResultsSchema } from '@scanent/report/results/schema';
 import type { LocalResults } from '@scanent/report/results/types';
 
-import { applyRetention, RUN_DIR_MODE, RUN_FILE_MODE, SCAN_ID_PATTERN, writeRun } from '../src/file-output';
+import { applyRetention, PointerNotUpdated, RUN_DIR_MODE, RUN_FILE_MODE, SCAN_ID_PATTERN, writeNewFile, writeRun } from '../src/file-output';
 import { PUBLIC_HEX, scanExample, tree } from './helpers/output-fixtures';
 
 const T1 = Date.parse('2026-11-03T03:30:00.000Z');
@@ -142,13 +142,99 @@ describe('2. a write that fails leaves nothing', () => {
             if (count === 7) throw new Error('pointer refused');
             fs.writeFileSync(p, content, { flag: 'wx' });
         };
-        expect(() => writeRun({ dir }, second, { writeFile: failing })).toThrow('pointer refused');
+        // The run is whole and stays; the failure is its own error and names the run, so it is not read as "nothing written".
+        let thrown: unknown;
+        try {
+            writeRun({ dir, retainRuns: 1 }, second, { writeFile: failing });
+        } catch (err) {
+            thrown = err;
+        }
+        expect(thrown).toBeInstanceOf(PointerNotUpdated);
+        expect((thrown as PointerNotUpdated).scanId).toBe(second.results.scan.id);
+        expect((thrown as Error).message).toBe(`results written to runs/${second.results.scan.id}, but latest.json was not updated; it does not name this run`);
         expect(fs.readFileSync(path.join(dir, 'latest.json'), 'utf8')).toBe(pointer);
         expect(fs.readdirSync(dir).sort()).toEqual(['latest.json', 'runs']);
         expect(fs.readdirSync(path.join(dir, 'runs')).sort()).toEqual([first.results.scan.id, second.results.scan.id].sort());
     });
 
-    it('a file that already exists is never opened for writing over', async () => {
+    it('a pointer the file system will not replace keeps the run and says which run it is', async () => {
+        const { raw, results } = await scanExample(T1);
+        // `latest.json` is a directory: the rename onto it is refused after the run is in place.
+        fs.mkdirSync(path.join(dir, 'latest.json'));
+        let thrown: unknown;
+        try {
+            writeRun({ dir }, { raw, results });
+        } catch (err) {
+            thrown = err;
+        }
+        expect(thrown).toBeInstanceOf(PointerNotUpdated);
+        const message = (thrown as Error).message;
+        expect(message).toMatch(/^results written to runs\/[a-z0-9-]+T\d{6}Z-[0-9a-f]{8}, but latest\.json was not updated \([A-Z]+\); it does not name this run$/);
+        expect(message).not.toContain(dir);
+        expect(fs.readdirSync(path.join(dir, 'runs'))).toEqual([results.scan.id]);
+        expect(fs.readdirSync(path.join(dir, 'runs', results.scan.id)).sort()).toEqual(SIX);
+        expect(fs.readdirSync(dir).sort()).toEqual(['latest.json', 'runs']);
+        expect(fs.statSync(path.join(dir, 'latest.json')).isDirectory()).toBe(true);
+    });
+
+    it('a new file is created, never opened over one that exists', () => {
+        const file = path.join(dir, 'held.json');
+        writeNewFile(file, 'first');
+        expect(() => writeNewFile(file, 'second')).toThrow(/EEXIST/);
+        expect(fs.readFileSync(file, 'utf8')).toBe('first');
+        expect(modeOf(file)).toBe(RUN_FILE_MODE);
+    });
+
+    it('directories are made one level at a time, so a refusal is thrown and nothing is written', async () => {
+        const { raw, results } = await scanExample(T1);
+        const made: string[] = [];
+        const nested = path.join(dir, 'a', 'b');
+        writeRun({ dir: nested }, { raw, results }, { mkdir: (p, mode) => (made.push(p), fs.mkdirSync(p, { mode })) });
+        // Each call names a directory whose parent exists: the three missing levels, then the run's temporary directory is not made through the seam.
+        expect(made).toEqual([path.join(dir, 'a'), nested, path.join(nested, 'runs')]);
+        expect(modeOf(path.join(dir, 'a'))).toBe(RUN_DIR_MODE);
+
+        // A file system that answers ENOENT under a parent that exists (procfs does): thrown, not retried.
+        let calls = 0;
+        const refusing = (): void => {
+            calls += 1;
+            throw Object.assign(new Error('no such file or directory'), { code: 'ENOENT' });
+        };
+        const other = path.join(dir, 'refused');
+        expect(() => writeRun({ dir: other }, { raw, results }, { mkdir: refusing })).toThrow('no such file or directory');
+        expect(calls).toBe(1);
+        expect(fs.existsSync(other)).toBe(false);
+    });
+
+    it('a directory another run made first is used, and a file in its place is not', async () => {
+        const { raw, results } = await scanExample(T1);
+        const racing = (p: string, mode: number): void => {
+            fs.mkdirSync(p, { mode });
+            throw Object.assign(new Error('exists'), { code: 'EEXIST' });
+        };
+        writeRun({ dir: path.join(dir, 'raced') }, { raw, results }, { mkdir: racing });
+        expect(fs.existsSync(path.join(dir, 'raced', 'runs', results.scan.id))).toBe(true);
+        const blocked = (p: string): void => {
+            fs.writeFileSync(p, 'a file');
+            throw Object.assign(new Error('exists'), { code: 'EEXIST' });
+        };
+        expect(() => writeRun({ dir: path.join(dir, 'blocked') }, { raw, results }, { mkdir: blocked })).toThrow('exists');
+    });
+
+    it('a runs that is a link to somewhere else is refused, and nothing is written through it', async () => {
+        const { raw, results } = await scanExample(T1);
+        const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'scanent-elsewhere-'));
+        try {
+            fs.symlinkSync(elsewhere, path.join(dir, 'runs'));
+            expect(() => writeRun({ dir }, { raw, results })).toThrow('runs is not a directory of this output; nothing was written');
+            expect(fs.readdirSync(elsewhere)).toEqual([]);
+            expect(fs.readdirSync(dir)).toEqual(['runs']);
+        } finally {
+            fs.rmSync(elsewhere, { recursive: true, force: true });
+        }
+    });
+
+    it('a temporary directory left by a killed run of the same id fails the next one, which writes nothing into it', async () => {
         const { raw, results } = await scanExample(T1);
         // A temporary directory left by a run that was killed: the next run of the same id fails rather than write into it.
         fs.mkdirSync(path.join(dir, 'runs', `.${results.scan.id}.tmp`), { recursive: true });

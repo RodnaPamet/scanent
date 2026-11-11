@@ -3,7 +3,8 @@
  *
  * The operator's inventory (`inventory.path` in the configuration) is a JSON
  * or a CSV file, told apart by its extension. This module does the parts that
- * touch the machine: read the bytes, refuse a file that is too large, hash it,
+ * touch the machine: refuse a file that is too large before reading it, read
+ * the bytes, hash them,
  * and decode it into the row objects `@scanent/report` judges. Both forms
  * reach ONE schema (`parseInventory`), so a rule cannot hold for one and not
  * the other.
@@ -22,7 +23,7 @@
  * different number of fields.
  */
 import { createHash } from 'crypto';
-import { readFileSync } from 'fs';
+import { closeSync, fstatSync, openSync, readSync } from 'fs';
 
 import { INVENTORY_SCHEMA_ID, InventoryRefused, parseInventory, type ParsedInventory } from '@scanent/report/results/inventory';
 
@@ -141,6 +142,35 @@ export function decodeInventoryCsv(text: string): unknown {
     return { inventory: INVENTORY_SCHEMA_ID, agents };
 }
 
+/**
+ * Read a file of at most `MAX_INVENTORY_BYTES`, never holding more than one
+ * byte over the cap. The size is asked of the open descriptor before a byte is
+ * read, and the read itself stops at the cap plus one: a file that grows, or
+ * one whose size is not stated (a pipe, a device), is still bounded. Only a
+ * regular file is read.
+ */
+function readCappedFile(path: string): Buffer {
+    const fd = openSync(path, 'r');
+    try {
+        const stat = fstatSync(fd);
+        if (stat.isDirectory()) throw Object.assign(new Error('a directory'), { code: 'EISDIR' });
+        if (!stat.isFile()) throw new InventoryRefused(['(file): not a regular file']);
+        if (stat.size > MAX_INVENTORY_BYTES) throw new InventoryRefused([`(file): larger than ${MAX_INVENTORY_BYTES} bytes`]);
+        const buffer = Buffer.alloc(Math.min(stat.size, MAX_INVENTORY_BYTES) + 1);
+        let length = 0;
+        while (length < buffer.byteLength) {
+            const read = readSync(fd, buffer, length, buffer.byteLength - length, null);
+            if (read === 0) break;
+            length += read;
+        }
+        // One byte more than the size stated: the file grew while it was read.
+        if (length > stat.size) throw new InventoryRefused(['(file): changed while it was read']);
+        return buffer.subarray(0, length);
+    } finally {
+        closeSync(fd);
+    }
+}
+
 export interface InventoryFileDeps {
     /** How the file is read. A TEST SEAM: production reads the path. */
     readonly readFile?: (path: string) => Buffer;
@@ -157,8 +187,9 @@ export function loadInventoryFile(path: string, deps: InventoryFileDeps = {}): P
 
     let bytes: Buffer;
     try {
-        bytes = (deps.readFile ?? ((p) => readFileSync(p)))(path);
+        bytes = (deps.readFile ?? readCappedFile)(path);
     } catch (err) {
+        if (err instanceof InventoryRefused) throw err;
         const code = (err as NodeJS.ErrnoException | null)?.code;
         throw new InventoryRefused([`(file): could not be read (${typeof code === 'string' && /^[A-Z0-9_]{1,32}$/.test(code) ? code : 'error'})`]);
     }

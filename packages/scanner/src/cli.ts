@@ -28,12 +28,36 @@ import { rawPublicKeyHex } from './report';
 import { loadSigningKey } from './scan';
 import { runOnSchedule } from './schedule';
 
+/** The value of `--name <value>` or `--name=<value>`; null when the flag is absent or has no value. */
 function arg(argv: readonly string[], name: string): string | null {
+    const joined = argv.find((a) => a.startsWith(`${name}=`));
+    if (joined !== undefined) return joined.slice(name.length + 1) || null;
     const i = argv.indexOf(name);
     return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null;
 }
 
+/** The flags the three configured commands take. `--config` and `--out` take a value, in either form. */
+const VALUE_FLAGS: readonly string[] = ['--config', '--out'];
+const BARE_FLAGS: readonly string[] = ['--dry-run'];
+
+/**
+ * The first argument after the command that is not one of its flags, or null.
+ * A flag that is not known is refused, never ignored: `--out=<dir>` mistyped
+ * would otherwise run a scan that posts and writes nothing where it was told.
+ */
+function unknownArgument(rest: readonly string[]): string | null {
+    for (let i = 0; i < rest.length; i++) {
+        const a = rest[i];
+        if (BARE_FLAGS.includes(a)) continue;
+        if (VALUE_FLAGS.includes(a)) i += 1;
+        else if (!VALUE_FLAGS.some((flag) => a.startsWith(`${flag}=`))) return a;
+    }
+    return null;
+}
+
 /** The usage error, as it has always read. `help` prints the full set of commands. */
+// Kept byte for byte: scripts match on it. It predates `--out`, `diff` and `help`,
+// which `scanent help` (or `--help` after any command but `diff`) lists.
 const USAGE = 'usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n';
 
 export const HELP = `scanent, the Agent Estate Scanner (alias: aes)
@@ -42,7 +66,7 @@ export const HELP = `scanent, the Agent Estate Scanner (alias: aes)
   scanent schedule   --config <file> [--out <dir>]
   scanent public-key --config <file>
   scanent diff <old> <new> [--format text|json] [--trust-key <hex>] [--allow-different-scanner]
-  scanent help
+  scanent help        (also --help or -h, alone or after scan, schedule or public-key)
 
   scan         One scan, delivered to the configuration's outputs.
                --out <dir>   also write the run's files under <dir>/runs/<scanId>/
@@ -62,7 +86,8 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv): Pro
     const log = jsonLineLog();
     const [command] = argv;
     // The two commands that read no configuration.
-    if (command === 'help' || command === '--help' || command === '-h') {
+    // `diff` takes paths of its own, so help is looked for there only as the command.
+    if (command === 'help' || (command !== 'diff' && (argv.includes('--help') || argv.includes('-h')))) {
         process.stdout.write(HELP);
         return 0;
     }
@@ -77,12 +102,20 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv): Pro
         process.stderr.write(USAGE);
         return 2;
     }
+    if (['scan', 'schedule', 'public-key'].includes(command)) {
+        const unknown = unknownArgument(argv.slice(1));
+        if (unknown !== null) {
+            // The argument is the caller's own, but it may be a mistyped secret: it is not echoed.
+            process.stderr.write(`${USAGE}unknown argument for ${command}; run 'scanent help' for every command and flag\n`);
+            return 2;
+        }
+    }
     const config = parseScannerConfig(JSON.parse(readFileSync(file, 'utf8')) as unknown);
 
     /** The outputs this call delivers to, or null (with one line on stderr) when it names none or names one wrongly. */
     const outputsFor = (dryRun: boolean) => {
         try {
-            if (argv.includes('--out') && arg(argv, '--out') === null) throw new OutputsError('--out takes a directory');
+            if (argv.some((a) => a === '--out' || a.startsWith('--out=')) && arg(argv, '--out') === null) throw new OutputsError('--out takes a directory');
             return resolveOutputs(config, { out: arg(argv, '--out'), dryRun });
         } catch (err) {
             if (!(err instanceof OutputsError)) throw err;

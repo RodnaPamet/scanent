@@ -33,16 +33,62 @@ const ESCAPES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * The Unicode bidirectional controls: marks, embeddings, overrides and
+ * isolates. They execute nothing, but one in a scanned id reorders the text
+ * shown beside it, so an id can be made to read as another. None is written
+ * to any output.
+ */
+export function isBidiControl(code: number): boolean {
+    return code === 0x061c || code === 0x200e || code === 0x200f || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069);
+}
+
+/** C0, DEL, C1, the two Unicode line separators and the bidirectional controls. */
+function isUnprintable(code: number): boolean {
+    return code < 0x20 || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029 || isBidiControl(code);
+}
+
+/**
+ * One line of plain text for a terminal: every control character, line
+ * separator and bidirectional control becomes a visible `\u{..}`. A scanned
+ * string can therefore neither start a new line nor send an escape sequence,
+ * and what was there can still be read.
+ */
+export function terminalLine(value: string): string {
+    let out = '';
+    for (const ch of value) {
+        const code = ch.codePointAt(0) as number;
+        out += isUnprintable(code) ? `\\u{${code.toString(16)}}` : ch;
+    }
+    return out;
+}
+
+/**
+ * JSON text for a terminal. `JSON.stringify` escapes C0 only; DEL, C1 (U+009B
+ * is a control sequence introducer), the line separators and the bidirectional
+ * controls are escaped here. They can occur only inside a string, where a
+ * `\uXXXX` escape is the same value.
+ */
+export function terminalJson(json: string): string {
+    let out = '';
+    for (const ch of json) {
+        const code = ch.codePointAt(0) as number;
+        out += code >= 0x20 && isUnprintable(code) ? `\\u${code.toString(16).padStart(4, '0')}` : ch;
+    }
+    return out;
+}
+
+/**
  * Escape text for an element's content or a quoted attribute value. Control
- * characters other than tab and line feed are replaced: none of them belongs
- * in a report, and some end a line where a reader does not expect one.
+ * characters other than tab and line feed are replaced, and so is every
+ * bidirectional control: none of them belongs in a report, and some end a
+ * line, or reorder one, where a reader does not expect it.
  */
 export function escapeHtml(value: string): string {
     let out = '';
     for (const ch of value) {
         const code = ch.codePointAt(0) as number;
         if (ESCAPES[ch] !== undefined) out += ESCAPES[ch];
-        else if ((code < 0x20 && ch !== '\n' && ch !== '\t') || (code >= 0x7f && code <= 0x9f) || code === 0x2028 || code === 0x2029) out += '�';
+        else if (isUnprintable(code) && ch !== '\n' && ch !== '\t') out += '\ufffd';
         else out += ch;
     }
     return out;

@@ -36,6 +36,7 @@ import {
     validV3ReportBodyWithSdkAgent,
 } from '../../contract/tests/helpers/agent-harness-fake-scanner';
 import { CROSS_AGENT_VERDICT_SOURCE, judgementBasisOf } from '../src/results/judgement';
+import { renderSummaryHtml } from '../src/render/html';
 import { LocalResultsSchema } from '../src/results/schema';
 import { coverageOf, scoreReportLocally } from '../src/results/score';
 import { RESULTS_SCHEMA, type LocalAgentResult, type LocalResults } from '../src/results/types';
@@ -569,13 +570,14 @@ describe('6. the inventory', () => {
         expect(agent.judgement).toMatchObject({ level: 'H0', observedLevel: 'H2' });
     });
 
-    it('never overrides a register link the report carries, and lists the disagreement', () => {
+    it('never overrides a register link the report carries, and an agent in both is not a conflict', () => {
         const results = scored([fullRow(REGISTERED)], validV3ReportBody());
         expect(agentOf(results, REGISTERED).registration).toEqual({ basis: 'OBSERVED_REGISTER', ref: 'agt_registered_1' });
-        expect(results.estate.registrationConflicts).toEqual([
-            { discoveredId: REGISTERED, reportedRegisteredAgentId: 'agt_registered_1', intakeRegisteredAgentId: 'inventory:row-1' },
-        ]);
+        // The inventory names the agent; it holds no register id to disagree with.
+        expect(results.estate.registrationConflicts).toEqual([]);
+        expect(agentOf(results, REGISTERED).declared).toMatchObject({ row: 1 });
         expect(results.estate.registrationBasis).toBe('BOTH');
+        expect(renderSummaryHtml(results)).not.toContain('different registrations');
     });
 
     it('with a register read too, an unregistered agent keeps the register\'s wording', () => {
@@ -758,6 +760,18 @@ describe('8. the result', () => {
             }],
             ['a registration has a basis and no reference', (r: ReturnType<typeof valid>) => { judged(r).registration = { basis: 'DECLARED_INVENTORY', ref: null }; }],
             ['the counts are not the agents listed', (r: ReturnType<typeof valid>) => { r.estate.judgedCount = 99; }],
+            ['it says complete beside a source that was not read in full', (r: ReturnType<typeof valid>) => { r.scan.complete = true; }],
+            ['it says incomplete with every source read in full', (r: ReturnType<typeof valid>) => {
+                (r.sources as { status: string; reason: string | null }[]).forEach((s) => { s.status = 'COMPLETE'; s.reason = null; });
+            }],
+            ['it says complete with no source at all', (r: ReturnType<typeof valid>) => { r.sources = []; r.scan.complete = true; }],
+            ['the agents per level are not the judged agents listed', (r: ReturnType<typeof valid>) => {
+                const byLevel = r.estate.byLevel as Record<string, number>;
+                const level = judged(r).judgement.level as string;
+                byLevel[level] -= 1;
+                byLevel[level === 'H5' ? 'H4' : 'H5'] += 1;
+            }],
+            ['the shortfall count is not the judged agents below their bar', (r: ReturnType<typeof valid>) => { r.estate.shortfallCount = (r.estate.shortfallCount as number) + 1; }],
             ['it says empty while listing agents', (r: ReturnType<typeof valid>) => { r.estate.empty = true; }],
             ['an agent is listed twice', (r: ReturnType<typeof valid>) => { r.agents[1].discoveredId = r.agents[0].discoveredId; }],
             ['the scan time is not a time', (r: ReturnType<typeof valid>) => { r.scan.asOf = 'yesterday'; }],

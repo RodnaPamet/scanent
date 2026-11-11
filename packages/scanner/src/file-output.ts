@@ -22,7 +22,7 @@
  */
 import { createHash } from 'crypto';
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, renameSync, rmSync, writeSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 
 import { looksLikeSecret } from '@scanent/contract/harness-contract';
 import { firstSecretShapedMember } from '@scanent/contract/harness-findings';
@@ -44,6 +44,19 @@ export class OutputRefusedLocally extends Error {
     constructor(readonly where: string) {
         super(`output refused: ${where} has the shape of a secret; nothing was written`);
         this.name = 'OutputRefusedLocally';
+    }
+}
+
+/**
+ * The run was written whole and is on disk, but `latest.json` could not be
+ * replaced, so the pointer still names an earlier run (or is absent). The run
+ * is kept: it is complete evidence, and removing it would lose more than a
+ * stale pointer does. The message holds the scan id and a relative path only.
+ */
+export class PointerNotUpdated extends Error {
+    constructor(readonly scanId: string, readonly code: string | null) {
+        super(`results written to runs/${scanId}, but latest.json was not updated${code === null ? '' : ` (${code})`}; it does not name this run`);
+        this.name = 'PointerNotUpdated';
     }
 }
 
@@ -111,11 +124,14 @@ export function renderRunFiles(raw: string, results: LocalResults, renderers: Ru
 export interface FileOutputDeps {
     /** Write one new file. A TEST SEAM: production creates it exclusively, writes, and syncs. */
     readonly writeFile?: (path: string, content: string) => void;
+    /** Make one directory, its parent existing. A TEST SEAM: production calls `mkdirSync`, never recursively. */
+    readonly mkdir?: (path: string, mode: number) => void;
     readonly now?: () => number;
     readonly renderers?: RunRenderers;
 }
 
-function writeNewFile(path: string, content: string): void {
+/** Write one new file, creating it: a file that exists is refused (`EEXIST`) and left as it was. */
+export function writeNewFile(path: string, content: string): void {
     // `wx`: a file that exists is an error, never something to replace.
     const fd = openSync(path, 'wx', RUN_FILE_MODE);
     try {
@@ -145,6 +161,32 @@ function isRealDirectory(path: string): boolean {
         return lstatSync(path).isDirectory();
     } catch {
         return false;
+    }
+}
+
+/**
+ * Make `path` and whichever of its parents are missing, ONE LEVEL AT A TIME.
+ * Not `mkdirSync(…, { recursive: true })`: where a file system answers ENOENT
+ * for a directory under a parent that exists (procfs does), the recursive form
+ * never returns, and a scheduled scanner would stall for good. Made this way,
+ * the refusal is thrown and the output fails loudly.
+ */
+function ensureDirectory(path: string, mkdir: (path: string, mode: number) => void): void {
+    const missing: string[] = [];
+    let at = path;
+    while (!existsSync(at)) {
+        missing.unshift(at);
+        const parent = dirname(at);
+        if (parent === at) break;
+        at = parent;
+    }
+    for (const dir of missing) {
+        try {
+            mkdir(dir, RUN_DIR_MODE);
+        } catch (err) {
+            // Another run made it first: fine, when what is there is a directory.
+            if ((err as NodeJS.ErrnoException).code !== 'EEXIST' || !isRealDirectory(dir)) throw err;
+        }
     }
 }
 
@@ -193,7 +235,9 @@ export interface WrittenRun {
 /**
  * Write one run. Throws, having written nothing that remains, when a file
  * would hold a secret's shape, when the run already exists, or when the file
- * system refuses.
+ * system refuses the run. One failure leaves something behind, and says so:
+ * when the run is in place and only the pointer could not be replaced, the run
+ * stays and `PointerNotUpdated` names it.
  */
 export function writeRun(
     output: { readonly dir: string; readonly retainRuns?: number },
@@ -221,7 +265,9 @@ export function writeRun(
     };
 
     const runs = join(output.dir, 'runs');
-    mkdirSync(runs, { recursive: true, mode: RUN_DIR_MODE });
+    ensureDirectory(runs, deps.mkdir ?? ((path, mode) => mkdirSync(path, { mode })));
+    // A `runs` that is a link is somebody else's directory: nothing is written through it.
+    if (!isRealDirectory(runs)) throw new Error('runs is not a directory of this output; nothing was written');
     removeStaleTemporaries(runs, now);
     const target = join(runs, scanId);
     // A rename onto an empty directory would replace it, so the check is made here.
@@ -254,7 +300,8 @@ export function writeRun(
         syncDirectory(output.dir);
     } catch (err) {
         rmSync(pointerTemporary, { force: true });
-        throw err;
+        const code = (err as NodeJS.ErrnoException | null)?.code;
+        throw new PointerNotUpdated(scanId, typeof code === 'string' && /^[A-Z0-9_]{1,32}$/.test(code) ? code : null);
     }
     const removedRuns = output.retainRuns === undefined ? [] : applyRetention(output.dir, output.retainRuns, scanId);
     return { scanId, dir: `runs/${scanId}`, files: [...files, manifest].map((f) => f.name), removedRuns };

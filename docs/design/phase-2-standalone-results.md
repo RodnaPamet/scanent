@@ -85,8 +85,12 @@ changes, and the same rule cannot drift between Inflect and a standalone run.
 
 `PlannedAgent.linkBasis` maps to the local `registration.basis`:
 `'REPORT'` → `OBSERVED_REGISTER`, `'INTAKE'` → `DECLARED_INVENTORY`,
-`null` → `NONE`. `intakeConflicts` are carried into `results.json` as
-`estate.registrationConflicts` (the report's link stands).
+`null` → `NONE`. The planner's `intakeConflicts` are NOT carried: an inventory
+claim's id is the synthetic `inventory:row-<n>`, which differs from every
+register id, so the planner lists every agent that is in both. That is an
+overlap, not a disagreement, and `estate.registrationConflicts` is empty from
+the local scorer (the report's link stands, and the agent's `declared` member
+shows the row).
 
 When scoring a signed report that this scanner did not build (`scanent diff`
 over a third party's report), `registeredAgentIds` trusts that report's claim.
@@ -616,7 +620,8 @@ Three layers, all before the first byte is written:
    and over the whole `LocalResults` object and the diff result. A hit refuses
    the output and names the member path, never the value.
 3. The text: `looksLikeSecret` over each rendered payload as one string
-   (`results.json`, both CSVs, `summary.html`, the diff text). This catches a
+   (`results.json`, both CSVs, `summary.html`, the diff text). As built, a
+   CSV's cell separator is read as a space first (section 10, item 14). This catches a
    renderer that assembled a secret shape out of parts. A hit names the file.
 
 Layer 2 is the primary check, because escaping can break up a shape that layer
@@ -848,8 +853,9 @@ Wiring that follows from `@scanent/report` having code:
   `node_modules/@scanent/report`; add it to the prune step's `find` and to the
   `require` check. `packages/scanner/tests/image.test.ts` holds those lists by
   equality, so its expected lists are extended by the same lines in the same
-  commit. That is the only edit to an existing test in this phase, and it
-  lengthens what the test holds.
+  commit. That was planned as the only edit to an existing test in this
+  phase; as built, `public-entry.test.ts` and `package-closure.test.ts` were
+  lengthened too (section 10, item 12). Each edit lengthens what the test holds.
 - `packages/report/README.md` and the README's package table lose "placeholder".
 
 ESLint (`eslint.config.mjs`):
@@ -1224,7 +1230,9 @@ Differences from the sections above:
     `public-entry.test.ts`, which reads `parsed.inflect.baseUrl`, compiling
     unchanged now that the block is optional.
 12. **Existing tests changed**: `public-entry.test.ts`'s export list is
-    lengthened by twelve names, and nothing else. `cli.test.ts` runs unchanged.
+    lengthened by twelve names, `package-closure.test.ts` gained cases for the
+    report package, and `image.test.ts`'s lists were extended (6). Nothing
+    was removed from any of them. `cli.test.ts` runs unchanged.
 13. **No sample output is committed.** A run's files carry its time, a random
     scan id and a signature from the key it was run with, so a committed copy
     could not be reproduced. The README gives the commands instead.
@@ -1240,3 +1248,44 @@ Not verified in these steps: a `docker build` of `deploy/Dockerfile` and a run
 of `deploy/smoke.sh` (no daemon was available), so step 6 of the smoke test
 has been read and syntax-checked and not run. The page was checked by its
 tests and by reading it; it was not opened in a browser.
+
+### Review of Phase 2: what changed after it was built
+
+Each item is a rule the sections above stated more loosely, or not at all.
+
+1. **`UNPINNED_WRITE_TOOL` closes on the source its tools were read from** (4,
+   and item 2 above). A complete scan is not enough: the new run must LIST
+   that source. It is `code` for an agent found through `code` and `mcp` for
+   one found through any other kind, over where the agent was found in either
+   run (the planner's `toolEvidenceSourcesOf`). A source that is not listed
+   gives `SOURCE_ABSENT`. Results carry no tool's server, so a tool served
+   over MCP to an agent found only through `code` is judged by `code` alone;
+   that is narrower than the planner and is recorded as a follow-up.
+2. **An empty new run concludes no absence** (4). No agent is `GONE` and no
+   orphan credential is `CLOSED` when the new run found no agent at all
+   (`newScanEmpty`, `NEW_SCAN_EMPTY`): an empty population is what a scanner
+   reading the wrong place looks like, and the same diff opens `EMPTY_SCAN`.
+3. **Two estates under one scanner id** are compared with the warning
+   `ESTATE_DIFFERS`, and nothing absent is concluded (`DIFFERENT_ESTATE`), as
+   with `--allow-different-scanner`. A side with no label (a signed report)
+   gives no warning.
+4. **A diff reads completeness from the sources**, never from the stored
+   `scan.complete`, and the results schema refuses a file whose `complete`,
+   `byLevel` or `shortfallCount` is not what its sources and agents say.
+5. **`estate.registrationConflicts` is empty from the local scorer** (1.3).
+6. **The diff is written for a terminal**: in the text every control
+   character, line separator and bidirectional control is shown as `\u{..}`,
+   and in the JSON the ones `JSON.stringify` leaves raw are escaped. The page
+   and both CSVs replace bidirectional controls, and the CSV formula guard
+   also looks past Unicode white space and invisible characters and treats the
+   full-width operators as operators.
+7. **A pointer that cannot be replaced keeps the run** (2.3). The run is whole
+   and stays; the write fails with `PointerNotUpdated`, which names the run,
+   and the output is logged as failed. Directories are made one level at a
+   time, and a `runs` that is a link is refused.
+8. **The inventory's size is asked before it is read** (1.4), and only a
+   regular file is read.
+9. **The command line refuses what it does not know** (2.2): an unknown
+   argument to `scan`, `schedule` or `public-key` is exit code 2. `--out=<dir>`
+   and `--config=<file>` are accepted, and `--help` after any of the three
+   prints the commands. The one-line usage error is unchanged.
