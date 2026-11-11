@@ -1,6 +1,7 @@
 # CI for scanent.
 #
-#   checks  install, lint, type-check, build, test
+#   checks  install, lint, type-check, build, test (with the coverage gate on
+#           one Node version)
 #   image   build deploy/Dockerfile, smoke-test the image, Trivy gate
 #
 # Nothing is published or deployed from here. Every action is pinned to a full
@@ -17,7 +18,8 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Read the repository, and nothing else. Neither job writes anywhere.
+# Read the repository, and nothing else. Neither job writes to it; `checks`
+# uploads its coverage report as a workflow artifact.
 permissions:
   contents: read
 
@@ -55,8 +57,25 @@ jobs:
       - name: Build
         run: npm run build
 
+      # One Node version runs the suite under coverage, with the gate in
+      # jest.config.js (80% of statements, branches, functions and lines over
+      # every source file); the other runs it plain. Each test runs on both.
       - name: Test
+        if: matrix.node-version != 24
         run: npm test
+
+      - name: Test with coverage (gate)
+        if: matrix.node-version == 24
+        run: npm run test:coverage
+
+      - name: Upload the coverage report
+        if: matrix.node-version == 24 && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 14
 
   image:
     name: Image
