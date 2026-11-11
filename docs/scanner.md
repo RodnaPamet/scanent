@@ -589,6 +589,49 @@ With an allowlist, an internal name such as `langsmith.corp.internal` is
 accepted, because the question becomes the address rather than the name. Each
 entry must be a CIDR, or the configuration is refused.
 
+### Outputs
+
+Where one run's results go. Optional:
+
+```json
+"outputs": [
+  { "kind": "file", "dir": "/out", "retainRuns": 90 },
+  { "kind": "stdout" },
+  { "kind": "inflect" }
+]
+```
+
+| Kind | Fields | Effect |
+|---|---|---|
+| `file` | `dir`, an absolute path; `retainRuns`, optional, 1 to 10,000 | Writes the run's files under `dir` (see "Local results") |
+| `stdout` | none | Writes the signed report and a newline to stdout |
+| `inflect` | none | Posts the signed report to the `inflect` block's tenant |
+
+One to three entries, each kind at most once. Without `outputs`, a
+configuration that has an `inflect` block posts to it, which is what every
+configuration written before outputs existed means.
+
+The `inflect` block is optional. It is required, and the configuration is
+refused without it, when the `inflect` output is configured, when the
+`inflect-register` source is configured, or when `egress` is set. The ingest
+key is needed, before the scan starts, only when the `inflect` output is in
+effect for the run.
+
+Two flags adjust the outputs for one call:
+
+- `--out <dir>` (an absolute path) sets the file output's directory, adding a
+  file output if the configuration has none.
+- `--dry-run` removes the `inflect` output and adds `stdout`: post nothing,
+  print the report. With `--out` it writes the files as well.
+
+A call left with no output is refused before anything is read: exit code 2
+and `nowhere to deliver: configure outputs, or pass --out or --dry-run`.
+
+Delivery order is file, stdout, inflect, so what stays in the estate is
+written before anything leaves it. Each output is attempted whatever happened
+to the others, a failure is one `output failed` log line naming the output,
+and `scan` exits 0 only when every output was delivered.
+
 ### The inventory
 
 Optional. An estate with no register has nothing that says an agent is known or
@@ -652,11 +695,10 @@ What holds it:
   agents as shadow agents. A refusal names the row and the field, never the
   value, and a secret-shaped value anywhere in the file is refused by path.
 
-The inventory is read by local scoring (`loadConfiguredInventory` and
-`scoreScanLocally` in `@scanent/scanner`, over `@scanent/report`; see
-`docs/design/phase-2-standalone-results.md`). The command line does not run
-local scoring yet, so today `scanent scan` checks the field's shape and does
-not open the file.
+The inventory is read once per run, before any source, whenever the
+configuration names one. A file that is missing or refused stops the run:
+scoring against half an inventory would report known agents as shadow agents.
+It is used by the file output's local results (below) and by nothing else.
 
 ## Running
 
@@ -666,7 +708,10 @@ From a checkout, after `npm ci && npm run build`:
 node packages/scanner/dist/cli.js public-key --config estate.json
 node packages/scanner/dist/cli.js scan --config estate.json --dry-run
 node packages/scanner/dist/cli.js scan --config estate.json
-node packages/scanner/dist/cli.js schedule --config estate.json
+node packages/scanner/dist/cli.js scan --config estate.json --out /var/lib/scanent
+node packages/scanner/dist/cli.js schedule --config estate.json [--out /var/lib/scanent]
+node packages/scanner/dist/cli.js diff <old> <new>
+node packages/scanner/dist/cli.js help
 ```
 
 `@scanent/scanner` declares that file as two commands, `scanent` and its alias
@@ -681,7 +726,107 @@ The log is one JSON line per event on stderr, with kinds and counts only. A
 string with a secret's shape is replaced before it is written.
 
 On `SIGTERM` or `SIGINT` the scanner stops at once. A scan cut short posts
-nothing.
+nothing, and a run that was being written is left under a temporary name that
+no reader takes for a run; the next run after a day removes it.
+
+## Local results
+
+The file output writes one directory per run and a pointer to the newest:
+
+```
+<dir>/
+  latest.json                    { scanId, dir, asOf, complete, agentCount }
+  runs/
+    <scanId>/
+      report.signed.json         the signed report, byte for byte what would be posted
+      results.json               the local results (schema `scanent-results/1`)
+      agents.csv
+      findings.csv
+      summary.html
+      manifest.json              the names, sizes and SHA-256 of the other five
+```
+
+A run is rendered in memory, checked, written under a temporary name and
+renamed into place, so a run directory is whole or absent. Nothing that exists
+is replaced except `latest.json`, and that by a rename; a run whose directory
+already exists fails. Directories are created `0750` and files `0640`. Nothing
+is ever removed unless `retainRuns` is set; then, after a successful write, the
+oldest runs beyond that number are removed, and only a directory whose name is
+a scan id and that holds a `manifest.json`.
+
+Before the first byte is written, the results are walked for any string with a
+secret's shape, and each rendered file is checked again as one text. A hit
+refuses the whole run and names the member or the file, never the value.
+
+What the results say, and do not:
+
+- **A level is stated only for an agent that can be judged.** An agent is
+  judged when every source it was found through was read in full, and so was
+  every source that reports on agents other sources find (today, the
+  register). Otherwise it is `NOT_JUDGED` with the reasons, and has no level,
+  bar or shortfall in any file: the page says "Not judged" and the CSV cells
+  are empty.
+- **What the run could not have evidenced is listed.** Each criterion is
+  marked readable or not: whether any reader this run configured could have
+  reported it met. `coverage.reachableLevel` is the highest level the run could
+  have stated. Without the `inflect-register` source that is H1 at most (with
+  an inventory), because two H2 criteria have no other reader; with it, H3.
+  No reader evidences H4 or H5. So in a run with no register every judged
+  agent is below its bar, and the files say that this is a limit of what was
+  read.
+- **Declared is not observed.** What the inventory supplies is labelled
+  "declared by the operator" in every file, and `observedLevel` is the level
+  with the declarations removed.
+- **An empty scan is a finding** (`EMPTY_SCAN`), never a clean result.
+
+`summary.html` is one self-contained file: no script, no image, no font, no
+link to anywhere, and a Content-Security-Policy that makes the browser hold
+that. Every scanned string is escaped. It prints, and follows the reader's
+light or dark setting.
+
+`agents.csv` and `findings.csv` are UTF-8 with a byte-order mark, CRLF line
+ends and every field quoted. A cell that a spreadsheet would evaluate as a
+formula (it starts with `=`, `+`, `-`, `@`, a tab or a carriage return) is
+prefixed with a single quote.
+
+The same report, inventory and configuration give the same `results.json`,
+CSV files and page, byte for byte.
+
+### Comparing two runs
+
+```bash
+scanent diff <old> <new> [--format text|json] [--trust-key <hex>] [--allow-different-scanner]
+```
+
+Each argument is a `results.json` or a signed report; which is decided by the
+file's content. A signed report is verified first, against `--trust-key` when
+given and otherwise against the key the report itself carries (which shows it
+was not altered, not who signed it; the output says "signer not pinned"), and
+is then scored with no inventory.
+
+Absence is evidence only on a full read:
+
+| Entry | When |
+|---|---|
+| agent `new` | in the newer run and not the older |
+| agent `gone` | in the older run only, and every source it was found through was read in full by the newer run |
+| agent `not seen` | in the older run only, and one of those sources was incomplete or not listed. Nothing is concluded |
+| level up or down | only when both runs judged the agent |
+| orphan credential or finding `closed` | only on the evidence that would close it: its source read in full, the agent present and judged, the scan complete where the rule needs it |
+| `no longer reported, not concluded` | everything else that is absent from the newer run |
+
+Refused, with exit code 2: a file that cannot be read or is neither kind, a
+results file that fails its schema, a report that fails verification, a newer
+run that is not later than the older, different ladder versions, and different
+scanners unless `--allow-different-scanner` (and then nothing absent is
+concluded).
+
+| Exit code | Meaning |
+|---|---|
+| 0 | No difference, and every comparison could be made |
+| 1 | At least one difference |
+| 2 | A usage or input error; nothing was compared |
+| 3 | No difference found, but something could not be compared: an incomplete scan, an agent not judged or not seen |
 
 ## The egress proxy
 
@@ -704,8 +849,8 @@ docker build -f deploy/Dockerfile -t scanent .
 ```
 
 The image is built and checked in CI and is not published anywhere. Its build
-stage compiles the two packages with `tsc`; its runtime stage holds the
-compiled JavaScript, the two package manifests and the production dependencies
+stage compiles the packages with `tsc`; its runtime stage holds the
+compiled JavaScript, the package manifests and the production dependencies
 (`zod`, `js-yaml` with `argparse`, and `typescript`, whose parser the `code`
 source reads JavaScript and TypeScript with). It holds no TypeScript source, no
 compiler step at start and no package manager: `npm`, `npx`, `corepack` and
@@ -716,8 +861,10 @@ the image does contain a shell (BusyBox); starting the scanner does not use it.
 - Entrypoint: `node /app/packages/scanner/dist/cli.js`, in exec form, so `node`
   is PID 1 and receives the signal `docker stop` sends.
 - Default command: `schedule --config /etc/scanent/config.json`.
-- The scanner writes no file. Run it with a read-only root filesystem, every
-  capability dropped and no privilege gain:
+- The scanner writes only under the file output's directory. Run it with a
+  read-only root filesystem, every capability dropped and no privilege gain,
+  and mount that directory as the one writable volume (`-v <host dir>:/out`,
+  writable by uid 1000) when the file output is used:
 
 ```bash
 docker run --rm \
@@ -735,6 +882,8 @@ whose names the configuration gives; none is in the image.
 runs the image with those flags and no network, and checks the user, the
 absence of package managers and TypeScript source, `public-key`, a dry-run
 scan of a two-agent estate verified inside the image through the image's own
-contract module (`deploy/smoke-verify.js`), and that a scan with nowhere to
-post exits non-zero. CI runs it, followed by a Trivy scan that fails on a
+contract module (`deploy/smoke-verify.js`), that a scan with nowhere to
+post exits non-zero, and that `scan --dry-run --out /out` on the read-only
+root with one writable mount writes the six files of a run and that a second
+run leaves the first as it was. CI runs it, followed by a Trivy scan that fails on a
 fixed CRITICAL or HIGH vulnerability.

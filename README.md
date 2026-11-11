@@ -9,13 +9,14 @@ reference), the tools it can call, the model endpoints it uses, and verdicts
 against a six-rung harness ladder (H0 to H5). The result is one signed JSON
 report.
 
-**Status: Phase 1 extraction.** This repository is the scanner carved out of
-the Inflect Compliance repository, with its behaviour unchanged. See
-[docs/EXTRACTION.md](docs/EXTRACTION.md) for exactly what was moved and what
-was not. A container image is built and tested in CI; no image or package is
-published yet. The only output is the signed report (posted to an Inflect
-tenant, or printed with `--dry-run`). Local, human-readable report outputs are
-planned for Phase 2.
+**Status: Phase 2, standalone results.** This repository is the scanner carved
+out of the Inflect Compliance repository (see
+[docs/EXTRACTION.md](docs/EXTRACTION.md) for what was moved and what was not),
+and it now works with no Inflect tenant at all: one command scans an estate
+and writes a page you can open, two spreadsheets, the results as JSON and the
+signed report. See [See your results locally](#see-your-results-locally). A
+container image is built and tested in CI; no image or package is published
+yet.
 
 ## Read-only by design
 
@@ -61,7 +62,7 @@ against fakes of the product's API.
 |---|---|
 | `packages/contract` (`@scanent/contract`) | The report contract: strict schemas, the harness ladder, the findings planner, canonical JSON and signature verification |
 | `packages/scanner` (`@scanent/scanner`) | The scanner and its command line |
-| `packages/report` (`@scanent/report`) | Local results: scores a signed scan against the ladder with no tenant, from the report and an optional operator inventory. Pure functions; the output files arrive later in Phase 2 |
+| `packages/report` (`@scanent/report`) | Local results: scores a signed scan against the ladder with no tenant, from the report and an optional operator inventory; renders `results.json`, the two CSV files and `summary.html`; compares two runs. Pure functions |
 
 ## Quick start, from source
 
@@ -92,9 +93,92 @@ npx aes public-key --config /tmp/scanent-example.json
 
 `--dry-run` prints the signed report on stdout and posts nothing; the log is
 JSON lines on stderr. The `code` source reads local files only, so this example
-makes no network request. The `inflect` block is required by the configuration
-schema even for a dry run; without `--dry-run` the scanner posts the report
-there.
+makes no network request. Without `--dry-run` the scanner posts the report to
+the tenant the configuration's `inflect` block names.
+
+## See your results locally
+
+No Inflect tenant is needed. `--out <dir>` writes each run's results under a
+directory, and the example below uses a configuration with no `inflect` block
+at all.
+
+```bash
+export SCANNER_SIGNING_KEY="$(openssl genpkey -algorithm ed25519)"
+sed "s#__REPO__#$(pwd)#" examples/code-only/config.local.template.json > /tmp/scanent-local.json
+
+npx scanent scan --config /tmp/scanent-local.json --out /tmp/scanent-out
+```
+
+The same with the container. The output directory is the one writable mount;
+the root filesystem stays read-only. The container writes as uid 1000, so the
+directory is opened up for it here (on a host where you can, `chown 1000` it
+instead):
+
+```bash
+mkdir -p /tmp/scanent-config /tmp/scanent-out && chmod 0777 /tmp/scanent-out
+sed "s#__REPO__/examples/code-only#/example#" \
+  examples/code-only/config.local.template.json > /tmp/scanent-config/config.json
+
+docker run --rm \
+  --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  -e SCANNER_SIGNING_KEY \
+  -v /tmp/scanent-config:/etc/scanent:ro \
+  -v "$(pwd)/examples/code-only:/example:ro" \
+  -v /tmp/scanent-out:/out \
+  scanent scan --config /etc/scanent/config.json --out /out
+```
+
+Each run is one new directory, written whole or not at all, and nothing that
+exists is ever overwritten except the `latest.json` pointer:
+
+```
+/tmp/scanent-out/
+  latest.json                  which run is the newest
+  runs/<scanId>/
+    summary.html               open this one
+    agents.csv                 one row per agent, one column per criterion
+    findings.csv               one row per finding
+    results.json               everything above, as data (schema scanent-results/1)
+    report.signed.json         the signed report, byte for byte what would be posted
+    manifest.json              the names, sizes and SHA-256 of the other five
+```
+
+`summary.html` is one self-contained file: no script, no image, no font and no
+request to anywhere, so it can be opened from disk, attached to a ticket or
+printed. What it says, in the order it says it:
+
+- **Completeness first.** Which sources were read in full. An agent whose
+  sources were not is shown as "Not judged", with the reason, and is given no
+  level anywhere. Nothing is shown as gone or resolved on a partial read.
+- **What this run could not have evidenced.** Many criteria are read only from
+  an Inflect tenant's register, and some by no reader yet. The page names
+  each, so "nothing in this run could have seen it" is not mistaken for "a
+  source saw it fail". Without a register no agent can be shown above H1.
+- **The estate**: agents per level, shortfalls, shadow agents, orphan
+  credentials, and every agent against every criterion.
+- **An empty scan is a finding**, never a clean result.
+
+To show who owns an agent without a register, give the configuration an
+inventory (`"inventory": { "path": ... }`, a JSON or CSV file; the example
+uses `examples/code-only/inventory.example.json`). Everything it supplies is
+labelled "declared by the operator" in every file, counts for the H1 criteria
+only, and never enters the signed report.
+
+Compare two runs:
+
+```bash
+npx scanent diff /tmp/scanent-out/runs/<older>/results.json /tmp/scanent-out/runs/<newer>/results.json
+```
+
+`diff` takes `results.json` files or signed reports. It calls an agent "gone",
+or a finding "closed", only when the source that would have listed it was read
+in full by the newer run; otherwise it says "not seen" and why. It exits 0 for
+no difference, 1 for a difference, 2 for an error, and 3 when it found no
+difference but could not compare everything.
+
+No sample output is committed, because a run's files carry its time, a random
+scan id and a signature from the key it was run with. The commands above
+produce one in a few seconds.
 
 ## Quick start, container
 
@@ -118,15 +202,16 @@ docker run --rm \
   scanent scan --dry-run --config /etc/scanent/config.json
 ```
 
-The image runs as a non-root user, writes no file and needs no capability, so
+The image runs as a non-root user, writes nothing outside a mounted output
+directory and needs no capability, so
 `--read-only --cap-drop ALL --security-opt no-new-privileges` is how it is
 meant to run everywhere. `--network none` suits this example only, because the
 `code` source reads local files; a source that reads an API needs a network.
 The mounted files must be readable by uid 1000.
 
 With no arguments the image runs `schedule --config /etc/scanent/config.json`:
-one scan at once, then one every `schedule.everyHours`, each posted to the
-`inflect` block's tenant. See [docs/scanner.md](docs/scanner.md), "Container".
+one scan at once, then one every `schedule.everyHours`, each delivered to the
+configuration's outputs (by default, posted to the `inflect` block's tenant). See [docs/scanner.md](docs/scanner.md), "Container".
 
 Behind a TLS-inspecting proxy, give the build that proxy's certificate
 authority as the optional `ca` build secret; it is used by the two `npm ci`

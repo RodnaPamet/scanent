@@ -1,6 +1,6 @@
 # Phase 2 design: standalone results
 
-Status: design. Steps 1 and 2 of section 8 are implemented; section 10 records
+Status: implemented. Every step of section 8 is built; section 10 records
 what was built and where the code differs from this note. Written against the
 code at commit `6a1df72`. Where this note and the code disagree, the code is right and the
 note is to be corrected in the pull request that finds the difference.
@@ -1169,3 +1169,74 @@ Differences from the sections above:
 Not verified in this step: a `docker build` of `deploy/Dockerfile` (no daemon
 was available). The prune step's commands were run by hand over a copy of the
 build context and passed.
+
+### Steps 3 to 6 (renderers, outputs, the file writer, diff, documents): built
+
+Built: in `@scanent/report`, `render/escape`, `render/results-json`,
+`render/csv`, `render/html`, `render/files`, `render/diff-text` and
+`diff/diff`; in the scanner, `outputs.ts`, `file-output.ts`, `diff-command.ts`,
+the `outputs` field and the optional `inflect` block in `config.ts`, and
+`--out`, `diff` and `help` in `cli.ts`; `deploy/smoke.sh` step 6; the README's
+"See your results locally"; `examples/code-only/config.local.template.json`
+and `inventory.example.json`.
+
+Differences from the sections above:
+
+1. **A not-concluded change is not a difference** (4). A criterion change for
+   an agent that was not judged on one side is listed under "reported, not
+   concluded" and counts towards exit code 3, not 1. A change of judgement
+   (`NOW_NOT_JUDGED`, `NOW_JUDGED`) is a difference. An incomplete scan on
+   either side is itself listed as not concluded (`SCAN_INCOMPLETE:<side>`),
+   so two identical incomplete runs exit 3 even when they hold no agent.
+2. **Two findings close on stricter evidence than "present and judged"** (4).
+   `SHADOW_AGENT` closes on a register link on any scan, and on an inventory
+   link only on a complete scan, which is the planner's rule (1.3).
+   `UNPINNED_WRITE_TOOL` closes only on a complete scan, because the tool may
+   come from a source other than the one the agent was found through. A
+   finding about an agent that is `GONE` is still "no longer reported, not
+   concluded" (`AGENT_GONE`): an agent absent from a scan resolves nothing
+   about it.
+3. **Different scanners, when allowed, conclude nothing from an absence** (4).
+   With `--allow-different-scanner` no agent is `GONE` and nothing is
+   `CLOSED`; each is not concluded with `DIFFERENT_SCANNER`.
+4. **`ORPHAN_CREDENTIAL` findings are compared once**, in the orphan
+   credentials section, and are left out of the findings section (4).
+5. **An agent found through no source is `NOT_SEEN`**, never `GONE` (4): the
+   rule "every kind in its `discoveredVia` is complete" is true of an empty
+   list, and zero is never complete.
+6. **`--out` takes an absolute path**; a relative one is exit code 2 before
+   anything is read (2.2), as for the configuration's `dir`.
+7. **The inventory is loaded whenever it is configured**, whichever outputs
+   are in effect (2.1), so a broken inventory is found on the first run and
+   not on the day somebody adds the file output.
+8. **`manifest.json` names itself** (`"manifest": "scanent-run/1"`) and carries
+   the scan id beside the file list (2.3).
+9. **The page folds the list of unreadable criteria** into a `<details>` (3):
+   in a code-only run it is all 25, and it stood between the reader and the
+   results. The sentence that says what the run could have shown stays open,
+   and print shows the list.
+10. **A secret-shaped name in scanned code never reaches the report** (7.6).
+    The `code` source already drops it, so the "through a source" canary shows
+    the run delivering with the canary in no output; the refusal to sign is
+    tested over every string of a report body directly.
+11. **`parseScannerConfig` has an overload** (2.1): a value that carries an
+    `inflect` block parses to a type that has one. It keeps
+    `public-entry.test.ts`, which reads `parsed.inflect.baseUrl`, compiling
+    unchanged now that the block is optional.
+12. **Existing tests changed**: `public-entry.test.ts`'s export list is
+    lengthened by twelve names, and nothing else. `cli.test.ts` runs unchanged.
+13. **No sample output is committed.** A run's files carry its time, a random
+    scan id and a signature from the key it was run with, so a committed copy
+    could not be reproduced. The README gives the commands instead.
+14. **Layer 3 of 2.6 reads a CSV's cell separator as a space** (2.6). Checked
+    as one text, a URL with a port in one cell followed on the same record by
+    a cell holding `@` matches the contract's "URL with a password" shape,
+    though each cell is clean, and the whole run would be refused. Cells are
+    separate values, so the `","` between two is read as `" "`; everything
+    inside a cell is checked as written. The signed report is not checked as
+    text at all, as 2.6 says: `signReport` already walked it.
+
+Not verified in these steps: a `docker build` of `deploy/Dockerfile` and a run
+of `deploy/smoke.sh` (no daemon was available), so step 6 of the smoke test
+has been read and syntax-checked and not run. The page was checked by its
+tests and by reading it; it was not opened in a browser.
