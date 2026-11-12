@@ -716,17 +716,17 @@ digits (`2`): a cell such as `02`, `2.0` or `two` is refused.
 | `riskAssessedOn` | no | `YYYY-MM-DD` |
 
 The axes and the risk tiers are the ones Inflect's agent register holds, with
-the same names and the same values, so a row says of an agent what a register
-entry would:
+the same names and the same values, so a row uses the register's own words for
+an agent:
 
 | Axis | What it says | Values, in order |
 |---|---|---|
-| `autonomyLevel` | How far the agent acts on its own | 0 suggests to a person and reaches nothing itself; 1 reads data on its own initiative; 2 drafts changes for a person to approve; 3 chains steps unattended between checkpoints; 4 to 6 are higher still, and the register describes 6 as acting unattended across systems |
+| `autonomyLevel` | How far the agent acts on its own | 0 suggests to a person and reaches nothing itself; 1 reads data on its own initiative; 2 drafts changes for a person to approve; 3 chains steps unattended between checkpoints; 4 to 6 are higher still: the register describes 6 as acting unattended across systems, and says no level above 3 grants an agent anything more today |
 | `dataAccessScope` | How far into the organisation's data it reaches, least exposing first | `NONE`: only what a caller hands it. `READ_METADATA`: names, ids, counts, dates. `READ_TENANT_DATA`: reads business content. `WRITE_TENANT_DATA`: writes it. `EXTERNAL_EGRESS`: sends data outside the organisation's boundary |
 | `reversibility` | How hard it is to undo what it did | `REVERSIBLE`: the prior state can be restored from records. `COMPENSABLE`: it cannot, but a compensating action exists. `TERMINAL`: neither |
 | `provenance` | Who wrote the agent | `FIRST_PARTY`: the organisation. `THIRD_PARTY`: a supplier |
 
-Two things differ from the register, and both are scanent's own:
+Three things differ from the register, and all are scanent's own:
 
 - **The tier is declared, not scored.** In the register a tier is the result
   of a risk assessment the register runs. In an inventory it is what the
@@ -734,9 +734,12 @@ Two things differ from the register, and both are scanent's own:
 - **Freshness is an age.** The register has no age limit: there a tier is
   fresh while the agent's newest completed assessment has not been marked
   stale, and it is marked stale when the agent changes in a way that raises
-  risk after it was assessed. An inventory holds no assessment to compare an
-  agent with, so scanent counts a declared tier as fresh for 365 days up to
-  the scan (`INVENTORY_TIER_MAX_AGE_DAYS`).
+  risk, or its declared model changes, after it was assessed. An inventory
+  holds no assessment to compare an agent with, so scanent counts a declared
+  tier as fresh for 365 days up to the scan (`INVENTORY_TIER_MAX_AGE_DAYS`).
+- **A third-party agent needs no named supplier.** The register refuses a
+  `THIRD_PARTY` agent with no supplier recorded. The inventory has no
+  supplier field, so it accepts one.
 
 `scanent-inventory/2` replaced `scanent-inventory/1`, whose axes were
 `autonomy`, `dataClass` and `reach` and whose second tier was `MEDIUM`. A

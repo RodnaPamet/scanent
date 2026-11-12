@@ -5,8 +5,10 @@
  * every agent would read as a shadow agent. The inventory is the operator's own
  * list: an id, a name, an owner, a purpose, and optionally the declared axes
  * and a dated risk tier. The axes and the tiers are the ones Inflect's agent
- * register holds, by the same names and values, so a row says of an agent what
- * a register entry would. Four rules hold it:
+ * register holds, by the same names and values, so a row uses the register's own
+ * words for an agent. (It is not a register entry: the tier is declared rather
+ * than scored, and a THIRD_PARTY agent needs no named supplier here.) Four
+ * rules hold it:
  *
  *   • IT MATCHES BY EXACT `discoveredId` AND NOTHING ELSE. No case folding, no
  *     trimming, no prefix, no name. An exact id is the only match that cannot
@@ -45,7 +47,7 @@ export const MAX_INVENTORY_ROWS = MAX_AGENTS;
  * THIS WINDOW IS SCANENT'S OWN. Inflect's register has no age limit: there a
  * tier is fresh while the agent's newest completed risk assessment has not been
  * marked stale, and it is marked stale when the agent changes in a way that
- * raises risk after it was assessed. An inventory holds no assessment to
+ * raises risk, or its declared model changes, after it was assessed. An inventory holds no assessment to
  * compare an agent with, so a date and a window are what it can state.
  */
 export const INVENTORY_TIER_MAX_AGE_DAYS = 365;

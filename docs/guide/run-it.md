@@ -221,7 +221,7 @@ entra:sp:00000000-0000-0000-0000-000000000000,Invoice triage,finance-operations,
 
   | Column | What to write |
   |---|---|
-  | `autonomyLevel` | How far it acts on its own, as a whole number from 0 to 6. 0: it only suggests to a person. 1: it reads data by itself. 2: it drafts changes that a person approves. 3: it carries out several steps in a row with nobody watching. 4 to 6: more independent still, up to acting across several systems with nobody watching |
+  | `autonomyLevel` | How far it acts on its own, as a whole number from 0 to 6. 0: it only suggests to a person. 1: it reads data by itself. 2: it drafts changes that a person approves. 3: it carries out several steps in a row with nobody watching. 4 to 6: more independent still, up to 6, which acts across several systems with nobody watching. Inflect's own register says a level above 3 changes nothing about what an agent can reach today, so 3 is enough unless your organisation uses the higher numbers |
   | `dataAccessScope` | How far into your data it reaches. `NONE`: only what it is handed. `READ_METADATA`: names, counts and dates, not content. `READ_TENANT_DATA`: it reads your content. `WRITE_TENANT_DATA`: it changes your content. `EXTERNAL_EGRESS`: it sends your data outside your organisation |
   | `reversibility` | How hard it is to undo what it does. `REVERSIBLE`: it can be put back as it was. `COMPENSABLE`: it cannot, but something can be done to make up for it. `TERMINAL`: neither, for example a message that has been sent |
   | `provenance` | Who wrote it. `FIRST_PARTY`: your organisation. `THIRD_PARTY`: a supplier |

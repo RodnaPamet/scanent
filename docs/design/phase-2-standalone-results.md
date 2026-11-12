@@ -139,6 +139,10 @@ gets `caveats: ['OTHER_SOURCE_INCOMPLETE:<kind>']`, shown beside the level.
 
 ### 1.5 The inventory file
 
+> The schema shown in this section, `scanent-inventory/1`, is retired and the
+> current reader refuses it. The addendum at the end of section 10 holds the
+> current one, `scanent-inventory/2`.
+
 Configured, never a flag:
 
 ```json

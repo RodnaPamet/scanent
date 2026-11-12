@@ -160,7 +160,9 @@ and the [threat model](../threat-model.md).
 - **Scale**, at 500 agents in every run.
 - **Compatibility.** Files written by an earlier commit of the code
   (`190f3fb`, the same unreleased version 0.12.0) are read by the current
-  code. No released version exists to compare with.
+  code, with one exception: its two inventory files are
+  `scanent-inventory/1`, which the current code refuses with a message
+  saying what changed. No released version exists to compare with.
 - **The deployment templates.** Compose, the chart, the air-gapped bundle's
   scripts (against stand-ins for the container runtime and `cosign`).
 - **The documents.** Several pages are generated from the code or checked
