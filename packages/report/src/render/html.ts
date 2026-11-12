@@ -99,10 +99,11 @@ const CELL_EVIDENCED: CellStyle = { code: 'E', cls: 'c-e', text: 'Evidenced: a s
 const CELL_DECLARED: CellStyle = { code: 'D', cls: 'c-d', text: 'Evidenced on what the operator declared in the inventory, not observed' };
 const CELL_UNEVIDENCED: CellStyle = { code: 'M', cls: 'c-m', text: 'Reported met without evidence; counts as not met' };
 const CELL_NOT_MET: CellStyle = { code: 'N', cls: 'c-n', text: 'Not met: a source saw it fail' };
+const CELL_NOT_MET_DECLARED: CellStyle = { code: 'n', cls: 'c-n', text: 'Not met on what the operator declared in the inventory; no source saw it fail' };
 const CELL_UNANSWERED: CellStyle = { code: '·', cls: 'c-u', text: 'Unanswered: a configured reader could have reported it and none did; counts as not met' };
 const CELL_NOT_READABLE: CellStyle = { code: '–', cls: 'c-x', text: 'Not readable: nothing this run was configured to read could have reported it; counts as not met' };
 
-const LEGEND: readonly CellStyle[] = [CELL_EVIDENCED, CELL_DECLARED, CELL_UNEVIDENCED, CELL_NOT_MET, CELL_UNANSWERED, CELL_NOT_READABLE];
+const LEGEND: readonly CellStyle[] = [CELL_EVIDENCED, CELL_DECLARED, CELL_UNEVIDENCED, CELL_NOT_MET, CELL_NOT_MET_DECLARED, CELL_UNANSWERED, CELL_NOT_READABLE];
 
 function cellStyle(cell: LocalCriterionCell): CellStyle {
     switch (cell.state) {
@@ -111,7 +112,7 @@ function cellStyle(cell: LocalCriterionCell): CellStyle {
         case 'MET_UNEVIDENCED':
             return CELL_UNEVIDENCED;
         case 'NOT_MET':
-            return CELL_NOT_MET;
+            return cell.basis === 'DECLARED' ? CELL_NOT_MET_DECLARED : CELL_NOT_MET;
         default:
             return cell.readable ? CELL_UNANSWERED : CELL_NOT_READABLE;
     }
@@ -504,6 +505,18 @@ ${unmatched.notice}<ul class="ids">${unmatched.shown.map((id) => html`<li><code 
 </section>`;
 }
 
+/**
+ * What the page may say about the report's `registeredAgentId` claims. Three
+ * cases, and the middle one is the common one: a run with no register source
+ * read no register, so "read by this run" would be a claim about nothing.
+ */
+function registerClaimsText(r: LocalResults): string {
+    if (!r.scan.registerClaimsVerified) return 'Taken from the report as stated; not verified by this run';
+    return r.sources.some((s) => s.kind === 'inflect-register')
+        ? 'Read from the register by this run'
+        : 'No register was read by this run';
+}
+
 function provenance(r: LocalResults): SafeHtml {
     const row = (label: string, value: HtmlValue): SafeHtml => html`<div><dt>${label}</dt><dd>${value}</dd></div>`;
     return html`<section id="provenance" aria-labelledby="provenance-h">
@@ -516,7 +529,7 @@ ${row('Report contract', html`<code>${r.scan.contract}</code>`)}
 ${row('Signed report SHA-256', html`<code class="id">${r.report.sha256}</code>`)}
 ${row('Signer key fingerprint', html`<code class="id">${r.report.signerKeyFingerprint}</code>`)}
 ${row('Signer', r.report.signerPinned ? 'Pinned: verified against a key supplied apart from the report' : 'Not pinned: verified against the key the report itself carries, which shows integrity and not origin')}
-${row('Register claims', r.scan.registerClaimsVerified ? 'Read by this run' : 'Taken from the report as stated; not verified by this run')}
+${row('Register claims', registerClaimsText(r))}
 ${row('Inventory SHA-256', r.inventory === null ? 'No inventory was supplied' : html`<code class="id">${r.inventory.sha256}</code> (${r.inventory.format})`)}
 ${row('Files of this run', Object.values(RUN_FILE_NAMES).map((name, i) => html`${i > 0 ? ', ' : ''}<code>${name}</code>`))}
 </dl>

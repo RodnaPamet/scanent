@@ -223,19 +223,21 @@ Then one small cell for each check:
 | E | `EVIDENCED` | Met. A system showed it |
 | D | `DECLARED` | Met on what your inventory says. The scanner did not see it for itself |
 | M | `MET_UNEVIDENCED` | Reported as met, with nothing to show for it. Counts as not met |
-| N | `NOT_MET` | Not met. A system showed it failing. On two of the H1 checks it can also come from your inventory: see below the table |
+| N | `NOT_MET` | Not met. A system showed it failing |
+| n | `NOT_MET_DECLARED` | Not met on what your inventory says. No system saw it fail. Only on two of the H1 checks: see below the table |
 | · | `UNANSWERED` | Nobody answered, although something in this scan could have. Counts as not met |
 | – | `NOT_READABLE` | Nothing in this scan could have answered. Counts as not met |
 
-The difference between N and the last two matters. N is a failure somebody
-saw. The dot and the dash mean nobody looked.
+The difference between a capital N and the last two matters. N is a failure
+somebody saw. The dot and the dash mean nobody looked.
 
-One exception, on the H1 checks only. When you give an inventory, an N on
-`H1.axes_declared` or `H1.tier_scored_fresh` can come from the inventory and
-not from a system: the line for that agent leaves out the four descriptions
-or the risk rating, or its rating is not dated within the 365 days before
-the scan. The page's own pop-up text for an N cell says "a source saw it fail"
-in that case too. Read it as "your inventory does not say so".
+The small n is different again, and it appears on two checks only. When you
+give an inventory, `H1.axes_declared` or `H1.tier_scored_fresh` is not met
+when the line for that agent leaves out the four descriptions or the risk
+rating, or when its rating is not dated within the 365 days before the scan.
+No system saw anything fail. The page's pop-up text for that cell says "Not
+met on what the operator declared in the inventory; no source saw it fail".
+The fix is to complete the inventory.
 
 **Reach** is what the agent can do. A tool that does not state that it only
 reads is treated as able to change things. An agent is shown as "Read only"
@@ -287,14 +289,16 @@ files belong together.
 Two lines here are easy to misread:
 
 - **"Signer key fingerprint"** is a checksum of the public half of the
-  signing key. It is not the key itself, so it does not look like the value
-  the set-up step and the check step printed for the key. That value is in
-  the signed report file.
-- **"Register claims: Read by this run"** means that this page was made by
-  the same run that read your systems, and not later from somebody else's
-  report. It does not mean that an Inflect register was read. Whether one
-  was read is stated in the Estate summary, in the line that starts
-  "Registration is taken from".
+  signing key. It is not the key itself, so it does not look like the key.
+  The set-up step and the check step print both: the key, and beside it a
+  line "Signer key fingerprint, as a report's summary shows it". That second
+  value is the one to compare with this page.
+- **"Register claims"** has three possible values. "No register was read by
+  this run" is the usual one: the scan read no Inflect register, so nothing
+  here comes from one. "Read from the register by this run" means the scan
+  read an Inflect register itself. "Taken from the report as stated; not
+  verified by this run" appears only when the page was made later from
+  somebody else's report.
 
 ## Words the results use
 
@@ -403,11 +407,10 @@ with nothing to say is left out.
 4. **Levels.** "level up" or "level down". Levels are compared only for
    agents that both scans judged.
 5. **Criteria.** One line for each check whose answer changed, written as
-   "before -> after". Each side is a state, sometimes followed by a slash and
-   where the answer came from. `EVIDENCED/DECLARED` is what the spreadsheet
-   calls `DECLARED`: met on what your inventory says. `EVIDENCED/OBSERVED` is
-   the spreadsheet's `EVIDENCED`. The comparison writes `UNANSWERED` both
-   where the spreadsheet says `UNANSWERED` and where it says `NOT_READABLE`.
+   "before -> after". Each side is the word the spreadsheet holds for that
+   cell, from the table above: for example `NOT_READABLE -> DECLARED` for a
+   check that nothing could answer before and that your inventory answers
+   now.
 6. **Criteria reported, not concluded.** The same lines, for an agent that
    one of the two scans did not judge. Nothing is concluded from them.
 7. **Reach, bar, shortfall and registration.** One line for each of these

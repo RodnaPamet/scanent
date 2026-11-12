@@ -4,6 +4,7 @@
  */
 import { generateKeyPairSync } from 'crypto';
 
+import { harnessKeyFingerprint } from '@rodnapamet/scanent-contract/harness-contract';
 import { InventoryRefused } from '@scanent/report/results/inventory';
 import { parseScannerConfig, type ScannerConfig } from '../src/config';
 import {
@@ -90,7 +91,12 @@ describe('config.mode', () => {
 
 describe('signing-key', () => {
     it('passes an Ed25519 key and shows its public half', () => {
-        expect(checkSigningKey(config(), { SCANNER_SIGNING_KEY: PEM }, new Set())).toMatchObject({ status: 'PASS', detail: expect.stringMatching(/^ed25519 [0-9a-f]{64}$/) });
+        const check = checkSigningKey(config(), { SCANNER_SIGNING_KEY: PEM }, new Set());
+        expect(check).toMatchObject({ status: 'PASS', detail: expect.stringMatching(/^ed25519 [0-9a-f]{64}, fingerprint [0-9a-f]{64}$/) });
+        // The fingerprint is the one a report signed with this key shows, not a second spelling of the key.
+        const [, publicKeyHex, fingerprint] = /^ed25519 ([0-9a-f]{64}), fingerprint ([0-9a-f]{64})$/.exec(check.detail ?? '') ?? [];
+        expect(fingerprint).toBe(harnessKeyFingerprint(publicKeyHex));
+        expect(fingerprint).not.toBe(publicKeyHex);
     });
 
     it('a missing key is a credential failure; a wrong or unparseable one a configuration failure; neither shows the key', () => {

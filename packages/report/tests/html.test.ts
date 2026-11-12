@@ -392,6 +392,24 @@ describe('4. provenance', () => {
         expect(page).toContain(`<title>scanent results: acme, ${results.scan.id}</title>`);
     });
 
+    it('says "read from the register" only for a run that read one, and that none was read otherwise', () => {
+        const provenanceOf = (results: LocalResults): string => {
+            const page = renderSummaryHtml(results);
+            return page.slice(page.indexOf('<section id="provenance"'));
+        };
+        // No register source: this run's own results, and no register was read.
+        const none = provenanceOf(plainResults());
+        expect(none).toContain('<dt>Register claims</dt><dd>No register was read by this run</dd>');
+        expect(none).not.toContain('Read from the register by this run');
+        // The register source is listed: the claims are this run's own read.
+        const body = standaloneBody();
+        const withRegister = provenanceOf(
+            scoreReportLocally(input({ ...body, population: { sources: [...body.population.sources, { kind: 'inflect-register', status: 'COMPLETE', rows: 0 }] } })),
+        );
+        expect(withRegister).toContain('<dt>Register claims</dt><dd>Read from the register by this run</dd>');
+        expect(withRegister).not.toContain('No register was read');
+    });
+
     it('says when the signer was not pinned and the register claims were not verified', () => {
         const page = renderSummaryHtml(
             scoreReportLocally(
@@ -441,9 +459,9 @@ describe('5. accessibility basics', () => {
             expect(code.trim().length).toBeGreaterThan(0);
             expect(title.endsWith(text)).toBe(true);
         }
-        // Declared, observed and unreadable each have their own code, and the legend explains all six.
+        // Declared, observed and unreadable each have their own code, and the legend explains all seven.
         expect(new Set(cells.map((c) => c[2]))).toEqual(new Set(['E', 'D', '·', '–']));
-        expect(page.match(/<li><span class="cell c-[a-z]" aria-hidden="true">/g)).toHaveLength(6);
+        expect(page.match(/<li><span class="cell c-[a-z]" aria-hidden="true">/g)).toHaveLength(7);
     });
 
     it('a cell reported met without evidence, and one not met, have their own codes', () => {
@@ -460,6 +478,21 @@ describe('5. accessibility basics', () => {
         const page = renderSummaryHtml(mixed);
         expect(page).toContain('<td class="cell c-m" title="H1.registered: Reported met without evidence; counts as not met">');
         expect(page).toContain('<td class="cell c-n" title="H1.owner: Not met: a source saw it fail">');
+    });
+
+    it('a criterion not met on the inventory alone does not say that a source saw it fail', () => {
+        // The operator's row has no axes: nothing was observed, and the page must not say something was.
+        const base = inventoryResults();
+        const declaredMiss: LocalResults = {
+            ...base,
+            agents: base.agents.map((a) => ({
+                ...a,
+                criteria: a.criteria.map((c) => (c.criterion === 'H1.axes_declared' ? { ...c, state: 'NOT_MET' as const, basis: 'DECLARED' as const } : c)),
+            })),
+        };
+        const page = renderSummaryHtml(declaredMiss);
+        expect(page).toContain('<td class="cell c-n" title="H1.axes_declared: Not met on what the operator declared in the inventory; no source saw it fail"><span aria-hidden="true">n</span>');
+        expect(page).not.toContain('H1.axes_declared: Not met: a source saw it fail');
     });
 });
 

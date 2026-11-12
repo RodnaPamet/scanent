@@ -126,7 +126,7 @@ describe('1. a healthy estate', () => {
             clock: 'PASS',
             egress: 'NOT_APPLICABLE',
         });
-        expect(of(report, 'local', 'signing-key').detail).toMatch(/^ed25519 [0-9a-f]{64}$/);
+        expect(of(report, 'local', 'signing-key').detail).toMatch(/^ed25519 [0-9a-f]{64}, fingerprint [0-9a-f]{64}$/);
         expect(of(report, 'local', 'output.dir').detail).toContain('nothing was written');
         expect(of(report, 'local', 'clock').detail).toMatch(/^2 seconds from the sources' clocks/);
 

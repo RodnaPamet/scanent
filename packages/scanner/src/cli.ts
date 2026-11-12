@@ -48,7 +48,7 @@ import { checkInitTarget, CONFIG_FILE, InitRefused, writeInit } from './init/wri
 import { generateSigningKey, KeygenError } from './keygen';
 import { jsonLineLog } from './log';
 import { OutputsError, resolveOutputs, scanAndDeliver } from './outputs';
-import { rawPublicKeyHex } from './report';
+import { publicKeyFingerprint, rawPublicKeyHex } from './report';
 import { loadSigningKey } from './scan';
 import { runOnSchedule } from './schedule';
 import { resolveSecretEnv, SecretFileError } from './secrets';
@@ -56,6 +56,16 @@ import type { SourceKind } from './source';
 import { buildSupportBundle, renderSupportBundle } from './support-bundle';
 
 /** The value of `--name <value>` or `--name=<value>`; null when the flag is absent or has no value. */
+/**
+ * The line that ties a key to the reports it signs. A report's summary prints
+ * "Signer key fingerprint", which is a checksum of the key and so does not look
+ * like the key: without this line a reader comparing the two sees two strings
+ * that share nothing.
+ */
+function fingerprintLine(publicKeyHex: string): string {
+    return `Signer key fingerprint, as a report's summary shows it: ${publicKeyFingerprint(publicKeyHex)}`;
+}
+
 function arg(argv: readonly string[], name: string): string | null {
     const joined = argv.find((a) => a.startsWith(`${name}=`));
     if (joined !== undefined) return joined.slice(name.length + 1) || null;
@@ -253,6 +263,7 @@ function runKeygen(argv: readonly string[], cwd: string): number {
         const { publicKeyHex } = generateSigningKey(path);
         stdout(`${publicKeyHex}\n`);
         stderr(`signing key written to ${path} (mode 0600). The line above is its public key; the private key is in the file only.\n`);
+        stderr(`${fingerprintLine(publicKeyHex)}\n`);
         return EXIT.OK;
     } catch (err) {
         if (!(err instanceof KeygenError)) throw err;
@@ -406,7 +417,12 @@ async function runInit(argv: readonly string[], io: CliIo): Promise<number> {
     } else {
         if (!written.signingKey.created) lines.push('', `Kept the existing signing key at ${written.signingKey.path}; it was not replaced.`);
         if (written.signingKey.publicKeyHex !== null) {
-            lines.push('', `Signing key, public half: ${written.signingKey.publicKeyHex}`, '  Register this only if you post to a tenant.');
+            lines.push(
+                '',
+                `Signing key, public half: ${written.signingKey.publicKeyHex}`,
+                '  Register this only if you post to a tenant.',
+                `  ${fingerprintLine(written.signingKey.publicKeyHex)}`,
+            );
         }
     }
     if (written.warnings.length > 0) lines.push('', ...written.warnings.map((w) => `Warning: ${w}`));
@@ -587,7 +603,10 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: 
         case 'public-key': {
             const pem = secrets[config.scanner.signingKeyEnv];
             if (!pem) throw new Error(`environment variable ${config.scanner.signingKeyEnv} is not set`);
-            process.stdout.write(`${rawPublicKeyHex(loadSigningKey(pem).publicKey)}\n`);
+            const publicKeyHex = rawPublicKeyHex(loadSigningKey(pem).publicKey);
+            // The key alone on stdout, so a script can take it; the fingerprint beside it.
+            process.stdout.write(`${publicKeyHex}\n`);
+            process.stderr.write(`${fingerprintLine(publicKeyHex)}\n`);
             return 0;
         }
         case 'scan': {

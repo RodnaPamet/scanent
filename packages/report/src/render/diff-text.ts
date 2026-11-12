@@ -12,8 +12,9 @@
  * line is passed through `terminalLine`, so an id can neither forge a line of
  * this output nor send the terminal an escape sequence.
  */
+import { csvCriterionState } from './csv';
 import { terminalLine } from './escape';
-import type { AgentNotSeen, FindingChange, OrphanChange, ResultsDiff } from '../diff/diff';
+import type { AgentNotSeen, CriterionChange, FindingChange, OrphanChange, ResultsDiff } from '../diff/diff';
 
 const SUMMARY: Readonly<Record<ResultsDiff['outcome'], string>> = {
     SAME: 'No difference, and every comparison could be made.',
@@ -143,6 +144,7 @@ export function renderDiffText(diff: ResultsDiff): string {
     return `${lines.map(terminalLine).join('\n')}\n`;
 }
 
-function cell(c: { readonly state: string; readonly basis: string | null }): string {
-    return c.basis === null ? c.state : `${c.state}/${c.basis}`;
+/** One side of a criterion change, in the word `agents.csv` uses for that cell. */
+function cell(c: CriterionChange['from']): string {
+    return csvCriterionState(c);
 }

@@ -18,10 +18,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
-import { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { HARNESS_CONTRACT_V3, harnessKeyFingerprint, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { main, run, USAGE_HINT } from '../src/cli';
 import { ConfigError } from '../src/config';
-import { rawPublicKeyHex } from '../src/report';
+import { publicKeyFingerprint, rawPublicKeyHex } from '../src/report';
 import * as schedule from '../src/schedule';
 
 const REPO = resolve(__dirname, '..', '..', '..');
@@ -96,6 +96,9 @@ describe('2. public-key', () => {
         expect(await main(['public-key', '--config', configFile], ENV)).toBe(0);
         expect(out.join('')).toBe(`${PUBLIC_HEX}\n`);
         expect(PUBLIC_HEX).toMatch(/^[0-9a-f]{64}$/);
+        // The fingerprint a report signed with this key shows, beside the key and not in its place.
+        expect(err.join('')).toBe(`Signer key fingerprint, as a report's summary shows it: ${publicKeyFingerprint(PUBLIC_HEX)}\n`);
+        expect(publicKeyFingerprint(PUBLIC_HEX)).toBe(harnessKeyFingerprint(PUBLIC_HEX));
     });
 
     it('names the missing variable, and never a key', async () => {

@@ -6,6 +6,8 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, sy
 import { tmpdir } from 'os';
 import { join } from 'path';
 
+import { harnessKeyFingerprint } from '@rodnapamet/scanent-contract/harness-contract';
+
 import { main } from '../src/cli';
 import { credentialEnvNames, parseScannerConfig } from '../src/config';
 import { planInit } from '../src/init/plan';
@@ -145,7 +147,9 @@ describe('scanent init --answers', () => {
         const printed = err.join('');
         expect(out).toEqual([]);
         expect(printed).toContain(`${join(target, 'config.json')}  (mode 0600)`);
-        expect(printed).toContain(`Signing key, public half: ${rawPublicKeyHex(loadSigningKey(pem).publicKey)}`);
+        const publicKeyHex = rawPublicKeyHex(loadSigningKey(pem).publicKey);
+        expect(printed).toContain(`Signing key, public half: ${publicKeyHex}`);
+        expect(printed).toContain(`Signer key fingerprint, as a report's summary shows it: ${harnessKeyFingerprint(publicKeyHex)}`);
         expect(printed).toContain('Okta (service apps and API tokens)  [okta-app]');
         expect(printed).toContain('Agent code (local directories)  [code]');
         expect(printed).not.toContain('[entra-sp]');

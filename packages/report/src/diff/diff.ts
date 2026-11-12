@@ -91,8 +91,14 @@ export interface LevelChange {
 export interface CriterionChange {
     readonly discoveredId: string;
     readonly criterion: HarnessCriterionId;
-    readonly from: { readonly state: CriterionState; readonly basis: VerdictBasis | null };
-    readonly to: { readonly state: CriterionState; readonly basis: VerdictBasis | null };
+    /**
+     * `readable` is carried so a comparison can use the words `agents.csv` uses
+     * (`NOT_READABLE` for an unanswered cell nothing configured could have
+     * answered). It does not decide whether a cell changed: `state` and `basis`
+     * do.
+     */
+    readonly from: { readonly state: CriterionState; readonly basis: VerdictBasis | null; readonly readable: boolean };
+    readonly to: { readonly state: CriterionState; readonly basis: VerdictBasis | null; readonly readable: boolean };
     /** False when the agent was not judged on one side: reported, not concluded. */
     readonly concluded: boolean;
 }
@@ -361,9 +367,18 @@ export function diffResults(prev: LocalResults, next: LocalResults, opts: { read
         const cellsBefore = new Map(a.criteria.map((c) => [c.criterion, c]));
         for (const cell of b.criteria) {
             const old = cellsBefore.get(cell.criterion);
-            const from = { state: old?.state ?? ('UNANSWERED' as const), basis: old?.basis ?? null };
+            // A criterion the older run did not list at all is unanswered there, and
+            // nothing says whether it could have been read: it is left readable, so
+            // it is not given the stronger word.
+            const from = { state: old?.state ?? ('UNANSWERED' as const), basis: old?.basis ?? null, readable: old?.readable ?? true };
             if (from.state === cell.state && from.basis === cell.basis) continue;
-            criteria.push({ discoveredId: id, criterion: cell.criterion, from, to: { state: cell.state, basis: cell.basis }, concluded: bothJudged });
+            criteria.push({
+                discoveredId: id,
+                criterion: cell.criterion,
+                from,
+                to: { state: cell.state, basis: cell.basis, readable: cell.readable },
+                concluded: bothJudged,
+            });
             if (!bothJudged) notConcluded.push(`CRITERION_NOT_CONCLUDED:${id}:${cell.criterion}`);
         }
     }

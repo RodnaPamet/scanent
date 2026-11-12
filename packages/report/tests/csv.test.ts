@@ -191,6 +191,8 @@ describe('3. content', () => {
         expect(csvCriterionState({ ...cell, state: 'EVIDENCED', basis: 'DECLARED', readable: true })).toBe('DECLARED');
         expect(csvCriterionState({ ...cell, state: 'MET_UNEVIDENCED', basis: 'OBSERVED', readable: true })).toBe('MET_UNEVIDENCED');
         expect(csvCriterionState({ ...cell, state: 'NOT_MET', basis: 'OBSERVED', readable: false })).toBe('NOT_MET');
+        // Not met on the operator's inventory is not the word for a failure a source saw.
+        expect(csvCriterionState({ ...cell, state: 'NOT_MET', basis: 'DECLARED', readable: true })).toBe('NOT_MET_DECLARED');
         expect(csvCriterionState({ ...cell, state: 'UNANSWERED', basis: null, readable: true })).toBe('UNANSWERED');
         expect(csvCriterionState({ ...cell, state: 'UNANSWERED', basis: null, readable: false })).toBe('NOT_READABLE');
     });

@@ -48,9 +48,19 @@ function csvFile(header: readonly string[], rows: readonly (readonly (string | n
     return CSV_BOM + [header, ...rows].map((row) => row.map(csvCell).join(',') + CRLF).join('');
 }
 
-/** The word one criterion cell holds in `agents.csv`. */
-export function csvCriterionState(cell: LocalCriterionCell): string {
+/**
+ * The word one criterion cell holds in `agents.csv`, and in a comparison of two
+ * runs: one vocabulary, so a reader of both sees the same word for the same
+ * cell.
+ *
+ * A verdict taken from the operator's inventory is never given the word of an
+ * observed one. `DECLARED` is a criterion met on what the operator wrote, and
+ * `NOT_MET_DECLARED` one not met on it (a row with no axes, no tier, or a tier
+ * dated outside the window): no source saw anything either way.
+ */
+export function csvCriterionState<T extends Pick<LocalCriterionCell, 'state' | 'basis' | 'readable'>>(cell: T): string {
     if (cell.state === 'EVIDENCED') return cell.basis === 'DECLARED' ? 'DECLARED' : 'EVIDENCED';
+    if (cell.state === 'NOT_MET') return cell.basis === 'DECLARED' ? 'NOT_MET_DECLARED' : 'NOT_MET';
     if (cell.state === 'UNANSWERED') return cell.readable ? 'UNANSWERED' : 'NOT_READABLE';
     return cell.state;
 }

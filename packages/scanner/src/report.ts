@@ -65,6 +65,7 @@ import {
     MAX_TOOLS_PER_AGENT,
     MAX_UNBOUND_CREDENTIALS,
     SOURCE_KINDS_V3,
+    harnessKeyFingerprint,
     harnessSignedMessage,
     type HarnessReportAgent,
     type HarnessReportBodyV3,
@@ -253,6 +254,20 @@ export class ReportRefusedLocally extends Error {
 export function rawPublicKeyHex(publicKey: KeyObject): string {
     // SPKI DER for Ed25519 is a fixed 12-byte prefix followed by the raw key.
     return publicKey.export({ format: 'der', type: 'spki' }).subarray(12).toString('hex');
+}
+
+/**
+ * The fingerprint a run's results print for the key that signed it ("Signer
+ * key fingerprint"), from the raw public key in hex. It is the contract's own
+ * `harnessKeyFingerprint`, so the value shown beside a key when it is made or
+ * checked is the value a report made with it will show. The two strings are
+ * different on purpose: the key is what a tenant registers, the fingerprint is
+ * a checksum of it.
+ */
+export function publicKeyFingerprint(publicKeyHex: string): string {
+    const fingerprint = harnessKeyFingerprint(publicKeyHex);
+    if (fingerprint === null) throw new Error('not an Ed25519 public key');
+    return fingerprint;
 }
 
 /**

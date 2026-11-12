@@ -836,7 +836,8 @@ mode 0700):
 | `scanent.env` | 0600 | One line per credential the configuration names: the NAME and nothing after the `=`. The one value it ever holds is the path of the signing key `init` created |
 | `signing-key.pem` | 0600 | An Ed25519 signing key, unless `--no-keygen` |
 
-It then prints the public half of the key, the read-only access each chosen
+It then prints the public half of the key and its fingerprint as a report's
+summary shows it, the read-only access each chosen
 source needs ([access.md](access.md) is the same tables), and the next steps.
 It makes no network request and reads no credential.
 
@@ -920,6 +921,12 @@ public key in hex on stdout (what `public-key` prints). The private key goes
 to the file and nowhere else. An existing file is refused with exit 2; there
 is no overwrite. `init` calls the same function.
 
+`keygen`, `public-key`, `init` and `doctor` also print the key's fingerprint,
+on stderr for the first two so that stdout stays the key alone. It is the
+SHA-256 of the key's SPKI encoding, the value a run's summary shows as "Signer
+key fingerprint", so the key and a report signed with it can be matched by
+eye.
+
 A run with no tenant still signs: the signature is what lets `diff` and a
 later reader show that a report was not altered. The public half needs
 registering only with a tenant.
@@ -991,7 +998,7 @@ The local checks, under the scope `local`:
 |---|---|
 | `config.valid` | The file parses under the strict schema. If it does not, every other check is `blocked` |
 | `config.mode` | The file is not writable by group or others |
-| `signing-key` | The key resolves and is Ed25519 in PKCS#8 PEM; the detail is its public half |
+| `signing-key` | The key resolves and is Ed25519 in PKCS#8 PEM; the detail is its public half, and the fingerprint a report signed with it shows |
 | `secret-files` | Every `_FILE` in use passes the rules below. A file readable by group or others outside `/run/secrets/` and `/var/run/secrets/` is a warning |
 | `output.dir` | The file output's directory (or `--out`) exists, is a directory and not a link, and is writable by this user, or does not exist and can be created. Writable by other users is a warning |
 | `inventory` | The inventory, when one is configured, loads; the detail is its row count |
@@ -1400,6 +1407,12 @@ holds no unpinned write tool. It is `code` for a tool defined in code and
 `mcp` for a tool an MCP server serves, and it also names where a tool the
 report left out would have been. The member is optional, so a file written by
 an earlier version, which has none, still reads.
+
+A criterion cell in `agents.csv` holds one of seven words: `EVIDENCED`,
+`DECLARED` (met on the inventory), `MET_UNEVIDENCED`, `NOT_MET` (a source saw
+it fail), `NOT_MET_DECLARED` (not met on the inventory; no source saw
+anything), `UNANSWERED` and `NOT_READABLE`. `scanent diff` prints the same
+words for each side of a changed cell.
 
 `agents.csv` and `findings.csv` are UTF-8 with a byte-order mark, CRLF line
 ends and every field quoted. A cell that a spreadsheet would evaluate as a

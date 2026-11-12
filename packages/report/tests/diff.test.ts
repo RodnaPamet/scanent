@@ -11,6 +11,7 @@ import type { HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-c
 import { ALL_HARNESS_CRITERIA } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { DIFF_SCHEMA, diffExitCode, DiffRefused, diffResults, TOOL_EVIDENCE_OLDER_RULE, type ResultsDiff } from '../src/diff/diff';
+import { csvCriterionState } from '../src/render/csv';
 import { renderDiffText } from '../src/render/diff-text';
 import { terminalJson, terminalLine } from '../src/render/escape';
 import { stableJson } from '../src/render/results-json';
@@ -174,8 +175,8 @@ describe('levels are compared only where both runs judged the agent', () => {
             {
                 discoveredId: ALPHA,
                 criterion: 'H2.credential_bound',
-                from: { state: 'EVIDENCED', basis: 'OBSERVED' },
-                to: { state: 'UNANSWERED', basis: null },
+                from: { state: 'EVIDENCED', basis: 'OBSERVED', readable: true },
+                to: { state: 'UNANSWERED', basis: null, readable: true },
                 concluded: false,
             },
         ]);
@@ -185,7 +186,7 @@ describe('levels are compared only where both runs judged the agent', () => {
         const text = renderDiffText(diff);
         expect(text).toContain(`${ALPHA}: was judged and is now not judged; no level is compared (SOURCE_INCOMPLETE:entra-sp:TIME_BOX)`);
         expect(text).toContain('Criteria reported, not concluded (the agent was not judged in one of the runs)');
-        expect(text).toContain(`${ALPHA} H2.credential_bound: EVIDENCED/OBSERVED -> UNANSWERED`);
+        expect(text).toContain(`${ALPHA} H2.credential_bound: EVIDENCED -> UNANSWERED`);
         expect(text).not.toMatch(/\nCriteria\n/);
     });
 
@@ -225,7 +226,27 @@ describe('criteria, reach, bar, shortfall and registration', () => {
         expect(declared.map((c) => c.criterion)).toEqual(['H1.registered', 'H1.owner', 'H1.axes_declared', 'H1.tier_scored_fresh']);
         for (const c of declared) expect(c).toMatchObject({ from: { state: 'UNANSWERED', basis: null }, to: { state: 'EVIDENCED', basis: 'DECLARED' }, concluded: true });
         expect(diff.attributes).toContainEqual({ discoveredId: ALPHA, attribute: 'registration', from: 'NONE', to: 'DECLARED_INVENTORY' });
-        expect(renderDiffText(diff)).toContain(`${ALPHA} H1.owner: UNANSWERED -> EVIDENCED/DECLARED`);
+        // The older run had no inventory and no register, so nothing could have answered H1.owner there.
+        expect(renderDiffText(diff)).toContain(`${ALPHA} H1.owner: NOT_READABLE -> DECLARED`);
+    });
+
+    it('prints each side of a changed cell in the word agents.csv holds for that cell', () => {
+        const prev = plainResults();
+        const next = score(laterBody(), true);
+        const text = renderDiffText(diffResults(prev, next));
+        const cellOf = (results: LocalResults, id: string, criterion: string) => {
+            const cell = results.agents.find((a) => a.discoveredId === id)?.criteria.find((c) => c.criterion === criterion);
+            if (cell === undefined) throw new Error(`no cell ${id} ${criterion}`);
+            return cell;
+        };
+        const changed = diffResults(prev, next).criteria;
+        expect(changed.length).toBeGreaterThan(0);
+        for (const c of changed) {
+            const line = `${c.discoveredId} ${c.criterion}: ${csvCriterionState(cellOf(prev, c.discoveredId, c.criterion))} -> ${csvCriterionState(cellOf(next, c.discoveredId, c.criterion))}`;
+            expect(text).toContain(line);
+        }
+        // The two forms the comparison used to print, which the spreadsheet never holds.
+        expect(text).not.toMatch(/EVIDENCED\/(OBSERVED|DECLARED)/);
     });
 
     it('a basis that changed with the state unchanged is a change', () => {

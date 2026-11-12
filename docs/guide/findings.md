@@ -115,11 +115,12 @@ priorities:
 
 1. In `agents.csv`, look at the columns for the individual checks. Start with
    the cells that say `NOT_MET`: a system saw that control fail. Those are
-   real, whatever else the scan could not see. (One exception: on
-   `H1.axes_declared` and `H1.tier_scored_fresh`, `NOT_MET` can mean only
-   that your inventory leaves out the descriptions or the risk rating for
-   that agent, or that the rating is not dated within the 365 days before
-   the scan. The fix for those is to complete the inventory.)
+   real, whatever else the scan could not see. A cell that says
+   `NOT_MET_DECLARED` is a different thing. It appears only on
+   `H1.axes_declared` and `H1.tier_scored_fresh`, and means that your
+   inventory leaves out the descriptions or the risk rating for that agent,
+   or that the rating is not dated within the 365 days before the scan. No
+   system saw anything fail. The fix for those is to complete the inventory.
 
    The page and the spreadsheet say only that a check failed. To see what
    was looked at, ask whoever ran the scan: the data file `results.json`

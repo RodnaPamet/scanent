@@ -126,7 +126,7 @@ describe('docs/guide/read-the-report.md: the ladder', () => {
                 for (const readable of [true, false]) words.add(csvCriterionState({ criterion: 'H1.owner', state, basis, evidence: null, readable }));
             }
         }
-        expect([...words].sort()).toEqual(['DECLARED', 'EVIDENCED', 'MET_UNEVIDENCED', 'NOT_MET', 'NOT_READABLE', 'UNANSWERED']);
+        expect([...words].sort()).toEqual(['DECLARED', 'EVIDENCED', 'MET_UNEVIDENCED', 'NOT_MET', 'NOT_MET_DECLARED', 'NOT_READABLE', 'UNANSWERED']);
         for (const word of words) expect(text).toContain(`\`${word}\``);
     });
 

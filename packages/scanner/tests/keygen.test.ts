@@ -8,7 +8,7 @@ import { join } from 'path';
 
 import { main } from '../src/cli';
 import { generateSigningKey, KeygenError } from '../src/keygen';
-import { rawPublicKeyHex } from '../src/report';
+import { publicKeyFingerprint, rawPublicKeyHex } from '../src/report';
 import { loadSigningKey } from '../src/scan';
 
 let dir: string;
@@ -57,6 +57,7 @@ describe('the command', () => {
         const pem = readFileSync(join(dir, 'signing.pem'), 'utf8');
         expect(out.join('')).toBe(`${rawPublicKeyHex(loadSigningKey(pem).publicKey)}\n`);
         expect(err.join('')).toContain(join(dir, 'signing.pem'));
+        expect(err.join('')).toContain(`Signer key fingerprint, as a report's summary shows it: ${publicKeyFingerprint(out.join('').trim())}`);
         const body = pem.split('\n')[1];
         expect(out.join('') + err.join('')).not.toContain(body);
         expect(out.join('') + err.join('')).not.toContain('PRIVATE KEY');

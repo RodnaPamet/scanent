@@ -16,7 +16,7 @@ import { credentialEnvNames, type ScannerConfig } from '../config';
 import { proveEgress, type EgressProbe } from '../egress-proof';
 import { addressCheckedByProxy, PROXY_CHECKS_ADDRESSES_ENV } from '../customer-host';
 import { describeProxy, isProxied, nodeHonoursEnvProxy, proxyInEffect, proxyVariableSet } from '../proxy-env';
-import { rawPublicKeyHex } from '../report';
+import { publicKeyFingerprint, rawPublicKeyHex } from '../report';
 import { loadSigningKey } from '../scan';
 import { readSecretFile, secretOrigin, SecretFileError, type Env, type SecretFs } from '../secrets';
 import type { Check } from './types';
@@ -196,7 +196,8 @@ export function checkSigningKey(config: ScannerConfig, resolved: Env, unresolved
         return fail('signing-key', 'CREDENTIAL', `${name} is not set`, `Create a key with 'scanent keygen --out <file>' and set ${name}_FILE to its path.`);
     }
     try {
-        return pass('signing-key', `ed25519 ${rawPublicKeyHex(loadSigningKey(pem).publicKey)}`);
+        const publicKeyHex = rawPublicKeyHex(loadSigningKey(pem).publicKey);
+        return pass('signing-key', `ed25519 ${publicKeyHex}, fingerprint ${publicKeyFingerprint(publicKeyHex)}`);
     } catch {
         return fail('signing-key', 'CONFIG', `${name} is not an Ed25519 private key in PKCS#8 PEM`, `Create a key with 'scanent keygen --out <file>'.`);
     }
