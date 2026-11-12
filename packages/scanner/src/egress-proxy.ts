@@ -181,7 +181,9 @@ export function createEgressProxy(opts: EgressProxyOptions): Server {
             if (!established && client.writable) refuse(client, 502, 'Bad Gateway');
             else client.destroy();
         };
-        (client as Socket).setTimeout(idleTimeoutMs, giveUp);
+        // `client` is a socket when the server is listening. The type says Duplex, and a
+        // stream that is not a socket has no timer to set.
+        if (typeof (client as Partial<Socket>).setTimeout === 'function') (client as Socket).setTimeout(idleTimeoutMs, giveUp);
         const open = (upstream: Socket): void => {
             upstream.setTimeout(idleTimeoutMs, () => {
                 giveUp();

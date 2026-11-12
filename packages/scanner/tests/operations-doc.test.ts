@@ -142,6 +142,16 @@ describe('docs/operations.md, the log', () => {
         const row = DOC.split('\n').find((l) => l.startsWith('| `egress refused` |')) ?? '';
         expect([...new Set([...row.matchAll(/`([A-Z_]{5,})`/g)].map((m) => m[1]))].sort()).toEqual(reasons);
     });
+
+    it('names both reasons the proxy closes a silent connection with', () => {
+        const proxy = fs.readFileSync(path.join(SRC, 'egress-proxy.ts'), 'utf8');
+        // The one place a closure is logged chooses between two reasons.
+        const chosen = /log\.warn\('egress closed', \{ reason: established \? '([A-Z_]+)' : '([A-Z_]+)'/.exec(proxy);
+        expect(chosen).not.toBeNull();
+        expect((proxy.match(/'egress closed'/g) ?? []).length).toBe(1);
+        const row = DOC.split('\n').find((l) => l.startsWith('| `egress closed` |')) ?? '';
+        expect([...new Set([...row.matchAll(/`([A-Z_]{4,})`/g)].map((m) => m[1]))].sort()).toEqual([chosen?.[1], chosen?.[2]].sort());
+    });
 });
 
 describe('docs/operations.md, the rest', () => {

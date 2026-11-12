@@ -57,7 +57,8 @@ label. Treat the log as you treat the configuration.
 | `egress proxy listening` | info | `port` (number), `hosts` (string: the allowed hosts, comma-separated) | The proxy started |
 | `egress allowlist is empty: every tunnel will be refused` | warn | none | `EGRESS_ALLOW` named no host |
 | `egress allowed` | info | `host` (string), `port` (number) | A tunnel was opened to an allowed host |
-| `egress refused` | warn | `reason` (string: `NOT_CONNECT`, `MALFORMED_TARGET`, `IP_LITERAL`, `PORT_NOT_ALLOWED`, `HOST_NOT_ALLOWED`, `HOST_DID_NOT_RESOLVE`, `ADDRESS_NOT_ALLOWED`), and `host` (string) or, for `NOT_CONNECT`, `method` (string) | A request was refused. Nothing was forwarded |
+| `egress refused` | warn | `reason` (string: `NOT_CONNECT`, `MALFORMED_TARGET`, `IP_LITERAL`, `PORT_NOT_ALLOWED`, `HOST_NOT_ALLOWED`, `HOST_DID_NOT_RESOLVE`, `ADDRESS_NOT_ALLOWED`, `TOO_MANY_CONNECTIONS`), and `host` (string) or, for `NOT_CONNECT`, `method` (string); `TOO_MANY_CONNECTIONS` has neither | A request was refused. Nothing was forwarded. `TOO_MANY_CONNECTIONS`: 256 connections were open, and the one that arrived was dropped before it was read |
+| `egress closed` | warn | `reason` (string: `IDLE`, `UPSTREAM_DID_NOT_CONNECT`), `host` (string) | The proxy ended a connection that carried nothing for two minutes. `IDLE`: an open tunnel. `UPSTREAM_DID_NOT_CONNECT`: the host was allowed and no connection to it was made in that time; the client was answered 502 |
 | `egress upstream failed` | warn | `host` (string) | The host was allowed and the connection to it failed |
 
 A refused tunnel is the proxy doing its work. A steady stream of
