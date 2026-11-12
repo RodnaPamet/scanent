@@ -116,8 +116,12 @@ describe('2. a refusal names the row and the field', () => {
 
     it.each([
         ['more rows than a report has agents', { inventory: INVENTORY_SCHEMA_ID, agents: Array.from({ length: MAX_INVENTORY_ROWS + 1 }, (_, i) => fullRow(`a:${i}`)) }, ['agents: too_big']],
-        ['a wrong inventory id', { inventory: 'scanent-inventory/2', agents: [] }, ['inventory: invalid_value']],
-        ['no inventory id', { agents: [] }, ['inventory: invalid_value']],
+        // Phase 4: the refusal names the schema the file gave and the one this version reads, where it
+        // used to say only `inventory: invalid_value`. A file of another schema is still refused whole.
+        ['a wrong inventory id', { inventory: 'scanent-inventory/2', agents: [] }, ['inventory: the file names "scanent-inventory/2"; this version reads scanent-inventory/1']],
+        ['no inventory id', { agents: [] }, ['inventory: the file names no schema; this version reads scanent-inventory/1']],
+        ['an inventory id of another family, which is not repeated', { inventory: VALUE, agents: [] }, ['inventory: the file names a schema this version does not know; this version reads scanent-inventory/1']],
+        ['an inventory id that is not text', { inventory: 2, agents: [] }, ['inventory: the file names a schema this version does not know; this version reads scanent-inventory/1']],
         ['no agents member', { inventory: INVENTORY_SCHEMA_ID }, ['agents: invalid_type']],
         ['an unknown key at the top', { inventory: INVENTORY_SCHEMA_ID, agents: [], [VALUE]: true }, ['(file): 1 unknown field']],
         ['a list where the file should be an object', [fullRow(ALPHA)], ['(file): invalid_type']],

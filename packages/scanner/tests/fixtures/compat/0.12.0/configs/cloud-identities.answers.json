@@ -1,0 +1,19 @@
+{
+  "answers": "scanent-init-answers/1",
+  "estate": "acme-identities",
+  "retainRuns": 90,
+  "sources": [
+    {
+      "kind": "entra-sp",
+      "directoryId": "11111111-2222-4333-8444-555555555555",
+      "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa"
+    },
+    {
+      "kind": "vault",
+      "vaultUrls": ["https://acme-agents.vault.azure.net"],
+      "directoryTenantId": "11111111-2222-4333-8444-555555555555",
+      "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa"
+    },
+    { "kind": "okta-app", "orgUrl": "https://acme.okta.com" }
+  ]
+}

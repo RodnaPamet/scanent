@@ -18,6 +18,7 @@ import { createHash } from 'crypto';
 import { readFileSync, statSync } from 'fs';
 
 import { harnessKeyFingerprint, verifyAndParseHarnessReport, type HarnessReportBody } from '@scanent/contract/harness-contract';
+import { HARNESS_CONTRACT_IDS } from '@scanent/contract/harness-contract-rules';
 import { firstSecretShapedMember, type HarnessSourceKind } from '@scanent/contract/harness-findings';
 import { diffExitCode, DiffRefused, diffResults, type ResultsDiff } from '@scanent/report/diff/diff';
 import { renderDiffText } from '@scanent/report/render/diff-text';
@@ -103,7 +104,14 @@ export function loadDiffSide(raw: string, side: 'old' | 'new', trustKey: string 
             },
         });
     }
-    throw new DiffInputError(`${side}: not a results file or a signed report`);
+    // A file that names another schema, or none, is named for what it is and is
+    // never half-read: its members may mean something else in that schema. Only
+    // an id of this family is repeated; any other text is the file's own.
+    if ('schema' in object) {
+        const named = typeof object.schema === 'string' && /^scanent-results\/\d{1,4}$/.test(object.schema) ? JSON.stringify(object.schema) : 'a schema this version does not know';
+        throw new DiffInputError(`${side}: the file names ${named} as its schema; this version reads ${RESULTS_SCHEMA}`);
+    }
+    throw new DiffInputError(`${side}: the file names no schema; this version reads ${RESULTS_SCHEMA} files and signed ${HARNESS_CONTRACT_IDS.join(' and ')} reports`);
 }
 
 interface DiffArgs {
