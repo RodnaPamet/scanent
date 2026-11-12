@@ -685,15 +685,15 @@ extension), at most 5 MiB and 5,000 rows. JSON:
 
 ```json
 {
-  "inventory": "scanent-inventory/1",
+  "inventory": "scanent-inventory/2",
   "agents": [
     {
       "discoveredId": "entra:sp:00000000-0000-0000-0000-000000000000",
       "name": "Invoice triage",
       "owner": "finance-operations",
       "purpose": "Sorts incoming invoices into queues",
-      "axes": { "autonomy": "human-approves", "dataClass": "confidential", "reach": "write" },
-      "riskTier": "MEDIUM",
+      "axes": { "autonomyLevel": 2, "dataAccessScope": "WRITE_TENANT_DATA", "reversibility": "COMPENSABLE", "provenance": "FIRST_PARTY" },
+      "riskTier": "MODERATE",
       "riskAssessedOn": "2026-09-30"
     }
   ]
@@ -702,17 +702,48 @@ extension), at most 5 MiB and 5,000 rows. JSON:
 
 CSV is RFC 4180, UTF-8, with a header row holding
 `discoveredId,name,owner,purpose` and any of
-`autonomy,dataClass,reach,riskTier,riskAssessedOn`. An empty optional cell is an
-absent value.
+`autonomyLevel,dataAccessScope,reversibility,provenance,riskTier,riskAssessedOn`.
+An empty optional cell is an absent value. `autonomyLevel` is written as its
+digits (`2`): a cell such as `02`, `2.0` or `two` is refused.
 
 | Field | Required | Rule |
 |---|---|---|
 | `discoveredId` | yes | The id the scan reports, 1 to 256 characters, once in the file |
 | `name`, `owner` | yes | 1 to 256 characters, no control character |
 | `purpose` | yes | 1 to 512 characters, no control character |
-| `axes` | no | All three or none. `autonomy`: `human-approves`, `human-reviews`, `autonomous`. `dataClass`: `public`, `internal`, `confidential`, `restricted`. `reach`: `read-only`, `write`, `external` |
-| `riskTier` | no | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`, with `riskAssessedOn` or not at all |
+| `axes` | no | All four or none. `autonomyLevel`: a whole number from 0 to 6. `dataAccessScope`: `NONE`, `READ_METADATA`, `READ_TENANT_DATA`, `WRITE_TENANT_DATA`, `EXTERNAL_EGRESS`. `reversibility`: `REVERSIBLE`, `COMPENSABLE`, `TERMINAL`. `provenance`: `FIRST_PARTY`, `THIRD_PARTY` |
+| `riskTier` | no | `LOW`, `MODERATE`, `HIGH`, `CRITICAL`, with `riskAssessedOn` or not at all |
 | `riskAssessedOn` | no | `YYYY-MM-DD` |
+
+The axes and the risk tiers are the ones Inflect's agent register holds, with
+the same names and the same values, so a row says of an agent what a register
+entry would:
+
+| Axis | What it says | Values, in order |
+|---|---|---|
+| `autonomyLevel` | How far the agent acts on its own | 0 suggests to a person and reaches nothing itself; 1 reads data on its own initiative; 2 drafts changes for a person to approve; 3 chains steps unattended between checkpoints; 4 to 6 are higher still, and the register describes 6 as acting unattended across systems |
+| `dataAccessScope` | How far into the organisation's data it reaches, least exposing first | `NONE`: only what a caller hands it. `READ_METADATA`: names, ids, counts, dates. `READ_TENANT_DATA`: reads business content. `WRITE_TENANT_DATA`: writes it. `EXTERNAL_EGRESS`: sends data outside the organisation's boundary |
+| `reversibility` | How hard it is to undo what it did | `REVERSIBLE`: the prior state can be restored from records. `COMPENSABLE`: it cannot, but a compensating action exists. `TERMINAL`: neither |
+| `provenance` | Who wrote the agent | `FIRST_PARTY`: the organisation. `THIRD_PARTY`: a supplier |
+
+Two things differ from the register, and both are scanent's own:
+
+- **The tier is declared, not scored.** In the register a tier is the result
+  of a risk assessment the register runs. In an inventory it is what the
+  operator wrote, with the date they assessed it.
+- **Freshness is an age.** The register has no age limit: there a tier is
+  fresh while the agent's newest completed assessment has not been marked
+  stale, and it is marked stale when the agent changes in a way that raises
+  risk after it was assessed. An inventory holds no assessment to compare an
+  agent with, so scanent counts a declared tier as fresh for 365 days up to
+  the scan (`INVENTORY_TIER_MAX_AGE_DAYS`).
+
+`scanent-inventory/2` replaced `scanent-inventory/1`, whose axes were
+`autonomy`, `dataClass` and `reach` and whose second tier was `MEDIUM`. A
+`/1` JSON file is refused by the id it names, and a CSV file by a header that
+holds one of the three `/1` axis columns; each refusal says what changed. No
+version was released with `/1`, so there is no conversion: rewrite the file
+with the fields above.
 
 What holds it:
 
@@ -723,7 +754,7 @@ What holds it:
   results label it so, and keep a level that rests on a declaration apart from
   the level the sources observed alone.
 - **It evidences the four H1 criteria and nothing above H1.** A matched row
-  declares the agent registered and owned; its axes when all three are given;
+  declares the agent registered and owned; its axes when all four are given;
   and its risk tier as fresh when the assessment is dated on or before the scan
   and at most 365 days before it. A declared "met" never outvotes a source that
   observed NOT MET.
@@ -1188,6 +1219,20 @@ something it used to accept:
   project with no service account.
 - **A UTF-16 source file is `UNPARSEABLE`.** Before, it was passed over as
   holding no agent.
+
+One change is to the inventory file, and it stops a run whose inventory was
+written before it:
+
+- **`scanent-inventory/1` is refused.** The inventory's axes are now
+  `autonomyLevel`, `dataAccessScope`, `reversibility` and `provenance`, in
+  place of `autonomy`, `dataClass` and `reach`, and the risk tier `MEDIUM` is
+  now `MODERATE`: the names and values of Inflect's agent register. A JSON
+  file that names `/1`, or a CSV file whose header holds one of the three old
+  columns, stops the run before any source is read, and the message names
+  both schemas and what changed. A CSV file with none of the old columns is
+  read as before, unless a row gives the tier `MEDIUM`, which is refused as a
+  value off the list. Nothing converts a file: no version was released with
+  `/1`. Rewrite it as "The inventory" above describes.
 
 ## Limits and scale
 

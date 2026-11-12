@@ -116,11 +116,11 @@ describe('1. CSV', () => {
     });
 
     it('decodeInventoryCsv gives rows or InventoryRefused, and a refusal never quotes a cell', async () => {
-        const header = 'discoveredId,name,owner,purpose,autonomy,dataClass,reach,riskTier,riskAssessedOn';
+        const header = 'discoveredId,name,owner,purpose,autonomyLevel,dataAccessScope,reversibility,provenance,riskTier,riskAssessedOn';
         await forAll(
             'decodeInventoryCsv',
             (r) => {
-                const row = () => [marked(r), marked(r), marked(r), marked(r), r.pick(['', 'autonomous', marked(r)]), '', r.pick(['', 'write']), r.pick(['', 'HIGH', marked(r)]), ''].map(csvCell).join(',');
+                const row = () => [marked(r), marked(r), marked(r), marked(r), r.pick(['', '3', '7', marked(r)]), '', r.pick(['', 'TERMINAL']), r.pick(['', 'FIRST_PARTY', marked(r)]), r.pick(['', 'HIGH', marked(r)]), ''].map(csvCell).join(',');
                 const text = `${r.chance(0.8) ? header : marked(r)}\r\n${Array.from({ length: r.int(0, 5) }, row).join('\r\n')}\r\n`;
                 return r.chance(0.6) ? r.mutateText(text) : text;
             },
@@ -138,8 +138,8 @@ describe('1. CSV', () => {
 
 describe('2. the inventory file', () => {
     const valid = {
-        inventory: 'scanent-inventory/1',
-        agents: [{ discoveredId: 'entra:sp:alpha', name: 'Invoice triage', owner: 'finance', purpose: 'Sorts invoices', axes: { autonomy: 'human-approves', dataClass: 'internal', reach: 'write' }, riskTier: 'LOW', riskAssessedOn: '2026-09-30' }],
+        inventory: 'scanent-inventory/2',
+        agents: [{ discoveredId: 'entra:sp:alpha', name: 'Invoice triage', owner: 'finance', purpose: 'Sorts invoices', axes: { autonomyLevel: 2, dataAccessScope: 'WRITE_TENANT_DATA', reversibility: 'COMPENSABLE', provenance: 'FIRST_PARTY' }, riskTier: 'LOW', riskAssessedOn: '2026-09-30' }],
     };
 
     it('any bytes are an inventory or InventoryRefused, and a refusal repeats nothing from the file', async () => {
@@ -182,8 +182,8 @@ describe('2. the inventory file', () => {
         // It parses as JSON; what walked it afterwards overflowed, and the scan stopped with the engine's own message.
         for (const text of [
             `${'['.repeat(DEEPLY)}${']'.repeat(DEEPLY)}`,
-            `{"inventory":"scanent-inventory/1","agents":${'['.repeat(DEEPLY)}${']'.repeat(DEEPLY)}}`,
-            `{"inventory":"scanent-inventory/1","agents":[${'{"axes":'.repeat(DEEPLY)}1${'}'.repeat(DEEPLY)}]}`,
+            `{"inventory":"scanent-inventory/2","agents":${'['.repeat(DEEPLY)}${']'.repeat(DEEPLY)}}`,
+            `{"inventory":"scanent-inventory/2","agents":[${'{"axes":'.repeat(DEEPLY)}1${'}'.repeat(DEEPLY)}]}`,
         ]) {
             let thrown: unknown;
             try {

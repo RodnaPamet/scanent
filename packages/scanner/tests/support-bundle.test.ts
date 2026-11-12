@@ -125,7 +125,7 @@ describe('the document', () => {
             contracts: [...HARNESS_CONTRACT_IDS],
             ladder: expect.stringMatching(/\S/),
             results: RESULTS_SCHEMA,
-            inventory: 'scanent-inventory/1',
+            inventory: 'scanent-inventory/2',
             doctor: 'scanent-doctor/1',
             node: 'v24.1.0',
             platform: 'linux',

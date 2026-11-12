@@ -348,7 +348,7 @@ describe('docs/security-pack/support-and-maintenance.md', () => {
     it('names the schema ids the code exports', () => {
         const ids: [string, string][] = [
             ['packages/report/src/results/types.ts', 'scanent-results/1'],
-            ['packages/report/src/results/inventory.ts', 'scanent-inventory/1'],
+            ['packages/report/src/results/inventory.ts', 'scanent-inventory/2'],
             ['packages/scanner/src/init/answers.ts', 'scanent-init-answers/1'],
             ['packages/scanner/src/doctor/types.ts', 'scanent-doctor/1'],
             ['packages/scanner/src/support-bundle.ts', 'scanent-support/1'],

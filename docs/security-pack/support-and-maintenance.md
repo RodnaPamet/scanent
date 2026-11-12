@@ -135,7 +135,7 @@ values, is a design question to raise before any code.
 | The report contract | `inflect-agent-harness/3` is written; `/2` is accepted by the verifier; `/1` is retired and refused | A new id is a new strict schema beside the others, never a looser schema that reads either. An unknown member anywhere is a refusal. [The report contract](../contract.md) is the normative description, and a test holds it to the code |
 | The ladder | `LADDER_VERSION`, a hash over the levels, criteria and bars | It is not in the report. Results derived from a report carry it, and two sets of results compare level for level only when they carry the same one |
 | The results file | `scanent-results/1` | One schema id exists. An optional member has been added to it once without a new id; `packages/scanner/tests/compat.test.ts` proves that files written by an earlier commit of 0.12.0 are still read |
-| The inventory file | `scanent-inventory/1` | One id exists |
+| The inventory file | `scanent-inventory/2` | `/1` is retired and refused, and the refusal says what changed: `/2` took the axis names, their values and the risk tiers of Inflect's agent register. No version was released with `/1`, so nothing converts a `/1` file |
 | The `init` answers file | `scanent-init-answers/1` | One id exists |
 | The `doctor` report and the support bundle | `scanent-doctor/1`, `scanent-support/1` | One id each |
 

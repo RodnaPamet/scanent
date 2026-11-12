@@ -117,8 +117,8 @@ export function fullRow(discoveredId: string, over: Partial<RowInput> = {}): Row
         name: 'Invoice triage',
         owner: 'finance-operations',
         purpose: 'Sorts incoming invoices into queues',
-        axes: { autonomy: 'human-approves', dataClass: 'confidential', reach: 'write' },
-        riskTier: 'MEDIUM',
+        axes: { autonomyLevel: 2, dataAccessScope: 'WRITE_TENANT_DATA', reversibility: 'COMPENSABLE', provenance: 'FIRST_PARTY' },
+        riskTier: 'MODERATE',
         riskAssessedOn: '2026-09-30',
         ...over,
     };

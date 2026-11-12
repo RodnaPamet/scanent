@@ -183,7 +183,7 @@ describe('the inventory', () => {
                         name: 'Support agent',
                         owner: 'support-team',
                         purpose: 'Answers order questions',
-                        axes: { autonomy: 'human-reviews', dataClass: 'internal', reach: 'read-only' },
+                        axes: { autonomyLevel: 1, dataAccessScope: 'READ_TENANT_DATA', reversibility: 'REVERSIBLE', provenance: 'FIRST_PARTY' },
                         riskTier: 'LOW',
                         riskAssessedOn: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
                     },
