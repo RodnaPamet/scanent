@@ -282,30 +282,36 @@ class LineParser {
 
     private unary(depth: number): Expr {
         const line = this.line;
-        const t = this.peek();
-        if (t === undefined) return { k: 'opaque', line };
-        if (t.t === 'op' && (t.v === '-' || t.v === '+' || t.v === '~')) {
-            this.next();
-            this.unary(depth + 1);
-            return { k: 'opaque', line };
+        // Prefix operators are consumed in a loop, not by recursion: a line of
+        // a hundred thousand `-` or `not` is one a file can hold, and one stack
+        // frame each would overflow the stack rather than end in a refusal.
+        let opaque = false;
+        for (;;) {
+            const t = this.peek();
+            if (t === undefined) return { k: 'opaque', line };
+            if ((t.t === 'op' && (t.v === '-' || t.v === '+' || t.v === '~')) || (t.t === 'name' && t.v === 'not')) {
+                this.next();
+                opaque = true;
+                continue;
+            }
+            if (t.t === 'name' && t.v === 'await') {
+                this.next();
+                continue;
+            }
+            break;
         }
-        if (t.t === 'name' && t.v === 'not') {
-            this.next();
-            this.unary(depth + 1);
-            return { k: 'opaque', line };
-        }
-        if (t.t === 'name' && t.v === 'await') {
-            this.next();
-            return this.unary(depth + 1);
-        }
-        if (t.t === 'name' && t.v === 'lambda') {
+        let operand: Expr;
+        if (this.isName('lambda')) {
+            const at = this.line;
             this.next();
             this.skipTo(new Set([':']));
             if (this.isOp(':')) this.next();
             this.expr(depth + 1);
-            return { k: 'func', line };
+            operand = { k: 'func', line: at };
+        } else {
+            operand = this.postfix(this.primary(depth), depth);
         }
-        return this.postfix(this.primary(depth), depth);
+        return opaque ? { k: 'opaque', line } : operand;
     }
 
     private primary(depth: number): Expr {

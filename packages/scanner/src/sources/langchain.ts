@@ -51,7 +51,8 @@
  * read of nothing, which the ingest raises as EMPTY_SCAN when no other source
  * found one either.
  */
-import { lstat, readdir, readFile } from 'fs/promises';
+import { constants } from 'fs';
+import { lstat, open, readdir } from 'fs/promises';
 
 import {
     ProbeLog,
@@ -64,7 +65,7 @@ import {
     type SourceRead,
 } from '../source';
 import type { CodeFs, CodeRoot, FileProblem } from './code/files';
-import { readCodeFiles } from './code/files';
+import { MAX_FILE_BYTES, readCodeFiles } from './code/files';
 import { JavaScriptReadError, readJavaScript } from './code/javascript';
 import { PythonReadError, readPython } from './code/python';
 import { agentSdkOptionVerdicts } from '@scanent/contract/harness-findings';
@@ -80,11 +81,55 @@ export interface LangChainCodeSourceOptions {
 /** The order a source's reason is chosen in when several apply: what was not read at all comes first. */
 const REASON_ORDER: readonly IncompleteReason[] = ['AUTH_FAILED', 'UNREACHABLE', 'TIME_BOX', 'BYTE_CAP', 'UNPARSEABLE'];
 
-const NODE_FS: CodeFs = {
+/**
+ * One file's bytes, at most one more than the size cap, from a REGULAR file
+ * that is not reached through a link.
+ *
+ * The walk stats an entry and then reads it, and a tree somebody else can
+ * write to may change in between. Read by name alone, a file swapped for a
+ * link would be followed out of the root, one swapped for a pipe would block
+ * the scan for ever (the deadline is checked between entries, not inside a
+ * read), and one that grew would be read whole into memory before its size was
+ * looked at. So the file is opened without following a link and without
+ * blocking, what was opened is checked to be a regular file, and the read
+ * stops one byte past the cap, which is enough for the walk to see it is over.
+ *
+ * The last path component only: a DIRECTORY swapped for a link between its
+ * stat and its listing is still listed. Closing that takes directory handles
+ * Node does not offer; it needs somebody who can already write the scanned
+ * tree while it is being read.
+ */
+async function readRegularFileCapped(path: string): Promise<Buffer> {
+    // Absent on a platform without them (Windows), where the flags are zero.
+    const noFollow = (constants.O_NOFOLLOW as number | undefined) ?? 0;
+    const nonBlock = (constants.O_NONBLOCK as number | undefined) ?? 0;
+    const handle = await open(path, constants.O_RDONLY | noFollow | nonBlock);
+    try {
+        const st = await handle.stat();
+        if (!st.isFile()) throw Object.assign(new Error('not a regular file'), { code: 'ENOTSUP' });
+        const buffer = Buffer.alloc(Math.min(st.size, MAX_FILE_BYTES) + 1);
+        let length = 0;
+        while (length < buffer.byteLength) {
+            const { bytesRead } = await handle.read(buffer, length, buffer.byteLength - length, null);
+            if (bytesRead === 0) break;
+            length += bytesRead;
+        }
+        // More than the size stated, on a file that was under the cap: it grew while it was read, and
+        // what was read is a cut of it. That is a file not read, never text to parse.
+        if (st.size <= MAX_FILE_BYTES && length > st.size) throw Object.assign(new Error('changed while read'), { code: 'EBUSY' });
+        return buffer.subarray(0, length);
+    } finally {
+        await handle.close();
+    }
+}
+
+/** The real file system, as the `code` source reads it. Exported for the tests that swap a file under it. */
+export const NODE_CODE_FS: CodeFs = {
     lstat: (p) => lstat(p),
     readdir: (p) => readdir(p),
-    readFile: (p) => readFile(p),
+    readFile: readRegularFileCapped,
 };
+const NODE_FS = NODE_CODE_FS;
 
 export interface CodeScan {
     readonly rows: number;
@@ -107,8 +152,11 @@ export async function scanLangChainCode(
             agents.push(...found.agents);
             for (const at of found.unresolved) parseProblems.push({ reason: 'UNPARSEABLE', at });
         } catch (err) {
-            if (!(err instanceof PythonReadError) && !(err instanceof JavaScriptReadError)) throw err;
-            parseProblems.push({ reason: 'UNPARSEABLE', at: { label: file.label, path: file.path, line: err.line } });
+            // A reader's own refusal names the line. Anything else is a fault in
+            // a reader or the recogniser on THIS file: it is still a file that
+            // was not read, and it must not take the other files' agents with it.
+            const line = err instanceof PythonReadError || err instanceof JavaScriptReadError ? err.line : 0;
+            parseProblems.push({ reason: 'UNPARSEABLE', at: { label: file.label, path: file.path, line } });
         }
     });
     return { rows, agents, problems: [...problems, ...parseProblems] };
