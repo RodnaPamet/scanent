@@ -153,7 +153,8 @@ export const MAX_PAGES_PER_SOURCE = 1_000;
 
 /**
  * Follow a paged listing from `first`, yielding each page's items. Every link
- * stays on `origin` (`getJson` refuses one that leaves it), a link seen twice
+ * stays on `origin` (`getJson` refuses one that leaves it) and on the path of
+ * `first` (a listing's next page is the same listing), a link seen twice
  * is a loop and so PAGINATION_TORN, and a page that is not the listing's shape
  * is PAGINATION_TORN too — never an empty page silently skipped.
  */
@@ -170,7 +171,13 @@ export async function* readPages(
     const seen = new Set<string>();
     let url: string | null = first;
     let pages = 0;
+    const listing = pathOf(first);
     while (url !== null) {
+        // The next page of a listing is the same listing. A link to another
+        // path on the same origin would be a request the scanner never declared
+        // (a secret's own URL, an app's client secrets), made with the estate's
+        // credential because a response said to: it is refused before it is sent.
+        if (pathOf(url) !== listing) throw new SourceReadError('PAGINATION_TORN', 'the listing linked to another path');
         if (seen.has(url)) throw new SourceReadError('PAGINATION_TORN', 'the listing linked back to a page it had served');
         if (pages >= MAX_PAGES_PER_SOURCE) throw new SourceReadError('BYTE_CAP', 'the listing ran past the page cap');
         seen.add(url);
@@ -180,6 +187,15 @@ export async function* readPages(
         if (page === null) throw new SourceReadError('PAGINATION_TORN', 'a page was not the listing it should be');
         yield page.items;
         url = page.next;
+    }
+}
+
+/** A URL's path, or null when it is not a URL: `getJson` refuses that one by its own rule. */
+function pathOf(url: string): string | null {
+    try {
+        return new URL(url).pathname;
+    } catch {
+        return null;
     }
 }
 
@@ -279,6 +295,21 @@ export class ProbeLog {
         });
     }
 
+    /**
+     * One declared read of a LISTING: as `read`, and the answer must be the
+     * listing's shape. A 200 that is something else (a sign-in page served as
+     * JSON, a proxy's own answer, another API on the same host) is what the
+     * scan would report as PAGINATION_TORN, so the preflight fails on it too
+     * rather than call a source ready that the first scan cannot read.
+     */
+    listing<T extends { readonly body: unknown; readonly absent?: true }>(what: string, host: string, fn: () => Promise<T>, isListing: (body: unknown) => boolean): Promise<T> {
+        return this.read(what, host, async () => {
+            const value = await fn();
+            if (value.absent !== true && !isListing(value.body)) throw new SourceReadError('PAGINATION_TORN', 'the answer was not the listing it should be');
+            return value;
+        });
+    }
+
     /** What the reads showed about write access. Recorded only after every read succeeded. */
     write(observation: WriteObservation): void {
         this.steps.push({ id: 'write', what: 'write access', outcome: 'ok', observed: { write: observation }, ...(this.scope === undefined ? {} : { scope: this.scope }) });
@@ -318,6 +349,11 @@ export function sourceResult(
     if (stoppedBy === null) return { kind, status: 'COMPLETE', rows, observations };
     const reason: IncompleteReason = stoppedBy instanceof SourceReadError ? stoppedBy.reason : 'UNREACHABLE';
     return { kind, status: 'INCOMPLETE', reason, rows, observations };
+}
+
+/** A JSON object: not null, not an array. */
+export function isJsonObject(v: unknown): v is Record<string, unknown> {
+    return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
 /** An identifier a source hands back, as it may appear inside a discovered id or a locator. */

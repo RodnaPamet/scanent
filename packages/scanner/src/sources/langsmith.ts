@@ -91,6 +91,7 @@ import {
 } from '../customer-host';
 import type { ReadOnlyHttp } from '../http';
 import {
+    isJsonObject,
     isPlainId,
     readPages,
     ProbeLog,
@@ -383,9 +384,14 @@ export function langSmithSource(opts: LangSmithSourceOptions): HarnessSource {
             const hostname = new URL(origin).hostname;
             const since = new Date(ctx.asOf.getTime() - opts.windowDays * DAY_MS).toISOString();
             await ProbeLog.run(async () => {
-                await log.read('tracing projects', hostname, () => http.getJson(`${origin}${paths.projects}?${projectsQuery(since, 0, 1)}`, { origin, headers }));
+                await log.listing('tracing projects', hostname, () => http.getJson(`${origin}${paths.projects}?${projectsQuery(since, 0, 1)}`, { origin, headers }), Array.isArray);
                 if (opts.readDeployments) {
-                    await log.read('deployments', hostname, () => http.getJson(`${origin}${paths.deployments}?limit=1&offset=0`, { origin, headers }));
+                    await log.listing(
+                        'deployments',
+                        hostname,
+                        () => http.getJson(`${origin}${paths.deployments}?limit=1&offset=0`, { origin, headers }),
+                        (body) => isJsonObject(body) && Array.isArray((body as { resources?: unknown }).resources),
+                    );
                 }
                 log.write({ state: 'NOT_OBSERVABLE', verify: "confirm in LangSmith's API keys settings that the key is a service key holding the workspace Viewer role" });
             });

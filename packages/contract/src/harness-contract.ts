@@ -641,16 +641,18 @@ export function parseStoredHarnessModels(json: unknown): HarnessAgentModels {
     return { state: 'REPORTED', endpoints: parsed.data.map((m) => ({ endpoint: m.endpoint, model: m.model })) };
 }
 
-/** Why a report was refused. Stable codes: the ingest records them. */
-export type HarnessRefusal =
-    | 'TOO_LARGE'
-    | 'NOT_JSON'
-    | 'NOT_AN_OBJECT'
-    | 'UNSIGNED'
-    | 'MALFORMED_SIGNATURE'
-    | 'UNTRUSTED_SIGNER'
-    | 'BAD_SIGNATURE'
-    | 'SCHEMA';
+/** Why a report was refused, in the order the checks run. Stable codes: the ingest records them. */
+export const HARNESS_REFUSALS = [
+    'TOO_LARGE',
+    'NOT_JSON',
+    'NOT_AN_OBJECT',
+    'UNSIGNED',
+    'MALFORMED_SIGNATURE',
+    'UNTRUSTED_SIGNER',
+    'BAD_SIGNATURE',
+    'SCHEMA',
+] as const;
+export type HarnessRefusal = (typeof HARNESS_REFUSALS)[number];
 
 export type HarnessParseResult =
     | { ok: true; body: HarnessReportBody; signerKey: string; complete: boolean }

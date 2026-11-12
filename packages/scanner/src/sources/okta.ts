@@ -44,6 +44,7 @@ import { MAX_AGENTS } from '@scanent/contract/harness-contract';
 import { nextLinkFrom } from '../http';
 import {
     ageInDays,
+    isJsonObject,
     isPlainId,
     readPages,
     ProbeLog,
@@ -210,13 +211,21 @@ export function oktaSource(opts: OktaSourceOptions): HarnessSource {
             const log = new ProbeLog();
             const hostname = new URL(origin).hostname;
             await ProbeLog.run(async () => {
-                await log.read('the current API token', hostname, () => ctx.http.getJson(`${origin}${OKTA_READ_PATHS[2]}`, { origin, headers }));
-                await log.read('apps', hostname, () =>
-                    ctx.http.getJson(`${origin}${OKTA_READ_PATHS[0]}?limit=1&filter=${encodeURIComponent('name eq "oidc_client"')}`, { origin, headers }),
+                await log.listing(
+                    'the current API token',
+                    hostname,
+                    () => ctx.http.getJson(`${origin}${OKTA_READ_PATHS[2]}`, { origin, headers }),
+                    (body) => isJsonObject(body) && typeof body.id === 'string',
+                );
+                await log.listing(
+                    'apps',
+                    hostname,
+                    () => ctx.http.getJson(`${origin}${OKTA_READ_PATHS[0]}?limit=1&filter=${encodeURIComponent('name eq "oidc_client"')}`, { origin, headers }),
+                    Array.isArray,
                 );
                 // The third read the scan makes. A token that may not list API tokens fails here, not at the first scan.
                 // What this cannot show is WHOSE tokens the listing holds: see the access guide's note on Okta.
-                await log.read('API tokens', hostname, () => ctx.http.getJson(`${origin}${OKTA_READ_PATHS[1]}?limit=1`, { origin, headers }));
+                await log.listing('API tokens', hostname, () => ctx.http.getJson(`${origin}${OKTA_READ_PATHS[1]}?limit=1`, { origin, headers }), Array.isArray);
                 // The token's administrator role is read from the user's roles, which this scanner does not declare.
                 log.write({
                     state: 'NOT_OBSERVABLE',

@@ -126,6 +126,12 @@ export function createEgressProxy(opts: EgressProxyOptions): Server {
         res.writeHead(405, { Connection: 'close', 'Content-Length': '0' }).end();
     });
     server.on('connect', (req: IncomingMessage, client: Duplex, head: Buffer) => {
+        // From here the socket is this handler's: Node's own listeners are gone.
+        // A client that resets while it is being refused, or twice, would
+        // otherwise raise an `error` nobody listens for, which ends the process
+        // and with it every other scanner's way out. Each path below still
+        // reacts to the first error in its own way; this one only absorbs.
+        client.on('error', () => undefined);
         const decision = decideConnect(req.url, opts.allow);
         if (!decision.allowed) {
             log.warn('egress refused', { reason: decision.reason, host: decision.host });
@@ -142,6 +148,8 @@ export function createEgressProxy(opts: EgressProxyOptions): Server {
                 upstream.pipe(client);
                 client.pipe(upstream);
             });
+            // The same for the upstream: its first error is handled below, a second is absorbed.
+            upstream.on('error', () => undefined);
             upstream.once('error', () => {
                 log.warn('egress upstream failed', { host: decision.host });
                 // Before the tunnel opened, the client is owed an answer; after,

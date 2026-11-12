@@ -41,6 +41,7 @@ import { MAX_AGENTS } from '@scanent/contract/harness-contract';
 
 import {
     ageInDays,
+    isJsonObject,
     readPages,
     ProbeLog,
     sourceResult,
@@ -200,11 +201,15 @@ export function azureKeyVaultSource(opts: AzureKeyVaultSourceOptions): HarnessSo
                 const headers = { Authorization: `Bearer ${token}` };
                 for (const vault of vaults) {
                     for (const collection of AZURE_KEY_VAULT_COLLECTIONS) {
-                        await log.read(collection, new URL(vault.origin).hostname, () =>
-                            ctx.http.getJson(`${vault.origin}/${collection}?api-version=${AZURE_KEY_VAULT_API_VERSION}&maxresults=1`, {
-                                origin: vault.origin,
-                                headers,
-                            }),
+                        await log.listing(
+                            collection,
+                            new URL(vault.origin).hostname,
+                            () =>
+                                ctx.http.getJson(`${vault.origin}/${collection}?api-version=${AZURE_KEY_VAULT_API_VERSION}&maxresults=1`, {
+                                    origin: vault.origin,
+                                    headers,
+                                }),
+                            (body) => isJsonObject(body) && Array.isArray(body.value),
                         );
                     }
                 }

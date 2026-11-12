@@ -139,15 +139,52 @@ export function isNeverAllowlistable(address: string): boolean {
 }
 
 /**
+ * The IPv4 address an IPv6 address carries inside it, as dotted text, or null.
+ *
+ * Four ways to write a v4 destination as a v6 address, each of which reaches
+ * (directly, or through a translator on the path) the v4 address it embeds:
+ *
+ *   ::ffff:a.b.c.d    v4-mapped (RFC 4291): the same socket destination
+ *   ::a.b.c.d         v4-compatible (RFC 4291, deprecated, still parsed)
+ *   64:ff9b::a.b.c.d  NAT64, the well-known prefix (RFC 6052)
+ *   2002:AABB:CCDD::  6to4 (RFC 3056): the v4 address is bytes 2 to 5
+ *
+ * The text check alone (`isPrivateAddress`) knows only the dotted v4-mapped
+ * spelling. `::ffff:a00:7` is 10.0.0.7 written in hex, which is how a URL
+ * parser normalises `[::ffff:10.0.0.7]`, and it read as a public address.
+ */
+function embeddedV4(bytes: Uint8Array): string | null {
+    if (bytes.length !== 16) return null;
+    const dotted = (at: number): string => `${bytes[at]}.${bytes[at + 1]}.${bytes[at + 2]}.${bytes[at + 3]}`;
+    const zero = (from: number, to: number): boolean => bytes.slice(from, to).every((b) => b === 0);
+    if (isV4Mapped(bytes)) return dotted(12);
+    // `::` and `::1` are the unspecified and loopback addresses, not a v4 inside a v6.
+    if (zero(0, 12) && !(zero(12, 15) && bytes[15] <= 1)) return dotted(12);
+    if (bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b && zero(4, 12)) return dotted(12);
+    if (bytes[0] === 0x20 && bytes[1] === 0x02) return dotted(2);
+    return null;
+}
+
+/**
  * May the scanner reach `address`, given the estate's allowlist? A public
  * address, yes. A private one only when it is NOT never-allowlistable AND it
- * falls inside a listed range. Every other answer, including an address that
- * does not parse, is no.
+ * falls inside a listed range. Every other answer is no, and an answer that
+ * is not an address at all is no: a resolver that says something this parser
+ * does not read has named nothing the scanner should dial.
+ *
+ * An IPv6 address that carries a v4 address inside it is judged as BOTH: the
+ * address as written, and the v4 destination it stands for.
  */
 export function addressReachable(address: string, allowlist: PrivateCidrAllowlist): boolean {
-    if (isNeverAllowlistable(address)) return false;
-    if (!isPrivateAddress(address)) return true;
-    return allowlist.length > 0 && inAny(address, allowlist);
+    const bytes = parseAddress(address);
+    if (bytes === null) return false;
+    const inner = embeddedV4(bytes);
+    const forms = inner === null ? [address] : [address, inner];
+    return forms.every((form) => {
+        if (isNeverAllowlistable(form)) return false;
+        if (!isPrivateAddress(form)) return true;
+        return allowlist.length > 0 && inAny(form, allowlist);
+    });
 }
 
 /**
@@ -157,11 +194,14 @@ export function addressReachable(address: string, allowlist: PrivateCidrAllowlis
 export function customerOriginProblem(value: string, allowlist: PrivateCidrAllowlist = []): string | null {
     const origin = httpsOrigin(value);
     if (origin === null) return 'must be a bare https origin: no path, query or credentials';
-    const host = new URL(origin).hostname.toLowerCase();
+    // A trailing dot names the same host (`localhost.` is `localhost`); the rules below are about the name without it.
+    const host = new URL(origin).hostname.toLowerCase().replace(/\.+$/, '');
     if (BLOCKED_HOSTNAMES.has(host)) return 'names a blocked host';
     // The NAME rule is a proxy for "probably internal". With an allowlist the
     // question becomes the address, which is checked before every request.
-    if (allowlist.length === 0 && (host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.localhost'))) {
+    // `.localhost` is loopback by definition (RFC 6761), whatever an allowlist says.
+    if (host.endsWith('.localhost')) return 'names a blocked host';
+    if (allowlist.length === 0 && (host.endsWith('.local') || host.endsWith('.internal'))) {
         return 'names a host that is internal by its suffix';
     }
     if (isIpLiteral(host) && !addressReachable(host.replace(/^\[|\]$/g, ''), allowlist)) {

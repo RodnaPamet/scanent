@@ -305,8 +305,12 @@ describe('2. each failure lands on its own check, and blocks what is behind it',
         const report = await doctor(world, { only: ['okta-app', 'vault'] });
         expect(statuses(report, 'okta-app')).toMatchObject({ reachable: 'PASS', authenticated: 'BLOCKED', 'read.permitted': 'FAIL' });
         expect(of(report, 'okta-app', 'read.permitted')).toMatchObject({ class: 'NETWORK', detail: 'the current API token failed (HTTP 503)' });
-        // The vault page parsed as JSON (a string), so the read itself succeeded: one row was asked for, and it answered.
-        expect(statuses(report, 'vault')['read.permitted']).toBe('PASS');
+        // The vault page parsed as JSON (a string) and is not a listing. This once passed, on the grounds that one row
+        // was asked for and something answered; the first scan would then have reported the source PAGINATION_TORN after
+        // doctor had called it ready. The preflight now holds the answer to the listing's shape, as the scan does
+        // (`ProbeLog.listing`), so the expectation is the stricter one, and the credential is still not blamed.
+        expect(statuses(report, 'vault')).toMatchObject({ reachable: 'PASS', authenticated: 'PASS', 'read.permitted': 'FAIL' });
+        expect(of(report, 'vault', 'read.permitted')).toMatchObject({ class: 'NETWORK', detail: 'certificates failed (PAGINATION_TORN)' });
     });
 
     it('a host that does not resolve, or resolves somewhere the scanner may not go, is refused before any request', async () => {

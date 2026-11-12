@@ -137,8 +137,8 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                     if (server.token === 'MISSING') throw new SourceReadError('AUTH_FAILED', 'the read token is not set');
                     const headers: Record<string, string> =
                         server.token === null ? {} : { Authorization: `Bearer ${server.token.value}` };
-                    await guard();
-                    const session: McpSession = await ctx.mcp.open({ url: server.url, headers });
+                    // The wire runs the guard before each request it sends: the handshake's two, and every page.
+                    const session: McpSession = await ctx.mcp.open({ url: server.url, headers, beforeRequest: guard });
                     if (session.offersTools) {
                         const seen = new Set<string>();
                         let cursor: string | null = null;
@@ -150,7 +150,6 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                             if (pages >= MAX_PAGES_PER_SOURCE) throw new SourceReadError('BYTE_CAP', 'the listing ran past the page cap');
                             if (cursor !== null) seen.add(cursor);
                             pages += 1;
-                            await guard();
                             const page = await ctx.mcp.listTools(session, cursor);
                             for (const raw of page.tools) {
                                 rows += 1;
@@ -221,15 +220,9 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                 const guard = () => check(hostname, resolve, allowlist);
                 const headers: Record<string, string> = server.token === null ? {} : { Authorization: `Bearer ${server.token.value}` };
                 await ProbeLog.run(async () => {
-                    const session = await log.read('the handshake', hostname, async () => {
-                        await guard();
-                        return ctx.mcp.open({ url: server.url, headers });
-                    });
+                    const session = await log.read('the handshake', hostname, () => ctx.mcp.open({ url: server.url, headers, beforeRequest: guard }));
                     if (session.offersTools) {
-                        await log.read('the tool listing', hostname, async () => {
-                            await guard();
-                            return ctx.mcp.listTools(session, null);
-                        });
+                        await log.read('the tool listing', hostname, () => ctx.mcp.listTools(session, null));
                     }
                     log.write({ state: 'NOT_OBSERVABLE', verify: "confirm with the server's administrator that the token can list tools and cannot call one" });
                 });

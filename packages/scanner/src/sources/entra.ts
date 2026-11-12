@@ -55,6 +55,7 @@ import { MAX_AGENTS } from '@scanent/contract/harness-contract';
 
 import {
     ageInDays,
+    isJsonObject,
     isPlainId,
     ProbeLog,
     readPages,
@@ -353,8 +354,11 @@ export function entraSource(opts: EntraSourceOptions): HarnessSource {
                 const headers = { Authorization: `Bearer ${token}` };
                 // The two listings `read` makes, one row each.
                 for (const path of ENTRA_READ_PATHS) {
-                    await log.read(path.slice('/v1.0/'.length), graphHost, () =>
-                        ctx.http.getJson(`${GRAPH_ORIGIN}${path}?$top=1&$select=id`, { origin: GRAPH_ORIGIN, headers }),
+                    await log.listing(
+                        path.slice('/v1.0/'.length),
+                        graphHost,
+                        () => ctx.http.getJson(`${GRAPH_ORIGIN}${path}?$top=1&$select=id`, { origin: GRAPH_ORIGIN, headers }),
+                        (body) => isJsonObject(body) && Array.isArray(body.value),
                     );
                 }
                 log.write(entraWriteObservation(token));

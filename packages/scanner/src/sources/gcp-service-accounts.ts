@@ -297,10 +297,16 @@ export function gcpServiceAccountSource(opts: GcpServiceAccountSourceOptions): H
                 );
                 const headers = { Authorization: `Bearer ${token}` };
                 for (const project of opts.projects) {
-                    await log.read('service accounts', iamHost, async () => {
-                        if (!GCP_PROJECT_ID.test(project)) throw new SourceReadError('UNPARSEABLE', 'a project that is not a project id');
-                        return ctx.http.getJson(`${GCP_IAM_ORIGIN}/v1/projects/${project}/serviceAccounts?pageSize=1`, { origin: GCP_IAM_ORIGIN, headers });
-                    });
+                    await log.listing(
+                        'service accounts',
+                        iamHost,
+                        async () => {
+                            if (!GCP_PROJECT_ID.test(project)) throw new SourceReadError('UNPARSEABLE', 'a project that is not a project id');
+                            return ctx.http.getJson(`${GCP_IAM_ORIGIN}/v1/projects/${project}/serviceAccounts?pageSize=1`, { origin: GCP_IAM_ORIGIN, headers });
+                        },
+                        // Google omits an empty collection: an object with no `accounts` is a listing of none.
+                        (body) => isRecord(body) && (body.accounts === undefined || Array.isArray(body.accounts)),
+                    );
                 }
                 // Google answers what an identity may do through testIamPermissions, a POST this scanner cannot send.
                 log.write({

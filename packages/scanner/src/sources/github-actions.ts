@@ -517,15 +517,28 @@ export function githubActionsSource(opts: GitHubActionsSourceOptions): HarnessSo
                 let scopes: string | null = null;
                 for (const repo of opts.repositories) {
                     const base = `${origin}/repos/${repo}`;
-                    const meta = await log.read('the repository', hostname, async () => {
-                        if (!GITHUB_REPOSITORY.test(repo)) throw new SourceReadError('UNPARSEABLE', 'a repository that is not owner/repo');
-                        return ctx.http.getJson(base, { origin, headers });
-                    });
-                    scopes = scopes ?? meta.headers.get('x-oauth-scopes');
-                    await log.read('the workflow directory', hostname, () =>
-                        ctx.http.getJson(`${base}/contents/.github/workflows`, { origin, headers, absentOk: true }),
+                    const meta = await log.listing(
+                        'the repository',
+                        hostname,
+                        async () => {
+                            if (!GITHUB_REPOSITORY.test(repo)) throw new SourceReadError('UNPARSEABLE', 'a repository that is not owner/repo');
+                            return ctx.http.getJson(base, { origin, headers });
+                        },
+                        (body) => isRecord(body) && typeof body.full_name === 'string',
                     );
-                    await log.read('secret names', hostname, () => ctx.http.getJson(`${base}/actions/secrets?per_page=1`, { origin, headers }));
+                    scopes = scopes ?? meta.headers.get('x-oauth-scopes');
+                    await log.listing(
+                        'the workflow directory',
+                        hostname,
+                        () => ctx.http.getJson(`${base}/contents/.github/workflows`, { origin, headers, absentOk: true }),
+                        Array.isArray,
+                    );
+                    await log.listing(
+                        'secret names',
+                        hostname,
+                        () => ctx.http.getJson(`${base}/actions/secrets?per_page=1`, { origin, headers }),
+                        (body) => isRecord(body) && Array.isArray(body.secrets),
+                    );
                 }
                 log.write(githubWriteObservation(scopes));
             });

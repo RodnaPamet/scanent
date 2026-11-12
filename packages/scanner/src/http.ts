@@ -80,6 +80,13 @@ export interface McpTarget {
     readonly url: string;
     /** The read token's header, when the server takes one. Nothing else. */
     readonly headers: Readonly<Record<string, string>>;
+    /**
+     * Run before EVERY request sent to the target, the handshake's second one
+     * included: where a source re-resolves a host the estate named and refuses
+     * an address the scanner may not reach. It throws `SourceReadError`, and
+     * the request is then never started.
+     */
+    readonly beforeRequest?: () => Promise<void>;
 }
 
 /** An open MCP session: what `initialize` returned, and what every later request must carry. */
@@ -555,6 +562,7 @@ export function createSourceWire(
         if (session.protocolVersion !== null) headers['MCP-Protocol-Version'] = session.protocolVersion;
         const message = { jsonrpc: '2.0', ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) };
         try {
+            await target.beforeRequest?.();
             const res = await t.fetchImpl(target.url, {
                 method: 'POST',
                 headers,
