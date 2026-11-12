@@ -27,6 +27,10 @@ export interface AccessEntry {
     readonly notNeeded: readonly string[];
     /** The variable the credential goes in, by its default name. */
     readonly credential: string;
+    /** The credential is a file with line breaks: it is given as `<credential>_FILE=/path`, never as a value. */
+    readonly asFile?: true;
+    /** What this grant does NOT let the scanner see, where the product's own rules make the read narrower than its name. */
+    readonly limits?: readonly string[];
     /** The hosts it reaches, in words, for the document. A configuration's real hosts come from `hostsFor`. */
     readonly hostsNote: string;
 }
@@ -73,7 +77,12 @@ export const ACCESS_GUIDE: Readonly<Record<SourceKind, AccessEntry>> = Object.fr
             'Okta admin console: Security, Administrators: assign Read-only Administrator to a dedicated user.',
             'Signed in as that user: Security, API, Tokens, Create token.',
         ],
-        reads: ['Service apps', 'API token metadata', "The token's own id"],
+        reads: ['Service apps', 'API token metadata, as far as the role shows it (see the limit)', "The token's own id"],
+        limits: [
+            "Okta's role table lets a Read-only Administrator view API tokens of its own user only. With this grant the scan sees every service app, and of API tokens only those of the token's own user: other users' API tokens are not seen, and the report does not say they are absent.",
+            'Seeing every API token takes Super Administrator or Org Administrator. Both can write, so this guide does not ask for them; list API tokens in Security, API, Tokens by hand instead.',
+            "This is from Okta's documentation and has not been confirmed against a live org.",
+        ],
         notNeeded: ['Super Administrator', 'Org Administrator', 'App Administrator', 'API Access Management Administrator'],
         credential: 'OKTA_API_TOKEN',
         hostsNote: "the Okta org's host",
@@ -110,7 +119,8 @@ export const ACCESS_GUIDE: Readonly<Record<SourceKind, AccessEntry>> = Object.fr
             'Editor',
             'Owner',
         ],
-        credential: 'GCP_SCANNER_KEY_FILE',
+        credential: 'GCP_SCANNER_KEY',
+        asFile: true,
         hostsNote: 'oauth2.googleapis.com, iam.googleapis.com',
     },
     runtime: {
@@ -155,6 +165,13 @@ export const ACCESS_GUIDE: Readonly<Record<SourceKind, AccessEntry>> = Object.fr
     },
 });
 
+/** The variable an operator sets for an entry's credential: its name, or the `_FILE` form for a credential that is a file. */
+export function credentialVariable(entry: AccessEntry): string {
+    return entry.asFile === true ? `${entry.credential}_FILE` : entry.credential;
+}
+
+const FILE_NOTE = (entry: AccessEntry): string => `a key file: set ${entry.credential}_FILE to its path`;
+
 /** The access tables for the sources one configuration has, in guide order, each with the hosts that configuration reaches. */
 export function accessTablesFor(config: ScannerConfig): AccessTable[] {
     const entries = hostsFor(config);
@@ -176,7 +193,8 @@ export function renderAccessText(table: AccessTable): string {
         `    Create it:\n${list(table.where)}` +
         `    It reads:\n${list(table.reads)}` +
         `    Do not grant:\n${list(table.notNeeded)}` +
-        `    Credential:  ${table.credential}\n` +
+        (table.limits === undefined ? '' : `    Limits:\n${list(table.limits)}`) +
+        `    Credential:  ${table.credential}${table.asFile === true ? ` (${FILE_NOTE(table)})` : ''}\n` +
         `    Hosts:       ${table.hosts.length === 0 ? 'none' : table.hosts.map((h) => `${h}:443`).join(', ')}\n`
     );
 }
@@ -195,21 +213,23 @@ export function renderAccessMarkdown(): string {
         'tables for the sources you choose, and `scanent doctor` checks them.',
         '',
         'No credential value goes in the configuration. Each goes in the environment variable named below,',
-        'or in a file named by that variable with `_FILE` appended.',
+        'or in a file named by that variable with `_FILE` appended (`NAME_FILE=/path`). A credential that is',
+        'itself a file with line breaks is given only in the `_FILE` form.',
         '',
         '| Source | Grant | Credential | Hosts (port 443) |',
         '|---|---|---|---|',
         ...GUIDE_ORDER.map((k) => {
             const e = ACCESS_GUIDE[k];
-            return `| \`${e.kind}\` | ${cell(e.grant)} | \`${e.credential}\` | ${cell(e.hostsNote)} |`;
+            return `| \`${e.kind}\` | ${cell(e.grant)} | \`${e.credential}\`${e.asFile === true ? ` (${FILE_NOTE(e)})` : ''} | ${cell(e.hostsNote)} |`;
         }),
         '',
     ];
     for (const k of GUIDE_ORDER) {
         const e = ACCESS_GUIDE[k];
-        lines.push(`## ${e.title}`, '', `Source kind: \`${e.kind}\`. Credential: \`${e.credential}\`. Hosts: ${e.hostsNote}.`, '', `**Grant.** ${e.grant}.`, '');
+        lines.push(`## ${e.title}`, '', `Source kind: \`${e.kind}\`. Credential: \`${e.credential}\`${e.asFile === true ? ` (${FILE_NOTE(e)})` : ''}. Hosts: ${e.hostsNote}.`, '', `**Grant.** ${e.grant}.`, '');
         lines.push('**Where it is created.**', '', ...e.where.map((w, i) => `${i + 1}. ${w}`), '');
         lines.push('**Lets the scanner read.**', '', ...e.reads.map((r) => `- ${r}`), '');
+        if (e.limits !== undefined) lines.push('**What this grant does not show.**', '', ...e.limits.map((l) => `- ${l}`), '');
         lines.push('**Not needed, and must not be granted.**', '', ...e.notNeeded.map((n) => `- ${n}`), '');
     }
     return `${lines.join('\n')}`;

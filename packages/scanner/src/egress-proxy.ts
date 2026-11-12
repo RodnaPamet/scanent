@@ -24,6 +24,18 @@
  * what it decided — host, port, allowed or refused — and can log nothing else,
  * because it holds nothing else.
  *
+ * AN ALLOWLISTED NAME IS NOT ENOUGH: THE ADDRESS IS CHECKED, AND IT IS THE
+ * ADDRESS DIALLED. The allowlist now carries hosts an estate names (an MCP
+ * server, a self-hosted LangSmith), and whoever answers DNS for such a name
+ * chooses where it points. So the proxy resolves the name itself, refuses when
+ * ANY address is loopback, link-local (cloud metadata) or unspecified, or is
+ * private and outside `EGRESS_PRIVATE_CIDR_ALLOWLIST`, and connects to the
+ * address it checked, never to the name again. TLS runs inside the tunnel with
+ * the client's own server name, so connecting by address costs nothing. This
+ * is the scanner's own rule (`customer-host.ts`) applied where the connection
+ * is made, which is what lets a scanner with no resolver of its own leave the
+ * check to this proxy (`EGRESS_PROXY_CHECKS_ADDRESSES`).
+ *
  * It ships in the scanner's own image and runs from the same pinned digest
  * (`deploy/docker-compose.harness-scanner.yml`), so the proxy is the reviewed
  * code beside the scanner, not a third-party image with its own supply chain.
@@ -32,6 +44,7 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { connect, isIP, type Socket } from 'node:net';
 import type { Duplex } from 'node:stream';
 
+import { addressReachable, parsePrivateCidrAllowlist, resolveWithDns, type PrivateCidrAllowlist, type ResolveHost } from './customer-host';
 import { jsonLineLog, type ScannerLog } from './log';
 
 /** The one port a tunnel may name: the scanner speaks https and nothing else. */
@@ -75,8 +88,26 @@ export function decideConnect(target: string | undefined, allow: ReadonlySet<str
 export interface EgressProxyOptions {
     readonly allow: ReadonlySet<string>;
     readonly log?: ScannerLog;
-    /** Opens the upstream connection. A TEST SEAM: production dials the host. */
+    /**
+     * Opens the upstream connection, by NAME, with no address check. A TEST
+     * SEAM: production passes none, and resolves, checks and dials an address.
+     * Passed with `resolve`, the name is still resolved and checked first.
+     */
     readonly dial?: (host: string, port: number) => Socket;
+    /** How an allowlisted name is resolved. Absent (and no `dial`), DNS. */
+    readonly resolve?: ResolveHost;
+    /** Opens the connection to a checked ADDRESS. Absent, `net.connect`. */
+    readonly connectAddress?: (address: string, port: number) => Socket;
+    /** Private ranges the proxy may dial (`EGRESS_PRIVATE_CIDR_ALLOWLIST`). Loopback, link-local and metadata are refused inside them too. */
+    readonly privateCidrs?: PrivateCidrAllowlist;
+}
+
+/** `EGRESS_PRIVATE_CIDR_ALLOWLIST` (comma-separated CIDRs) parsed. An entry that is not a CIDR is refused: the proxy does not start. */
+export function parseEgressPrivateCidrs(value: string | undefined): PrivateCidrAllowlist {
+    const entries = (value ?? '').split(',').map((s) => s.trim()).filter((s) => s !== '');
+    const parsed = parsePrivateCidrAllowlist(entries);
+    if (parsed === null) throw new Error('EGRESS_PRIVATE_CIDR_ALLOWLIST names something that is not a CIDR');
+    return parsed;
 }
 
 function refuse(socket: Duplex, status: 400 | 403 | 405 | 502, text: string): void {
@@ -85,7 +116,10 @@ function refuse(socket: Duplex, status: 400 | 403 | 405 | 502, text: string): vo
 
 export function createEgressProxy(opts: EgressProxyOptions): Server {
     const log = opts.log ?? jsonLineLog();
-    const dial = opts.dial ?? ((host: string, port: number) => connect({ host, port }));
+    const privateCidrs = opts.privateCidrs ?? [];
+    // The name is resolved and its addresses checked whenever the production path runs, or a test asks for it.
+    const resolve = opts.resolve ?? (opts.dial === undefined ? resolveWithDns : null);
+    const connectAddress = opts.connectAddress ?? ((address: string, port: number) => connect({ host: address, port }));
     const server = createServer((req, res) => {
         // Cleartext forwarding is never offered.
         log.warn('egress refused', { reason: 'NOT_CONNECT', method: String(req.method ?? '') });
@@ -98,25 +132,61 @@ export function createEgressProxy(opts: EgressProxyOptions): Server {
             refuse(client, decision.status, decision.status === 400 ? 'Bad Request' : 'Forbidden');
             return;
         }
-        const upstream = dial(decision.host, decision.port);
-        let established = false;
-        upstream.once('connect', () => {
-            established = true;
-            log.info('egress allowed', { host: decision.host, port: decision.port });
-            client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-            if (head.length > 0) upstream.write(head);
-            upstream.pipe(client);
-            client.pipe(upstream);
+        const open = (upstream: Socket): void => {
+            let established = false;
+            upstream.once('connect', () => {
+                established = true;
+                log.info('egress allowed', { host: decision.host, port: decision.port });
+                client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+                if (head.length > 0) upstream.write(head);
+                upstream.pipe(client);
+                client.pipe(upstream);
+            });
+            upstream.once('error', () => {
+                log.warn('egress upstream failed', { host: decision.host });
+                // Before the tunnel opened, the client is owed an answer; after,
+                // the bytes are TLS and a status line would corrupt them.
+                if (!established && client.writable) refuse(client, 502, 'Bad Gateway');
+                else client.destroy();
+            });
+            client.once('error', () => upstream.destroy());
+            client.once('close', () => upstream.destroy());
+        };
+        if (resolve === null) {
+            open((opts.dial as NonNullable<typeof opts.dial>)(decision.host, decision.port));
+            return;
+        }
+        // The client may go away while the name resolves; nothing is dialled for it then.
+        let gone = false;
+        client.once('close', () => {
+            gone = true;
         });
-        upstream.once('error', () => {
-            log.warn('egress upstream failed', { host: decision.host });
-            // Before the tunnel opened, the client is owed an answer; after,
-            // the bytes are TLS and a status line would corrupt them.
-            if (!established && client.writable) refuse(client, 502, 'Bad Gateway');
-            else client.destroy();
+        client.once('error', () => {
+            gone = true;
         });
-        client.once('error', () => upstream.destroy());
-        client.once('close', () => upstream.destroy());
+        resolve(decision.host).then(
+            (addresses) => {
+                if (gone) return;
+                if (addresses.length === 0) {
+                    log.warn('egress refused', { reason: 'HOST_DID_NOT_RESOLVE', host: decision.host });
+                    refuse(client, 502, 'Bad Gateway');
+                    return;
+                }
+                // EVERY address, as the scanner's own check has it: one bad answer among good ones is a bad name.
+                if (!addresses.every((a) => addressReachable(a, privateCidrs))) {
+                    log.warn('egress refused', { reason: 'ADDRESS_NOT_ALLOWED', host: decision.host });
+                    refuse(client, 403, 'Forbidden');
+                    return;
+                }
+                // The address that was checked is the address dialled: the name is not resolved a second time.
+                open(opts.dial === undefined ? connectAddress(addresses[0], decision.port) : opts.dial(decision.host, decision.port));
+            },
+            () => {
+                if (gone) return;
+                log.warn('egress refused', { reason: 'HOST_DID_NOT_RESOLVE', host: decision.host });
+                refuse(client, 502, 'Bad Gateway');
+            },
+        );
     });
     return server;
 }
@@ -127,11 +197,12 @@ if (require.main === module) {
         process.once(signal, () => process.exit(code));
     }
     const allow = parseEgressAllowlist(process.env.EGRESS_ALLOW);
+    const privateCidrs = parseEgressPrivateCidrs(process.env.EGRESS_PRIVATE_CIDR_ALLOWLIST);
     // An empty allowlist is not an error the proxy can recover from: it would
     // refuse every tunnel. Say so at start rather than at the scanner's first
     // read, and keep running — refusing everything is the safe state.
     if (allow.size === 0) log.warn('egress allowlist is empty: every tunnel will be refused');
-    createEgressProxy({ allow, log }).listen(EGRESS_PROXY_LISTEN_PORT, () => {
+    createEgressProxy({ allow, privateCidrs, log }).listen(EGRESS_PROXY_LISTEN_PORT, () => {
         log.info('egress proxy listening', { port: EGRESS_PROXY_LISTEN_PORT, hosts: [...allow].sort().join(',') });
     });
 }

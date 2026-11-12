@@ -8,7 +8,8 @@
  *     asking for one. Where a source has a credential, the prompt says which
  *     variable it goes in and moves on.
  *   • EVERY ANSWER IS CHECKED FOR A SECRET'S SHAPE before anything else looks
- *     at it. A hit is refused, is not stored, written or repeated back, and
+ *     at it: the contract's shapes and the credentials this scanner is given
+ *     (`secret-shapes.ts`), and for a name, a long bare token. A hit is refused, is not stored, written or repeated back, and
  *     the question is asked again; three refusals of one question end the
  *     wizard. The terminal has already echoed what was typed, which scanent
  *     cannot undo: that is why the refusal says to rotate it.
@@ -16,12 +17,11 @@
  * An answer that fails its field's rule repeats the question with the rule,
  * never the value. The rules are the configuration schema's own.
  */
-import { looksLikeSecret } from '@scanent/contract/harness-contract';
-
 import { ScannerConfigSchema, SourceConfigSchema } from '../config';
 import { ANSWERABLE_KINDS, INIT_ANSWERS_SCHEMA, type AnswerableKind, type InitAnswers, type SourceAnswer } from './answers';
-import { ACCESS_GUIDE } from './access-guide';
-import { DEFAULT_EVERY_HOURS, DEFAULT_OUTPUT_DIR, mcpTokenEnvName } from './plan';
+import { ACCESS_GUIDE, credentialVariable } from './access-guide';
+import { DEFAULT_EVERY_HOURS, DEFAULT_INGEST_KEY_ENV, DEFAULT_OUTPUT_DIR, mcpTokenEnvName } from './plan';
+import { looksLikeBareToken, looksLikeCredential } from './secret-shapes';
 
 export interface PromptIo {
     /** One line of input, without its line break. */
@@ -73,13 +73,16 @@ function breaksRule(kind: AnswerableKind, candidate: Record<string, unknown>, fi
 const list = (text: string): string[] => text.split(',').map((s) => s.trim()).filter((s) => s !== '');
 
 export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
-    /** One answer: trimmed, never secret-shaped, and passing `rule` (which returns the rule's words, or null). */
-    async function ask(question: string, rule: (value: string) => string | null = () => null): Promise<string> {
+    /**
+     * One answer: trimmed, never credential-shaped, and passing `rule` (which returns the rule's words, or null).
+     * `isName` marks a field that holds a name somebody chose, where a long bare token is refused too.
+     */
+    async function ask(question: string, rule: (value: string) => string | null = () => null, isName = false): Promise<string> {
         let refusals = 0;
         for (;;) {
             const value = (await io.ask(`${question} `)).trim();
             let problem: string | null;
-            if (looksLikeSecret(value)) problem = SECRET_REFUSAL;
+            if (looksLikeCredential(value) || (isName && looksLikeBareToken(value))) problem = SECRET_REFUSAL;
             else problem = rule(value);
             if (problem === null) return value;
             refusals += 1;
@@ -96,6 +99,7 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
     io.say('scanent init: a configuration for one estate. No question asks for a secret; credentials go in environment variables, named as you go.');
     const estate = await ask('Estate name (lower-case letters, digits and hyphens, e.g. acme-prod):', (v) =>
         ScannerConfigSchema.shape.estate.safeParse(v).success ? null : 'Lower-case letters, digits and hyphens, starting with a letter or digit, at most 63 characters.',
+        true,
     );
 
     const sources: SourceAnswer[] = [];
@@ -130,6 +134,7 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
                     (v === '' && servers.length > 0) || (v !== '' && !servers.some((x) => x.label === v) && ScannerConfigSchema.shape.estate.safeParse(v).success)
                         ? null
                         : 'Lower-case letters, digits and hyphens, each label once.',
+                    true,
                 );
                 if (label === '') break;
                 const url = await ask('Its endpoint URL (https):', (v) =>
@@ -150,6 +155,7 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
                     (v === '' && roots.length > 0) || (v !== '' && !roots.some((x) => x.label === v) && ScannerConfigSchema.shape.estate.safeParse(v).success)
                         ? null
                         : 'Lower-case letters, digits and hyphens, each label once.',
+                    true,
                 );
                 if (label === '') break;
                 const path = await ask('Its directory, as an absolute path where the scanner runs:', (v) =>
@@ -160,7 +166,7 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
             s.roots = roots;
         }
         if (kind !== 'mcp' && kind !== 'code') {
-            io.say(`The credential is not asked for here: it goes in ${ACCESS_GUIDE[kind].credential}.`);
+            io.say(`The credential is not asked for here: it goes in ${credentialVariable(ACCESS_GUIDE[kind])}.`);
         }
         sources.push({ kind, ...s });
     }
@@ -179,13 +185,16 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
     if (await yes('Post results to an Inflect tenant?')) {
         const shape = ScannerConfigSchema.shape;
         const inflectShape = shape.inflect.unwrap().shape;
+        // Said BEFORE the tenant's questions: the next three ask about the tenant, and none of them is the key.
+        io.say(`The API key is not asked for here: it goes in ${DEFAULT_INGEST_KEY_ENV}.`);
         const baseUrl = await ask('Tenant base URL (https origin):', (v) => (inflectShape.baseUrl.safeParse(v).success ? null : 'An https origin, with no path.'));
-        const tenantSlug = await ask('Tenant slug:', (v) => (inflectShape.tenantSlug.safeParse(v).success ? null : 'Lower-case letters, digits and hyphens.'));
-        const agentId = await ask("The scanner's agent id in the tenant's register:", (v) =>
-            shape.scanner.shape.agentId.safeParse(v).success ? null : 'Letters, digits, hyphens and underscores, at most 64 characters.',
+        const tenantSlug = await ask('Tenant slug:', (v) => (inflectShape.tenantSlug.safeParse(v).success ? null : 'Lower-case letters, digits and hyphens.'), true);
+        const agentId = await ask(
+            "The scanner's agent id in the tenant's register (a name, not a key):",
+            (v) => (shape.scanner.shape.agentId.safeParse(v).success ? null : 'Letters, digits, hyphens and underscores, at most 64 characters.'),
+            true,
         );
         const readRegister = await yes("Also read the tenant's agent register?");
-        io.say('The API key is not asked for here: it goes in INFLECT_INGEST_KEY.');
         inflect = { baseUrl, tenantSlug, agentId, readRegister };
     }
 

@@ -77,10 +77,18 @@ networkPolicy:
   # cilium: a CiliumNetworkPolicy limited to exactly `egress.fqdns`.
   # none: no policy.
   flavor: kubernetes
+  # Where the pods' DNS lookups go. The default fits a cluster whose DNS is the
+  # kube-dns / CoreDNS pods on port 53. Two that differ (README.md, "DNS"):
+  #   NodeLocal DNSCache: the pods ask a node address, which no pod selector
+  #     matches. Add it: cidrs: [169.254.20.10/32]
+  #   OpenShift: namespace openshift-dns, podLabels
+  #     {dns.operator.openshift.io/daemonset-dns: default}, port 5353.
   dns:
     namespace: kube-system
     podLabels:
       k8s-app: kube-dns
+    port: 53
+    cidrs: []
   # Hosts on private addresses (a self-hosted LangSmith, an MCP server):
   # - { cidr: 10.20.0.0/16, port: 443 }
   extraEgress: []
@@ -99,6 +107,12 @@ egress:
 # `egress.fqdns`, and let the scanner reach nothing else.
 egressProxy:
   enabled: false
+  # The proxy resolves each name itself and connects to the address it
+  # checked. A name that resolves to a private address is refused unless the
+  # address is in one of these ranges (a self-hosted LangSmith or an MCP server
+  # on your own network). Loopback, link-local and metadata addresses are
+  # refused whatever is listed.
+  privateCidrs: []
 
 resources:
   requests:

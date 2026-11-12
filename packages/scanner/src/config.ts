@@ -433,7 +433,11 @@ export type InflectConfig = NonNullable<ScannerConfig['inflect']>;
 /** A configuration known to name a tenant: what a value that carries an `inflect` block parses to. */
 export type ScannerConfigWithInflect = ScannerConfig & { readonly inflect: InflectConfig };
 
-/** The path of the first secret-shaped string in an untrusted JSON tree, or null. */
+/**
+ * The path of the first secret-shaped string in an untrusted JSON tree, or
+ * null. A KEY is untrusted too: a secret-shaped key is itself a hit, and it is
+ * written `<key>` in the path, which is printed.
+ */
 export function firstSecretShaped(node: unknown, path: string): string | null {
     if (typeof node === 'string') return looksLikeSecret(node) ? path || '(root)' : null;
     if (Array.isArray(node)) {
@@ -445,6 +449,7 @@ export function firstSecretShaped(node: unknown, path: string): string | null {
     }
     if (node !== null && typeof node === 'object') {
         for (const [k, v] of Object.entries(node)) {
+            if (looksLikeSecret(k)) return path ? `${path}.<key>` : '<key>';
             const hit = firstSecretShaped(v, path ? `${path}.${k}` : k);
             if (hit) return hit;
         }

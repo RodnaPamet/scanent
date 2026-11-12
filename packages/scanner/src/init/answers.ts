@@ -14,7 +14,7 @@
  */
 import { z } from 'zod';
 
-import { firstSecretShaped } from '../config';
+import { firstCredentialInAnswers } from './secret-shapes';
 
 export const INIT_ANSWERS_SCHEMA = 'scanent-init-answers/1';
 
@@ -62,9 +62,12 @@ export class InitError extends Error {
     }
 }
 
-/** Parse an answers document. Refuses a secret-shaped string anywhere before the schema runs. */
+/**
+ * Parse an answers document. Refuses a credential-shaped string anywhere, and a
+ * token-shaped name, before the schema runs (`secret-shapes.ts`).
+ */
 export function parseInitAnswers(json: unknown): InitAnswers {
-    const secretAt = firstSecretShaped(json, '');
+    const secretAt = firstCredentialInAnswers(json);
     if (secretAt !== null) {
         throw new InitError([`${secretAt}: a credential value in the answers; scanent never takes one. If it was real, rotate it`]);
     }

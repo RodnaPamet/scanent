@@ -20,7 +20,8 @@ import { looksLikeSecret } from '@scanent/contract/harness-contract-rules';
 import * as yaml from 'js-yaml';
 
 import { credentialEnvNames, parseScannerConfig } from '../src/config';
-import { parseEgressAllowlist } from '../src/egress-proxy';
+import { PROXY_CHECKS_ADDRESSES_ENV } from '../src/customer-host';
+import { parseEgressAllowlist, parseEgressPrivateCidrs } from '../src/egress-proxy';
 import { hostsFor } from '../src/hosts';
 import { parseInitAnswers } from '../src/init/answers';
 import { planInit, renderEnvTemplate } from '../src/init/plan';
@@ -232,7 +233,9 @@ describe('deploy/compose.yaml and its egress overlay', () => {
 
     it('the overlay moves the scanner onto an internal network and behind the bundled proxy, and changes nothing else', () => {
         expect(overlay.services.scanent).toEqual({
-            environment: { HTTPS_PROXY: 'http://egress-proxy:3128' },
+            // The second variable is new with the review: the scanner has no resolver on the internal network,
+            // so the address check for a host the estate names is the proxy's (`customer-host.ts`).
+            environment: { HTTPS_PROXY: 'http://egress-proxy:3128', EGRESS_PROXY_CHECKS_ADDRESSES: '1' },
             networks: ['scanent-internal'],
             depends_on: ['egress-proxy'],
         });
@@ -244,10 +247,27 @@ describe('deploy/compose.yaml and its egress overlay', () => {
         expect(fs.existsSync(abs('packages/scanner/src/egress-proxy.ts'))).toBe(true);
         expect(proxy.command).toEqual([]);
         // The allowlist is required, and is the value `scanent hosts --format egress-allow` prints.
-        expect(proxy.environment).toEqual({ EGRESS_ALLOW: '${EGRESS_ALLOW:?set EGRESS_ALLOW from scanent hosts --format egress-allow}' });
+        // The private ranges are optional and empty by default: a private address is then refused (also new with the review).
+        expect(proxy.environment).toEqual({
+            EGRESS_ALLOW: '${EGRESS_ALLOW:?set EGRESS_ALLOW from scanent hosts --format egress-allow}',
+            EGRESS_PRIVATE_CIDR_ALLOWLIST: '${EGRESS_PRIVATE_CIDR_ALLOWLIST:-}',
+        });
+        expect(parseEgressPrivateCidrs('')).toEqual([]);
         expect(proxy.volumes).toBeUndefined();
         expect(proxy.secrets).toBeUndefined();
         expect(proxy.env_file).toBeUndefined();
+    });
+
+    it('the variable that hands the address check to a proxy is set only where the proxy is the bundled one', () => {
+        // Beside any other proxy it turns the check off, so no other deployment file may carry it.
+        expect(PROXY_CHECKS_ADDRESSES_ENV).toBe('EGRESS_PROXY_CHECKS_ADDRESSES');
+        expect(base.services.scanent.environment?.EGRESS_PROXY_CHECKS_ADDRESSES).toBeUndefined();
+        const carriers = execFileSync('git', ['grep', '-l', 'EGRESS_PROXY_CHECKS_ADDRESSES', '--', 'deploy'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim().split('\n');
+        expect(carriers).toEqual(['deploy/compose.egress.yaml']);
+        // And the overlay says, where the reader sets EGRESS_ALLOW, that a host of their own belongs in it.
+        const text = read('deploy/compose.egress.yaml');
+        expect(text).toMatch(/an MCP server, a self-hosted LangSmith\) goes\n# in EGRESS_ALLOW/);
+        expect(text).not.toContain('SCANENT_VERSION=<version> docker compose');
     });
 });
 
@@ -560,6 +580,106 @@ describe('the chart, rendered by helm template', () => {
         expect(one(r, 'Service').spec.selector).toEqual(PROXY_LABELS);
     });
 
+    rendered('egress proxy: private ranges reach the proxy as its own allowlist and as a rule of its policy, and nowhere else', () => {
+        const r = helmTemplate(['egress-proxy'], ['egressProxy.privateCidrs={10.20.0.0/16,fd00:20::/64}']);
+        expect(r.ok).toBe(true);
+        const env = one(r, 'Deployment').spec.template.spec.containers[0].env as Json[];
+        expect(env).toContainEqual({ name: 'EGRESS_PRIVATE_CIDR_ALLOWLIST', value: '10.20.0.0/16,fd00:20::/64' });
+        // The value is one the proxy itself accepts.
+        expect(parseEgressPrivateCidrs('10.20.0.0/16,fd00:20::/64')).toHaveLength(2);
+        expect(one(r, 'NetworkPolicy', 'scanent-egress-proxy').spec.egress).toEqual([
+            DNS_RULE,
+            PUBLIC_443_RULE,
+            { to: [{ ipBlock: { cidr: '10.20.0.0/16' } }], ports: [{ protocol: 'TCP', port: 443 }] },
+            { to: [{ ipBlock: { cidr: 'fd00:20::/64' } }], ports: [{ protocol: 'TCP', port: 443 }] },
+        ]);
+        // The scanner's own policy is unchanged: it still reaches DNS and the proxy only.
+        expect(JSON.stringify(one(r, 'NetworkPolicy', 'scanent').spec)).not.toContain('10.20.0.0');
+        // Without the bundled proxy the ranges would do nothing, so they are refused.
+        const alone = helmTemplate([], ['egressProxy.privateCidrs={10.20.0.0/16}']);
+        expect(alone.ok).toBe(false);
+        expect(alone.stderr).toMatch(/egressProxy.privateCidrs/);
+        expect(helmTemplate(['egress-proxy'], ['egressProxy.privateCidrs={internal.example}']).ok).toBe(false);
+    });
+
+    rendered('DNS that is not the kube-dns pods on 53: the port and node addresses are values, in both flavors', () => {
+        // OpenShift: other pods, port 5353.
+        const openshift = helmTemplate([], [
+            'networkPolicy.dns.namespace=openshift-dns',
+            'networkPolicy.dns.port=5353',
+            'networkPolicy.dns.podLabels.k8s-app=null',
+            'networkPolicy.dns.podLabels.dns\\.operator\\.openshift\\.io/daemonset-dns=default',
+        ]);
+        expect(openshift.stderr).toBe('');
+        expect(one(openshift, 'NetworkPolicy').spec.egress[0]).toEqual({
+            to: [
+                {
+                    namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'openshift-dns' } },
+                    podSelector: { matchLabels: { 'dns.operator.openshift.io/daemonset-dns': 'default' } },
+                },
+            ],
+            ports: [
+                { protocol: 'UDP', port: 5353 },
+                { protocol: 'TCP', port: 5353 },
+            ],
+        });
+        // NodeLocal DNSCache: a node address, which is inside the link-local range the 443 rule excludes.
+        const nodeLocal = helmTemplate([], ['networkPolicy.dns.cidrs={169.254.20.10/32}']);
+        expect(nodeLocal.ok).toBe(true);
+        expect(one(nodeLocal, 'NetworkPolicy').spec.egress[0]).toEqual({ to: [...DNS_RULE.to, { ipBlock: { cidr: '169.254.20.10/32' } }], ports: DNS_RULE.ports });
+        expect(one(nodeLocal, 'NetworkPolicy').spec.egress[1]).toEqual(PUBLIC_443_RULE);
+        // The egress proxy's own policy takes the same rule.
+        const proxied = helmTemplate(['egress-proxy'], ['networkPolicy.dns.cidrs={169.254.20.10/32}', 'networkPolicy.dns.port=5353']);
+        for (const name of ['scanent', 'scanent-egress-proxy']) {
+            expect(one(proxied, 'NetworkPolicy', name).spec.egress[0]).toEqual({
+                to: [...DNS_RULE.to, { ipBlock: { cidr: '169.254.20.10/32' } }],
+                ports: [
+                    { protocol: 'UDP', port: 5353 },
+                    { protocol: 'TCP', port: 5353 },
+                ],
+            });
+        }
+        // Cilium: the port moves, and the node address gets the same DNS rule for the same names.
+        const cilium = helmTemplate(['cilium'], ['networkPolicy.dns.cidrs={169.254.20.10/32}', 'networkPolicy.dns.port=5353']);
+        const egress = one(cilium, 'CiliumNetworkPolicy').spec.egress as Json[];
+        expect(egress[0].toPorts[0].ports).toEqual([{ port: '5353', protocol: 'ANY' }]);
+        expect(egress[1].toCIDR).toEqual(['169.254.20.10/32']);
+        expect(egress[1].toPorts).toEqual(egress[0].toPorts);
+        expect(egress[2].toFQDNs).toBeDefined();
+        // The defaults are what they were.
+        expect(one(helmTemplate([]), 'NetworkPolicy').spec.egress[0]).toEqual(DNS_RULE);
+        const plain = one(helmTemplate(['cilium']), 'CiliumNetworkPolicy').spec.egress as Json[];
+        expect(plain[0].toPorts[0].ports).toEqual([{ port: '53', protocol: 'ANY' }]);
+        expect(plain.filter((e) => e.toCIDR !== undefined && e.toPorts[0].rules !== undefined)).toEqual([]);
+        // And a value the schema does not know is still refused.
+        expect(helmTemplate([], ['networkPolicy.dns.port=0']).ok).toBe(false);
+        expect(helmTemplate([], ['networkPolicy.dns.cidrs={kube-dns}']).ok).toBe(false);
+    });
+
+    rendered('a long release name: every object name fits its limit, and the proxy Service is a DNS label', () => {
+        // 53 is the longest release name helm itself takes.
+        for (const length of [40, 52, 53]) {
+            const release = 'a'.repeat(length);
+            const args = ['template', release, abs(CHART), '--namespace', 'scanent', '-f', abs(`${CHART}/ci/base-values.yaml`), '-f', abs(`${CHART}/ci/egress-proxy-values.yaml`)];
+            const out = spawnSync('helm', args, { encoding: 'utf8' });
+            expect(out.status).toBe(0);
+            const docs = (yaml.loadAll(out.stdout) as Array<Json | null>).filter((d): d is Json => d !== null);
+            expect(docs.length).toBeGreaterThan(5);
+            for (const d of docs) {
+                const name = d.metadata.name as string;
+                // A CronJob's name leaves room for the suffix its Jobs and pods take.
+                expect([d.kind, name.length <= (d.kind === 'CronJob' ? 52 : 63)]).toEqual([d.kind, true]);
+                expect(name).toMatch(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/);
+            }
+            const service = docs.find((d) => d.kind === 'Service') as Json;
+            const pod = (docs.find((d) => d.kind === 'CronJob') as Json).spec.jobTemplate.spec.template.spec;
+            // The scanner is pointed at the Service by the same name.
+            expect(pod.containers[0].env).toContainEqual({ name: 'HTTPS_PROXY', value: `http://${service.metadata.name}:3128` });
+        }
+        // A release name that fits is not shortened.
+        expect(one(helmTemplate(['egress-proxy']), 'Service').metadata.name).toBe('scanent-egress-proxy');
+    });
+
     rendered('a forward proxy and a private CA: the 443 rule becomes the proxy, the CA is a mounted file, --strict is passed', () => {
         const r = helmTemplate(['proxy-and-ca']);
         expect(r.ok).toBe(true);
@@ -855,6 +975,22 @@ esac
             fs.rmSync(path.join(tree, 'images/extra.tar'));
             expect(verify().status).toBe(0);
 
+            // Something that is not a regular file is not in the list either, and no checksum vouches for it.
+            fs.symlinkSync('/etc/passwd', path.join(tree, 'images/link'));
+            const linked = verify();
+            expect(linked.status).toBe(1);
+            expect(linked.stderr).toMatch(/neither a file nor a directory/);
+            fs.rmSync(path.join(tree, 'images/link'));
+            fs.symlinkSync(path.join(tree, 'docs'), path.join(tree, 'more-docs'));
+            expect(verify().status).toBe(1);
+            fs.rmSync(path.join(tree, 'more-docs'));
+            fs.mkdirSync(path.join(tree, 'empty'));
+            const empty = verify();
+            expect(empty.status).toBe(1);
+            expect(empty.stderr).toMatch(/an empty directory/);
+            fs.rmdirSync(path.join(tree, 'empty'));
+            expect(verify().status).toBe(0);
+
             // Nothing listed is nothing verified, not a pass.
             fs.writeFileSync(path.join(tree, 'SHA256SUMS'), '');
             const emptied = verify();
@@ -906,6 +1042,34 @@ esac
         });
     });
 
+    it('the containerd path gives the imported image the name the chart asks for', () => {
+        // The archive holds the per-architecture reference; without the tag step a pod with pullPolicy Never cannot start.
+        const readme = read('deploy/airgap/README.md');
+        const chartImage = `${(yaml.load(read(`${CHART}/values.yaml`)) as Json).image.repository}:<version>`;
+        expect(chartImage).toBe(`${IMAGE_REPOSITORY}:<version>`);
+        const importAt = readme.indexOf('ctr -n k8s.io images import images/scanent-<version>-linux-<arch>.tar');
+        const tagAt = readme.indexOf(`ctr -n k8s.io images tag "$ref" ${chartImage}`);
+        expect(importAt).toBeGreaterThan(-1);
+        expect(tagAt).toBeGreaterThan(importAt);
+        // `$ref` is read from the file build-bundle.sh writes, by the column load.sh reads it from.
+        expect(readme).toContain(`ref="$(awk -v a=<arch> '$1 == a { print $3 }' images/IMAGES)"`);
+        expect(build(path.join(work, 'out')).status).toBe(0);
+        const images = fs.readFileSync(path.join(work, 'out', `scanent-${VERSION}-airgap`, 'images/IMAGES'), 'utf8');
+        expect(images.split('\n')[0].split(' ')).toEqual(['amd64', `images/scanent-${VERSION}-linux-amd64.tar`, AMD]);
+    });
+
+    it('the quick start and the overlay set the Compose variables once, so the next compose command still has them', () => {
+        const quick = read('docs/quick-start.md');
+        // A variable given as a prefix of one command is gone for the next: `docker compose logs` then cannot read the file.
+        expect(quick).not.toMatch(/^SCANENT_VERSION=\S+ .*docker compose/m);
+        expect(quick).toContain('export SCANENT_VERSION=0.12.0 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"\ndocker compose up -d\ndocker compose logs');
+        expect(read('docs/deployment.md')).not.toMatch(/^SCANENT_VERSION=\S+ docker compose/m);
+        // Step 6 says a code source needs its roots mounted, and what a read estate looks like in the log.
+        expect(quick).toMatch(/add each\s+root under the service's `volumes:`/);
+        expect(read('deploy/compose.yaml')).toContain('# - /srv/agents:/estate:ro');
+        expect(quick).toContain('"status":"COMPLETE"');
+    });
+
     it('load.sh and verify.sh are POSIX sh, executable in the repository, and need no network tool', () => {
         for (const script of ['deploy/airgap/load.sh', 'deploy/airgap/verify.sh']) {
             const text = read(script);
@@ -935,7 +1099,9 @@ describe('the release workflow', () => {
         const on = (release.on ?? release.true) as Json;
         expect(Object.keys(on).sort()).toEqual(['push', 'workflow_dispatch']);
         expect(on.push).toEqual({ tags: ['v*.*.*'] });
-        expect(release.jobs.publish.if).toBe("github.ref_type == 'tag'");
+        // A PUSHED tag (the review): a manual run on a tag ref, which is also ref_type tag, pushes nothing.
+        expect(release.jobs.publish.if).toBe("github.event_name == 'push' && github.ref_type == 'tag'");
+        expect(release.jobs.release.if).toBe(release.jobs.publish.if);
     });
 
     it('may read the repository everywhere and write packages in the publishing job alone', () => {
@@ -943,7 +1109,9 @@ describe('the release workflow', () => {
         expect(release.jobs.publish.permissions).toEqual({ contents: 'read', packages: 'write' });
         expect(release.jobs.build.permissions).toBeUndefined();
         expect(release.jobs.bundle.permissions).toBeUndefined();
-        expect(Object.keys(release.jobs)).toEqual(['build', 'publish', 'bundle']);
+        // `release` is new with the review: the one job that may write a release, and it may write nothing else.
+        expect(Object.keys(release.jobs)).toEqual(['build', 'publish', 'bundle', 'release']);
+        expect(release.jobs.release.permissions).toEqual({ contents: 'write' });
         expect(ci.permissions).toEqual({ contents: 'read' });
     });
 
@@ -985,6 +1153,34 @@ describe('the release workflow', () => {
         expect(publish).toContain('--password-stdin');
         expect(read('.github/workflows/release.yml')).not.toMatch(/:latest|-t "?\$\{IMAGE_REPOSITORY\}:latest/);
         expect(release.env.IMAGE_REPOSITORY).toBe(IMAGE_REPOSITORY);
+    });
+
+    it('never pushes a version twice, and publishes only once the bundle check has passed', () => {
+        expect(release.jobs.publish.needs).toEqual(['build', 'bundle']);
+        const names = steps(release.jobs.publish).map((s) => (s.name as string | undefined) ?? '');
+        const at = (needle: string) => names.findIndex((n) => n.includes(needle));
+        expect(at('already published')).toBeGreaterThan(at('Log in'));
+        expect(at('Push each')).toBeGreaterThan(at('already published'));
+        const refuse = steps(release.jobs.publish)[at('already published')].run as string;
+        expect(refuse).toContain('docker buildx imagetools inspect "${IMAGE_REPOSITORY}:${VERSION}"');
+        expect(refuse).toContain('exit 1');
+    });
+
+    it('releases the bundle and the checksum the documents tell a site to compare', () => {
+        const job = release.jobs.release;
+        expect(job.needs).toEqual(['build', 'bundle', 'publish']);
+        // The artifact it attaches is the one the bundle job checked and uploaded.
+        const upload = steps(release.jobs.bundle).find((s) => String(s.uses ?? '').startsWith('actions/upload-artifact'));
+        const download = steps(job).find((s) => String(s.uses ?? '').startsWith('actions/download-artifact'));
+        expect(download?.with.name).toBe(upload?.with.name);
+        const text = scripts(job);
+        expect(text).toContain('sha256sum "scanent-${VERSION}-airgap.tar" > "scanent-${VERSION}-airgap.tar.sha256"');
+        expect(text).toMatch(/gh release create "\$REF_NAME" --verify-tag[\s\S]*"scanent-\$\{VERSION\}-airgap\.tar" "scanent-\$\{VERSION\}-airgap\.tar\.sha256"/);
+        // No third-party action, and the token is the job's own.
+        expect(steps(job).filter((s) => s.uses !== undefined).map((s) => String(s.uses).split('@')[0])).toEqual(['actions/download-artifact']);
+        // Both documents now say where that checksum is.
+        expect(read('deploy/airgap/README.md')).toContain('scanent-<version>-airgap.tar.sha256');
+        expect(read('docs/deployment.md')).toContain('scanent-<version>-airgap.tar.sha256');
     });
 
     it('checks the bundle the way a site receives it: unpack, verify, load, then scan with what was loaded', () => {

@@ -53,6 +53,13 @@ spec:
           env:
             - name: EGRESS_ALLOW
               value: {{ join "," .Values.egress.fqdns | quote }}
+            {{- if .Values.egressProxy.privateCidrs }}
+            # The proxy resolves each name itself and dials the address it checked. A private
+            # address is refused unless it is in one of these ranges; loopback, link-local and
+            # metadata are refused inside them too.
+            - name: EGRESS_PRIVATE_CIDR_ALLOWLIST
+              value: {{ join "," .Values.egressProxy.privateCidrs | quote }}
+            {{- end }}
           ports:
             - name: proxy
               containerPort: 3128
@@ -114,5 +121,13 @@ spec:
   egress:
     {{- include "scanent.dnsEgress" . | nindent 4 }}
     {{- include "scanent.publicHttpsEgress" . | nindent 4 }}
+    {{- range .Values.egressProxy.privateCidrs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . }}
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
 {{- end }}
 {{- end }}

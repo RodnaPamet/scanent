@@ -214,6 +214,9 @@ export function oktaSource(opts: OktaSourceOptions): HarnessSource {
                 await log.read('apps', hostname, () =>
                     ctx.http.getJson(`${origin}${OKTA_READ_PATHS[0]}?limit=1&filter=${encodeURIComponent('name eq "oidc_client"')}`, { origin, headers }),
                 );
+                // The third read the scan makes. A token that may not list API tokens fails here, not at the first scan.
+                // What this cannot show is WHOSE tokens the listing holds: see the access guide's note on Okta.
+                await log.read('API tokens', hostname, () => ctx.http.getJson(`${origin}${OKTA_READ_PATHS[1]}?limit=1`, { origin, headers }));
                 // The token's administrator role is read from the user's roles, which this scanner does not declare.
                 log.write({
                     state: 'NOT_OBSERVABLE',

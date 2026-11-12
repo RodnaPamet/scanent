@@ -157,3 +157,74 @@ describe('3. the status a source answered with', () => {
         expect(new SourceReadError('TIME_BOX', 'x').status).toBeUndefined();
     });
 });
+
+describe("3. a customer host behind scanent's own egress proxy, which checks the address it dials", () => {
+    const config = parseScannerConfig({
+        estate: 'acme',
+        scanner: { agentId: 'agt', signingKeyEnv: 'K' },
+        outputs: [{ kind: 'stdout' }],
+        schedule: { everyHours: 24 },
+        sources: [{ kind: 'mcp', servers: [{ label: 'crm', url: MCP_CRM }] }],
+    });
+    const PROXY = { HTTPS_PROXY: 'http://egress-proxy:3128', NODE_USE_ENV_PROXY: '1' };
+
+    async function scan(env: Record<string, string>, resolveHost: (host: string) => Promise<string[]>) {
+        const fakes = createSourceFakes();
+        const lines: Record<string, unknown>[] = [];
+        let requests = 0;
+        const { body } = await runScan({
+            config,
+            env: { K: PEM, ...env },
+            log: jsonLineLog((line) => void lines.push(JSON.parse(line) as Record<string, unknown>)),
+            now: () => NOW,
+            nodeVersion: 'v24.0.0',
+            fetchImpl: async (url, init) => {
+                requests += 1;
+                return fakes.fetchImpl(url, init);
+            },
+            resolveHost,
+        });
+        return { status: body.population.sources[0], requests, lines };
+    }
+    /** The overlay's internal network: no outside name resolves there. */
+    const noResolver = async (): Promise<string[]> => {
+        throw new Error('EAI_AGAIN');
+    };
+
+    it('with EGRESS_PROXY_CHECKS_ADDRESSES=1 the scanner does not resolve the name, reads the source, and says once who checked', async () => {
+        const r = await scan({ ...PROXY, EGRESS_PROXY_CHECKS_ADDRESSES: '1' }, noResolver);
+        expect(r.status).toMatchObject({ kind: 'mcp', status: 'COMPLETE' });
+        expect(r.requests).toBeGreaterThan(1);
+        expect(r.lines.filter((l) => l.msg === 'customer host checked by the egress proxy')).toEqual([
+            expect.objectContaining({ level: 'info', host: 'mcp.acme.example' }),
+        ]);
+    });
+
+    it('without the variable the same network leaves the source UNREACHABLE, and nothing is sent', async () => {
+        const r = await scan(PROXY, noResolver);
+        expect(r.status).toEqual({ kind: 'mcp', status: 'INCOMPLETE', reason: 'UNREACHABLE', rows: 0 });
+        expect(r.requests).toBe(0);
+    });
+
+    it.each([
+        ['no proxy is in effect', { EGRESS_PROXY_CHECKS_ADDRESSES: '1' }],
+        ['Node was not told to use the proxy', { HTTPS_PROXY: 'http://egress-proxy:3128', EGRESS_PROXY_CHECKS_ADDRESSES: '1' }],
+        ['the host bypasses the proxy', { ...PROXY, NO_PROXY: 'mcp.acme.example', EGRESS_PROXY_CHECKS_ADDRESSES: '1' }],
+        ['the variable is not exactly 1', { ...PROXY, EGRESS_PROXY_CHECKS_ADDRESSES: 'true' }],
+    ])('the variable hands nothing over when %s: a private answer is still refused here', async (_label, env) => {
+        const r = await scan(env, async () => ['10.0.0.7']);
+        expect(r.status).toEqual({ kind: 'mcp', status: 'INCOMPLETE', reason: 'UNREACHABLE', rows: 0 });
+        expect(r.requests).toBe(0);
+        expect(r.lines.some((l) => l.msg === 'customer host checked by the egress proxy')).toBe(false);
+    });
+
+    it('through any other proxy the check still runs here, and scan warns once per host that it binds this resolver only', async () => {
+        const r = await scan(PROXY, async () => ['93.184.216.34']);
+        expect(r.status).toMatchObject({ status: 'COMPLETE' });
+        const warned = r.lines.filter((l) => l.msg === 'customer host reached through a proxy');
+        expect(warned).toEqual([expect.objectContaining({ level: 'warn', host: 'mcp.acme.example' })]);
+        // Not proxied, not warned.
+        const direct = await scan({}, async () => ['93.184.216.34']);
+        expect(direct.lines.some((l) => /proxy/.test(String(l.msg)))).toBe(false);
+    });
+});

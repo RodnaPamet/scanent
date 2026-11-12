@@ -83,7 +83,10 @@ npm run build
 #    signing key, and prints the read-only access each source needs.
 npx scanent init
 
-# 2. Put each credential in scanent.env, then load it.
+# 2. Put each credential in scanent.env, then load it. The shell reads this file here, and
+#    the shell rewrites $, #, ; and spaces: put each value you add in single quotes
+#    (OKTA_API_TOKEN='...'), and take the quotes out again before giving the same file to
+#    `docker --env-file`, which takes a value as written. A NAME_FILE=/path line needs neither.
 set -a; . ./scanent/scanent.env; set +a
 
 # 3. Check: the configuration, the key, each credential, each host, each read.

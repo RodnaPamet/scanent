@@ -61,6 +61,7 @@ import { promises as dns } from 'dns';
 import { inCidr, isV4Mapped, parseAddress, parseCidr, type Cidr } from '@scanent/contract/cidr';
 
 import { httpsOrigin } from './http';
+import { isProxied, proxyInEffect, type Env } from './proxy-env';
 import { SourceReadError } from './source';
 
 const PRIVATE_V4 = [
@@ -207,4 +208,60 @@ export async function assertResolvesReachable(
     if (!addresses.every((a) => addressReachable(a, allowlist))) {
         throw new SourceReadError('UNREACHABLE', 'the configured host resolved to an address the scanner may not reach');
     }
+}
+
+/** How a customer-named host is checked before a request. The default is `assertResolvesReachable`. */
+export type CustomerHostCheck = (hostname: string, resolve: ResolveHost, allowlist?: PrivateCidrAllowlist) => Promise<void>;
+
+/**
+ * `EGRESS_PROXY_CHECKS_ADDRESSES=1`: the operator's statement that the proxy
+ * in `HTTPS_PROXY` is scanent's own egress proxy (`egress-proxy.ts`), which
+ * resolves each allowlisted name itself, refuses an address the scanner may
+ * not reach, and connects to the address it checked.
+ *
+ * Behind that proxy on an internal network the scanner has no resolver for an
+ * outside name, so its own check could only ever fail; and the proxy's check
+ * is the stronger one, because it binds the address that is dialled. The
+ * deployment templates that run the bundled proxy set this; nothing else may.
+ * Set beside any other proxy it turns the address check off, which is why it
+ * is a separate, explicit variable and not inferred from `HTTPS_PROXY`.
+ */
+export const PROXY_CHECKS_ADDRESSES_ENV = 'EGRESS_PROXY_CHECKS_ADDRESSES';
+
+/**
+ * Whether the address check for `hostname` is the bundled proxy's: the
+ * variable is set, a proxy is in effect, the host goes through it, and it is a
+ * name. An IP literal is always checked here; the proxy refuses one anyway.
+ */
+export function addressCheckedByProxy(hostname: string, env: Env, nodeVersion: string): boolean {
+    return (
+        env[PROXY_CHECKS_ADDRESSES_ENV] === '1' &&
+        proxyInEffect(env, nodeVersion) &&
+        !isIpLiteral(hostname) &&
+        isProxied(hostname, env)
+    );
+}
+
+/**
+ * The check `scan` and `doctor` make before each request to a customer-named
+ * host, for this environment. `onProxied` is told, once per host, which hosts
+ * go through a proxy and whether the proxy is the one that checks the address.
+ */
+export function customerHostCheckFor(
+    env: Env,
+    nodeVersion: string,
+    onProxied: (hostname: string, checkedByProxy: boolean) => void = () => undefined,
+): CustomerHostCheck {
+    const told = new Set<string>();
+    const viaProxy = proxyInEffect(env, nodeVersion);
+    return async (hostname, resolve, allowlist = []) => {
+        const proxied = viaProxy && isProxied(hostname, env);
+        const delegated = addressCheckedByProxy(hostname, env, nodeVersion);
+        if (proxied && !told.has(hostname)) {
+            told.add(hostname);
+            onProxied(hostname, delegated);
+        }
+        if (delegated) return;
+        await assertResolvesReachable(hostname, resolve, allowlist);
+    };
 }

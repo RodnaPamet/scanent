@@ -47,6 +47,7 @@ import { MAX_AGENTS, MAX_TOOLS_PER_AGENT } from '@scanent/contract/harness-contr
 
 import {
     assertResolvesReachable,
+    type CustomerHostCheck,
     parsePrivateCidrAllowlist,
     resolveWithDns,
     type PrivateCidrAllowlist,
@@ -86,6 +87,8 @@ export interface McpSourceOptions {
     readonly servers: readonly McpServerOptions[];
     /** How each server's host is re-resolved before each request. DNS unless a test passes its own. */
     readonly resolveHost?: ResolveHost;
+    /** The check made before each request. Absent, `assertResolvesReachable`; `scan` passes the environment's (`customerHostCheckFor`). */
+    readonly checkHost?: CustomerHostCheck;
 }
 
 const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
@@ -111,6 +114,7 @@ function readOnlyHintOf(definition: Record<string, unknown>): boolean | null {
 
 export function mcpSource(opts: McpSourceOptions): HarnessSource {
     const resolve = opts.resolveHost ?? resolveWithDns;
+    const check: CustomerHostCheck = opts.checkHost ?? assertResolvesReachable;
 
     return {
         kind: 'mcp',
@@ -124,7 +128,7 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
             for (const server of opts.servers) {
                 const allowlist: PrivateCidrAllowlist = parsePrivateCidrAllowlist(server.egressPrivateCidrAllowlist) ?? [];
                 const hostname = new URL(server.url).hostname;
-                const guard = () => assertResolvesReachable(hostname, resolve, allowlist);
+                const guard = () => check(hostname, resolve, allowlist);
                 // Tools read so far from this server, by name: what WAS read is real.
                 const byName = new Map<string, ObservedTool>();
                 const hashes: { name: string; manifestHash: string }[] = [];
@@ -214,7 +218,7 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                 const log = new ProbeLog(server.label);
                 const allowlist: PrivateCidrAllowlist = parsePrivateCidrAllowlist(server.egressPrivateCidrAllowlist) ?? [];
                 const hostname = new URL(server.url).hostname;
-                const guard = () => assertResolvesReachable(hostname, resolve, allowlist);
+                const guard = () => check(hostname, resolve, allowlist);
                 const headers: Record<string, string> = server.token === null ? {} : { Authorization: `Bearer ${server.token.value}` };
                 await ProbeLog.run(async () => {
                     const session = await log.read('the handshake', hostname, async () => {

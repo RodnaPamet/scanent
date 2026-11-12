@@ -36,8 +36,9 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- .Values.existingConfigMap | default (printf "%s-config" (include "scanent.fullname" .)) -}}
 {{- end -}}
 
+{{/* At most 63 characters: a Service name is a DNS label, and the scanner's HTTPS_PROXY host is this name. */}}
 {{- define "scanent.proxyName" -}}
-{{- printf "%s-egress-proxy" (include "scanent.fullname" .) -}}
+{{- printf "%s-egress-proxy" (include "scanent.fullname" . | trunc 50 | trimSuffix "-") -}}
 {{- end -}}
 
 {{/* "true" when the inline configuration delivers each run somewhere besides the output volume. */}}
@@ -89,6 +90,9 @@ CronJob, so a refused release renders nothing.
 {{- if and .Values.egressProxy.enabled (or .Values.proxy.httpsProxy .Values.networkPolicy.proxy.cidr) -}}
 {{- fail "scanent: `egressProxy.enabled` sets the scanner's proxy to the bundled one. Remove `proxy.httpsProxy` and `networkPolicy.proxy.cidr`, or disable the bundled proxy." -}}
 {{- end -}}
+{{- if and (not .Values.egressProxy.enabled) (not (empty .Values.egressProxy.privateCidrs)) -}}
+{{- fail "scanent: `egressProxy.privateCidrs` is set but `egressProxy.enabled` is not. The ranges are the bundled proxy's; without it they do nothing." -}}
+{{- end -}}
 {{- if and (eq .Values.networkPolicy.flavor "cilium") .Values.networkPolicy.proxy.cidr -}}
 {{- fail "scanent: `networkPolicy.proxy.cidr` is for the kubernetes flavor. Behind a forward proxy the proxy decides the hosts; use `flavor: kubernetes`." -}}
 {{- end -}}
@@ -114,7 +118,11 @@ capabilities:
     - ALL
 {{- end -}}
 
-{{/* Egress to the cluster's DNS, as NetworkPolicy rules. */}}
+{{/*
+Egress to the cluster's DNS, as NetworkPolicy rules: the DNS pods, and any
+address in `networkPolicy.dns.cidrs` (NodeLocal DNSCache answers on a node
+address, which no pod selector matches).
+*/}}
 {{- define "scanent.dnsEgress" -}}
 - to:
     - namespaceSelector:
@@ -123,11 +131,15 @@ capabilities:
       podSelector:
         matchLabels:
           {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 10 }}
+    {{- range .Values.networkPolicy.dns.cidrs }}
+    - ipBlock:
+        cidr: {{ . }}
+    {{- end }}
   ports:
     - protocol: UDP
-      port: 53
+      port: {{ .Values.networkPolicy.dns.port }}
     - protocol: TCP
-      port: 53
+      port: {{ .Values.networkPolicy.dns.port }}
 {{- end -}}
 
 {{/* Egress on TCP 443 to public addresses: no private, shared, link-local or metadata range. */}}

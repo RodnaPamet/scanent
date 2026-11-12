@@ -14,6 +14,7 @@ import { InventoryRefused } from '@scanent/report/results/inventory';
 
 import { credentialEnvNames, type ScannerConfig } from '../config';
 import { proveEgress, type EgressProbe } from '../egress-proof';
+import { addressCheckedByProxy, PROXY_CHECKS_ADDRESSES_ENV } from '../customer-host';
 import { describeProxy, isProxied, nodeHonoursEnvProxy, proxyInEffect, proxyVariableSet } from '../proxy-env';
 import { rawPublicKeyHex } from '../report';
 import { loadSigningKey } from '../scan';
@@ -122,13 +123,18 @@ export function checkProxy(env: Env, nodeVersion: string, reachesNetwork = true)
 export function checkProxyCustomerHosts(env: Env, nodeVersion: string, customerHosts: readonly string[]): Check {
     if (!proxyInEffect(env, nodeVersion)) return skip('proxy.customer-hosts', 'NOT_APPLICABLE', 'no proxy is in effect');
     if (customerHosts.length === 0) return skip('proxy.customer-hosts', 'NOT_APPLICABLE', 'the configuration names no host of your own');
-    const proxied = customerHosts.filter((h) => isProxied(h, env));
+    // scanent's own egress proxy checks the address it dials; any other proxy resolves again on its own, unchecked.
+    const proxied = customerHosts.filter((h) => isProxied(h, env) && !addressCheckedByProxy(h, env, nodeVersion));
     if (proxied.length > 0) {
         return warn(
             'proxy.customer-hosts',
             `reached through the proxy: ${proxied.join(', ')}. The address check binds this machine's resolver, not the proxy's`,
             'Add each host to NO_PROXY if it is on your network.',
         );
+    }
+    const delegated = customerHosts.filter((h) => addressCheckedByProxy(h, env, nodeVersion));
+    if (delegated.length > 0) {
+        return pass('proxy.customer-hosts', `${PROXY_CHECKS_ADDRESSES_ENV}=1: the egress proxy resolves and checks the address of ${delegated.join(', ')}`);
     }
     return pass('proxy.customer-hosts', `${customerHosts.length} host${customerHosts.length === 1 ? '' : 's'} of your own bypass${customerHosts.length === 1 ? 'es' : ''} the proxy`);
 }

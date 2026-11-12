@@ -99,7 +99,9 @@ describe('planInit', () => {
             scanner: { signingKeyEnv: 'ACME_SIGNING_KEY' },
             sources: [{ apiTokenEnv: 'ACME_OKTA_TOKEN', ownerProfileKey: 'team' }],
         });
-        expect(plan.nextSteps.at(-1)).toBe('scanent scan --config <dir>/config.json --out /var/lib/scanent');
+        // No --out: the configuration it wrote already has that directory as a file output (Phase 3 review).
+        expect(plan.nextSteps.at(-1)).toBe('scanent scan --config <dir>/config.json');
+        expect(plan.config.outputs).toEqual([{ kind: 'file', dir: '/var/lib/scanent', retainRuns: 30 }]);
     });
 
     it('names an MCP token after the server\'s label, and keeps a name that was given', () => {

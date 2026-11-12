@@ -894,7 +894,7 @@ Each source gets the same six checks:
 | Check | Passes when |
 |---|---|
 | `credential.present` | The variable, or its `_FILE`, holds a value |
-| `host.resolves` | The source's hosts resolve. A host you name (a self-hosted LangSmith, an MCP server) must also resolve to an address the scanner may reach, exactly as before each request of a scan. A fixed host behind a proxy is resolved by the proxy and is `not applicable` |
+| `host.resolves` | The source's hosts resolve. A host you name (a self-hosted LangSmith, an MCP server) must also resolve to an address the scanner may reach, exactly as before each request of a scan. A fixed host behind a proxy is resolved by the proxy and is `not applicable`; so is a host you name when `EGRESS_PROXY_CHECKS_ADDRESSES=1` leaves its check to scanent's own egress proxy |
 | `reachable` | A request was answered. No answer names the host; an untrusted certificate is told apart, with `NODE_EXTRA_CA_CERTS` as the fix |
 | `authenticated` | The token exchange succeeded, or the first read was not refused as unauthenticated |
 | `read.permitted` | Every probe read succeeded. A 403 fails with the grant the source needs; a 429 is `blocked`, to be run again |
@@ -1044,9 +1044,12 @@ proxy URL, which may carry a password.
 and an optional `:port`. A bare name exempts that name only, not its
 subdomains.
 
-**The host check is not weakened by a proxy.** A host you name (a self-hosted
-LangSmith, an MCP server) is resolved and checked before every request,
-proxied or not. Two consequences:
+**The host check and a proxy.** A host you name (a self-hosted LangSmith, an
+MCP server) is resolved and checked on this machine before every request,
+proxied or not. Through a proxy that check is about this machine's answer, not
+about the connection the proxy makes: it is weaker there, and `scan` logs one
+`customer host reached through a proxy` warning per such host. Three
+consequences:
 
 - A host on your own network belongs in `NO_PROXY`. It is then reached
   directly, and the check is about the connection that is made.
@@ -1055,6 +1058,15 @@ proxied or not. Two consequences:
   or give this machine a resolver that can. If it does resolve, the check
   passes on this machine's answer while the proxy resolves again on its own.
   `doctor` raises that as `proxy.customer-hosts`.
+- scanent's own egress proxy ([The egress proxy](#the-egress-proxy)) makes the
+  check itself, on the address it connects to. Beside that proxy, and only
+  beside it, `EGRESS_PROXY_CHECKS_ADDRESSES=1` tells the scanner to leave the
+  check to the proxy for a host that goes through it: the scanner then does
+  not resolve the name, which is what lets it run on a network with no
+  resolver for outside names. `scan` logs `customer host checked by the egress
+  proxy` once per host. An IP literal is always checked here. Beside any other
+  proxy the variable turns the check off, so nothing but the bundled Compose
+  overlay sets it.
 
 **Certificate authority.** To trust a private authority, for example behind
 TLS inspection, mount its certificate as a PEM file and set
@@ -1068,6 +1080,22 @@ connection.
 
 A certificate that is not trusted reaches the report as `UNREACHABLE`, like
 any host that could not be reached. `doctor` tells it apart and names the fix.
+
+## Changes that can stop a setup that scanned before
+
+Two refusals are new with `init` and `doctor`, and both are deliberate:
+
+- **`NAME` and `NAME_FILE` both set is refused** (exit 4). There is no
+  precedence: one of the two would be silently ignored.
+- **`scan` and `schedule` refuse `NODE_TLS_REJECT_UNAUTHORIZED=0`** (exit 4).
+  Add a private certificate authority with `NODE_EXTRA_CA_CERTS` instead.
+
+Three more arrived with the review of that work: a configuration file that is
+not JSON is reported as `(root): the file is not JSON` (exit 4, as before, but
+none of the file is repeated); the bundled egress proxy refuses a name that
+resolves to a private address unless its range is in
+`EGRESS_PRIVATE_CIDR_ALLOWLIST`; and `scan`, run through a proxy, logs a
+warning for each host you named.
 
 ## Exit codes
 
@@ -1206,6 +1234,13 @@ proxy, and point the scanner at it with `HTTPS_PROXY` and
 `egress` block, and every scan proves the confinement before it reads: the
 proxy admits the ingest host, refuses the canary, and a direct connection to
 the ingest host fails. The result is the scanner's own `H3.egress_enforced`.
+
+A name on the allowlist is not trusted for where it points. The proxy resolves
+it itself, refuses (403) when any address is loopback, link-local or
+unspecified, or is private and outside `EGRESS_PRIVATE_CIDR_ALLOWLIST`
+(comma-separated CIDRs; an entry that is not a CIDR stops the proxy at start),
+and connects to the address it checked, so the name is not resolved a second
+time. A name that does not resolve is a 502.
 
 ## Container
 

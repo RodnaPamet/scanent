@@ -1,8 +1,9 @@
 # Run it at your site in 15 minutes
 
-Six steps, each one command, from nothing to a page you can open. You need a
-container runtime (Docker or Podman) and nothing else: no Node, no checkout,
-no `openssl`.
+Six steps, each one command, from nothing to a page you can open. Once you
+have the image you need a container runtime (Docker or Podman) and nothing
+else: no Node and no `openssl`. Until the first release is published, getting
+the image takes a checkout (step 0).
 
 Nothing here writes to your systems. scanent reads, and what it may request is
 declared in one file whose hash is in every report. No step asks you to type a
@@ -15,14 +16,21 @@ follow.
 
 ## 0. Get the image
 
+No image is published yet, so today this step is a build from a checkout:
+
 ```bash
 export IMAGE=ghcr.io/rodnapamet/scanent:0.12.0
-docker pull "$IMAGE"
+git clone https://github.com/RodnaPamet/scanent.git && cd scanent
+docker build -f deploy/Dockerfile -t "$IMAGE" .
 ```
 
-No image is published yet. Until the first release, build it from a checkout
-(`docker build -f deploy/Dockerfile -t "$IMAGE" .`) or load it from an
-air-gapped bundle (`./load.sh`, see [below](#a-site-with-no-internet)).
+Behind a proxy that inspects TLS the build needs that proxy's certificate
+authority: add `--secret id=ca,src=/path/to/ca.pem` (the
+[README](../README.md#quick-start-container) says what it is used for).
+
+From the first release on, this step is `docker pull "$IMAGE"` and needs no
+checkout; and a site with no internet loads the image from the air-gapped
+bundle (`./load.sh`, see [below](#a-site-with-no-internet)).
 
 Every command below runs the container the same way. Put it in a shell
 function once:
@@ -147,13 +155,25 @@ Copy [deploy/compose.yaml](../deploy/compose.yaml) beside the `scanent`
 directory, then:
 
 ```bash
-SCANENT_VERSION=0.12.0 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)" docker compose up -d
-docker compose logs --tail 3 scanent
+export SCANENT_VERSION=0.12.0 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"
+docker compose up -d
+docker compose logs --tail 20 scanent
 ```
 
+The three variables are exported because every `docker compose` command reads
+the file again and needs them; a `.env` file beside `compose.yaml` holding the
+same three lines does the same.
+
+A `code` source reads directories, and the Compose file mounts none: add each
+root under the service's `volumes:` first (uncomment the example line,
+`- /srv/agents:/estate:ro`), at the path you gave `init`. Without it the source
+is read as `INCOMPLETE` and the run holds no agent.
+
 It scans now and then every `schedule.everyHours` of the configuration, and
-writes each run under `./scanent-out`. Expected last line of the log: the same
-`results written` line as step 4.
+writes each run under `./scanent-out`. In the log, look for one `source read`
+line per source with `"status":"COMPLETE"` (a `source incomplete` line names
+its reason), and then the same `results written` line as step 4. A
+`results written` line alone does not mean the estate was read.
 
 That is the whole first run. The rest of this page is the same six steps on
 other platforms.
@@ -185,11 +205,16 @@ To make the scanner's only way out a proxy that forwards to an exact list of
 hosts, add the overlay [deploy/compose.egress.yaml](../deploy/compose.egress.yaml):
 
 ```bash
+export SCANENT_VERSION=0.12.0 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"
 export EGRESS_ALLOW="$(scanent -v "$PWD/scanent:/etc/scanent:ro" "$IMAGE" \
   hosts --config /etc/scanent/config.json --format egress-allow)"
-SCANENT_VERSION=0.12.0 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)" \
-  docker compose -f compose.yaml -f compose.egress.yaml up -d
+docker compose -f compose.yaml -f compose.egress.yaml up -d
 ```
+
+A host you name yourself (an MCP server, a self-hosted LangSmith) is in that
+list too. On the overlay's network the proxy resolves it and checks its
+address; if it is on your own network, also
+`export EGRESS_PRIVATE_CIDR_ALLOWLIST=<its range>`.
 
 `hosts` is offline: it prints the hosts the configuration reaches, each on
 port 443. Give the same list to whoever opens your firewall.

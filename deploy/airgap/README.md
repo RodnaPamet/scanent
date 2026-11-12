@@ -37,14 +37,27 @@ matches, and no file is present that is not listed.
 It does not show where the bundle came from. Nothing in it is signed, and
 whoever can replace a file can replace the list. Obtain it over a channel you
 trust, and compare the archive's own SHA-256 with the one published for the
-release.
+release: the GitHub release for the version carries
+`scanent-<version>-airgap.tar` and `scanent-<version>-airgap.tar.sha256`
+(`sha256sum -c scanent-<version>-airgap.tar.sha256`).
 
 ## Other runtimes
 
 - Podman: `CONTAINER_RUNTIME=podman ./load.sh`. Run with `--userns=keep-id` in
   place of `--user`.
-- containerd: `ctr -n k8s.io images import images/scanent-<version>-linux-<arch>.tar`
-  on each node, then install the chart with `image.pullPolicy=Never`.
+- containerd, on each node of a cluster. The archive holds the image under its
+  per-architecture name (the third column of `images/IMAGES`), and the chart
+  asks for `ghcr.io/rodnapamet/scanent:<version>`, so import it and then give
+  it that name, as `load.sh` does for the other runtimes:
+
+  ```sh
+  ref="$(awk -v a=<arch> '$1 == a { print $3 }' images/IMAGES)"
+  ctr -n k8s.io images import images/scanent-<version>-linux-<arch>.tar
+  ctr -n k8s.io images tag "$ref" ghcr.io/rodnapamet/scanent:<version>
+  ```
+
+  Then install the chart with `image.pullPolicy=Never`. Without the `tag` step
+  the pod stays in `ErrImageNeverPull`.
 - A registry inside your network: `docker load`, then tag and push to it, and
   set the chart's `image.repository`.
 

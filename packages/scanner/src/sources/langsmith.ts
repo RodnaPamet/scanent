@@ -83,6 +83,7 @@ import { looksLikeSecret } from '@scanent/contract/harness-contract';
 
 import {
     assertResolvesReachable,
+    type CustomerHostCheck,
     parsePrivateCidrAllowlist,
     resolveWithDns,
     type PrivateCidrAllowlist,
@@ -152,6 +153,8 @@ export interface LangSmithSourceOptions {
     readonly readDeployments: boolean;
     /** How a self-hosted host is re-resolved before each request. DNS unless a test passes its own. */
     readonly resolveHost?: ResolveHost;
+    /** The check made before each request to a self-hosted origin. Absent, `assertResolvesReachable`. */
+    readonly checkHost?: CustomerHostCheck;
 }
 
 const TOOL_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,127}$/;
@@ -235,10 +238,10 @@ function projectsQuery(since: string, offset: number, limit: number = LANGSMITH_
 }
 
 /** A GET-only reader that re-resolves the host before every request it makes. */
-function guarded(http: ReadOnlyHttp, resolve: ResolveHost, allowlist: PrivateCidrAllowlist): ReadOnlyHttp {
+function guarded(http: ReadOnlyHttp, resolve: ResolveHost, allowlist: PrivateCidrAllowlist, check: CustomerHostCheck): ReadOnlyHttp {
     return {
         async getJson(url, o) {
-            await assertResolvesReachable(new URL(url).hostname, resolve, allowlist);
+            await check(new URL(url).hostname, resolve, allowlist);
             return http.getJson(url, o);
         },
     };
@@ -254,6 +257,7 @@ export function langSmithSource(opts: LangSmithSourceOptions): HarnessSource {
     const headers: Record<string, string> = { 'X-Api-Key': opts.apiKey };
     if (opts.workspaceId !== null) headers['X-Tenant-Id'] = opts.workspaceId;
     const resolve = opts.resolveHost ?? resolveWithDns;
+    const check: CustomerHostCheck = opts.checkHost ?? assertResolvesReachable;
     // An entry that does not parse admits nothing: the configuration refuses
     // one, and here it fails closed rather than widening anything.
     const allowlist: PrivateCidrAllowlist =
@@ -265,7 +269,7 @@ export function langSmithSource(opts: LangSmithSourceOptions): HarnessSource {
         kind: 'runtime',
         product: 'langsmith',
         async read(ctx: SourceContext): Promise<SourceRead> {
-            const http = selfHosted ? guarded(ctx.http, resolve, allowlist) : ctx.http;
+            const http = selfHosted ? guarded(ctx.http, resolve, allowlist, check) : ctx.http;
             const since = new Date(ctx.asOf.getTime() - opts.windowDays * DAY_MS).toISOString();
             const deployments: { id: string; projectId: string | null }[] = [];
             const usage = new Map<string, Map<string, number>>();
@@ -375,7 +379,7 @@ export function langSmithSource(opts: LangSmithSourceOptions): HarnessSource {
         async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
             const log = new ProbeLog();
             // The same guard as `read`: a self-hosted host is re-resolved before each request.
-            const http = selfHosted ? guarded(ctx.http, resolve, allowlist) : ctx.http;
+            const http = selfHosted ? guarded(ctx.http, resolve, allowlist, check) : ctx.http;
             const hostname = new URL(origin).hostname;
             const since = new Date(ctx.asOf.getTime() - opts.windowDays * DAY_MS).toISOString();
             await ProbeLog.run(async () => {

@@ -109,7 +109,9 @@ export function renderEnvTemplate(credentialNames: readonly CredentialName[], si
     const lines = [
         '# scanent credentials. Fill in each value, or use a secret store.',
         '# This file is read by `docker run --env-file` and by Compose. Keep it 0600.',
-        '# A value is taken as written: no quotes. For any variable NAME, NAME_FILE=/path reads the value from a file instead.',
+        '# There, a value is taken as written: no quotes. For any variable NAME, NAME_FILE=/path reads the value from a file instead.',
+        '# Do not load this file with the shell (`. scanent.env`) as it stands: the shell rewrites $, #, ; and spaces in a',
+        '# value. From a checkout, keep each value in a file and use the NAME_FILE form, which reads the same everywhere.',
     ];
     credentialNames.forEach((c, i) => {
         lines.push('', `# ${c.for}`);
@@ -161,7 +163,8 @@ export function planInit(answers: InitAnswers): InitPlan {
         nextSteps: [
             'Create the access above and put each credential in scanent.env (or your secret store).',
             'scanent doctor --config <dir>/config.json',
-            `scanent scan --config <dir>/config.json --out ${outputDir}`,
+            // No --out: the configuration just written already has a file output for that directory.
+            'scanent scan --config <dir>/config.json',
         ],
     };
 }

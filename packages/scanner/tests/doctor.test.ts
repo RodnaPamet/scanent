@@ -178,6 +178,16 @@ describe('2. each failure lands on its own check, and blocks what is behind it',
         expect(report.exitCode).toBe(5);
     });
 
+    it("Okta: a token that may not list API tokens fails read.permitted, on the scan's third read", async () => {
+        // The listing is the read a narrow role is most likely to lack; the preflight used to leave it to the first scan.
+        const world = createDoctorWorld();
+        world.override = (r) => (r.host === 'acme.okta.com' && r.path === '/api/v1/api-tokens' ? { status: 403, body: { errorCode: 'E0000006' } } : undefined);
+        const report = await doctor(world);
+        const check = report.checks.find((c) => c.scope === 'okta-app' && c.id === 'read.permitted');
+        expect(check).toMatchObject({ status: 'FAIL', class: 'CREDENTIAL', detail: 'API tokens: refused (HTTP 403)' });
+        expect(report.ready).toBe(false);
+    });
+
     it('a 403 on a read: the credential was accepted, the permission is missing, and the fix is the grant', async () => {
         const world = createDoctorWorld();
         world.override = (r) => (r.host === 'graph.microsoft.com' && r.path === '/v1.0/servicePrincipals' ? { status: 403, body: { error: { code: 'Authorization_RequestDenied' } } } : undefined);
@@ -210,6 +220,31 @@ describe('2. each failure lands on its own check, and blocks what is behind it',
         expect(of(report, 'cicd', 'host.resolves')).toMatchObject({ status: 'SKIPPED', cause: 'NOT_APPLICABLE' });
         expect(of(report, 'local', 'proxy')).toMatchObject({ status: 'PASS', detail: 'requests go through proxy.corp.example:3128' });
         expect(of(report, 'local', 'proxy.customer-hosts').status).toBe('PASS');
+    });
+
+    it("behind scanent's own egress proxy, a host the estate names is checked by the proxy: doctor reads it without a resolver, and says so", async () => {
+        // The Compose overlay's network: nothing outside resolves from the scanner's side.
+        const noResolver = async (): Promise<string[]> => {
+            throw new Error('EAI_AGAIN');
+        };
+        const proxied = { ...fullEstateEnv(), HTTPS_PROXY: 'http://egress-proxy:3128', NODE_USE_ENV_PROXY: '1' };
+
+        const without = await doctor(createDoctorWorld(), { env: proxied, resolveHost: noResolver });
+        expect(statuses(without, 'mcp:crm')).toMatchObject({ 'host.resolves': 'FAIL', reachable: 'BLOCKED' });
+        expect((of(without, 'mcp:crm', 'host.resolves') as { fix: string }).fix).toContain('EGRESS_PROXY_CHECKS_ADDRESSES=1');
+        expect(of(without, 'local', 'proxy.customer-hosts').status).toBe('WARN');
+
+        const world = createDoctorWorld();
+        const withIt = await doctor(world, { env: { ...proxied, EGRESS_PROXY_CHECKS_ADDRESSES: '1' }, resolveHost: noResolver });
+        for (const scope of ['mcp:crm', 'mcp:tickets']) {
+            expect(of(withIt, scope, 'host.resolves')).toMatchObject({ status: 'SKIPPED', cause: 'NOT_APPLICABLE', detail: 'resolved by the proxy (1 host)' });
+            expect(statuses(withIt, scope)).toMatchObject({ reachable: 'PASS', 'read.permitted': 'PASS' });
+        }
+        expect(world.log.some((r) => r.host === 'mcp.acme.example')).toBe(true);
+        expect(of(withIt, 'local', 'proxy.customer-hosts')).toMatchObject({
+            status: 'PASS',
+            detail: 'EGRESS_PROXY_CHECKS_ADDRESSES=1: the egress proxy resolves and checks the address of mcp.acme.example',
+        });
     });
 
     it('an untrusted certificate is told apart, and the fix is the CA', async () => {
@@ -416,13 +451,15 @@ describe('4. it reads only', () => {
         // The fixtures hold two pages of each listing; a scan would follow them.
         expect(count('graph.microsoft.com', '/v1.0/applications')).toBe(1);
         expect(count('acme.okta.com', '/api/v1/apps')).toBe(1);
-        expect(count('acme.okta.com', '/api/v1/api-tokens')).toBe(0);
+        // The token listing is the third read the scan makes; doctor asks it for one row (Phase 3 review: it was not probed).
+        expect(count('acme.okta.com', '/api/v1/api-tokens')).toBe(1);
         expect(count('acme-agents.vault.azure.net', '/secrets')).toBe(1);
         // Every listing is asked for its smallest page.
         const query = (host: string, path: string) => new URLSearchParams(world.log.find((r) => r.host === host && r.path === path)?.query ?? '');
         expect(query('graph.microsoft.com', '/v1.0/applications').get('$top')).toBe('1');
         expect(query('graph.microsoft.com', '/v1.0/servicePrincipals').get('$top')).toBe('1');
         expect(query('acme.okta.com', '/api/v1/apps').get('limit')).toBe('1');
+        expect(query('acme.okta.com', '/api/v1/api-tokens').get('limit')).toBe('1');
         expect(query('acme-agents.vault.azure.net', '/secrets').get('maxresults')).toBe('1');
         expect(query('acme-agents.vault.azure.net', '/certificates').get('maxresults')).toBe('1');
         expect(query('api.github.com', `/repos/${GITHUB_REPO}/actions/secrets`).get('per_page')).toBe('1');

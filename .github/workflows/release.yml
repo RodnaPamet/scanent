@@ -2,11 +2,16 @@
 #
 #   build     one image per architecture, each built and smoke-tested on a
 #             runner of that architecture, then scanned (the Trivy gate)
-#   publish   tags only: push both images and one manifest over them
 #   bundle    the air-gapped bundle from the two images, checked by loading it
+#   publish   a pushed tag only, and only after the bundle check passed: push
+#             both images and one manifest over them. A version already in the
+#             registry is never pushed again
+#   release   a pushed tag only: a GitHub release holding the bundle and its
+#             SHA-256, which is the checksum the documents say to compare
 #
-# A tag `v<MAJOR>.<MINOR>.<PATCH>` publishes. A manual run (workflow_dispatch)
-# builds, tests and bundles, and pushes nothing.
+# A pushed tag `v<MAJOR>.<MINOR>.<PATCH>` publishes. A manual run
+# (workflow_dispatch) builds, tests and bundles, and pushes nothing, whatever
+# ref it is started on; so does a re-run that finds the version published.
 #
 # Nothing is signed yet, and no SBOM or provenance is attached: each pushed
 # reference is a plain image manifest. No `latest` tag is ever pushed.
@@ -24,7 +29,8 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# Read the repository, and nothing else. `publish` alone may write packages.
+# Read the repository, and nothing else. `publish` alone may write packages,
+# and `release` alone may write a release.
 permissions:
   contents: read
 
@@ -115,8 +121,10 @@ jobs:
 
   publish:
     name: Push the images and the manifest
-    if: github.ref_type == 'tag'
-    needs: build
+    # A PUSHED tag: a manual run on a tag ref builds and bundles, and pushes nothing.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # The bundle job loads and scans with what a site would receive; a version whose bundle fails is not published.
+    needs: [build, bundle]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -143,6 +151,17 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           ACTOR: ${{ github.actor }}
         run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+
+      # A version is immutable: a re-run of a tag's workflow must not replace
+      # published bytes with a rebuild. Asked after the login, so a private
+      # package answers. Only a positive answer refuses; a first release finds nothing.
+      - name: Refuse a version that is already published
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "${IMAGE_REPOSITORY}:${VERSION}" > /dev/null 2>&1; then
+            echo "${IMAGE_REPOSITORY}:${VERSION} is already published; a version is never pushed twice" >&2
+            exit 1
+          fi
 
       - name: Push each architecture's image
         run: |
@@ -227,3 +246,37 @@ jobs:
           path: bundle-out/scanent-*-airgap.tar
           if-no-files-found: error
           retention-days: 30
+
+  release:
+    name: GitHub release with the bundle and its checksum
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [build, bundle, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: scanent-${{ needs.build.outputs.version }}-airgap
+
+      # The checksum a site compares the archive with, in `sha256sum -c` form.
+      - name: Write the bundle's SHA-256
+        run: |
+          set -euo pipefail
+          test -s "scanent-${VERSION}-airgap.tar"
+          sha256sum "scanent-${VERSION}-airgap.tar" > "scanent-${VERSION}-airgap.tar.sha256"
+          cat "scanent-${VERSION}-airgap.tar.sha256"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$REF_NAME" --verify-tag --title "scanent ${VERSION}" \
+            --notes "Image: ${IMAGE_REPOSITORY}:${VERSION} (linux/amd64, linux/arm64). The air-gapped bundle and its SHA-256 are attached. Nothing here is signed yet." \
+            "scanent-${VERSION}-airgap.tar" "scanent-${VERSION}-airgap.tar.sha256"

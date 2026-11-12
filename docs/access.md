@@ -7,7 +7,8 @@ create it, what it lets the scanner read, and what must not be granted. `scanent
 tables for the sources you choose, and `scanent doctor` checks them.
 
 No credential value goes in the configuration. Each goes in the environment variable named below,
-or in a file named by that variable with `_FILE` appended.
+or in a file named by that variable with `_FILE` appended (`NAME_FILE=/path`). A credential that is
+itself a file with line breaks is given only in the `_FILE` form.
 
 | Source | Grant | Credential | Hosts (port 443) |
 |---|---|---|---|
@@ -15,7 +16,7 @@ or in a file named by that variable with `_FILE` appended.
 | `vault` | Key Vault Reader on each listed vault (RBAC vaults). For a vault on access policies: List on secrets and List on certificates, and nothing else | `AZURE_CLIENT_SECRET` | login.microsoftonline.com, and each vault's host |
 | `okta-app` | An SSWS API token created by a user holding the Read-only Administrator role only | `OKTA_API_TOKEN` | the Okta org's host |
 | `cicd` | A fine-grained personal access token (or a GitHub App installation) limited to the listed repositories, with Contents: Read-only and Secrets: Read-only. Metadata: Read-only is added by GitHub | `GITHUB_READ_TOKEN` | api.github.com |
-| `gcp-sa` | roles/iam.serviceAccountViewer on each listed project, held by a dedicated service account; one JSON key for that account | `GCP_SCANNER_KEY_FILE` | oauth2.googleapis.com, iam.googleapis.com |
+| `gcp-sa` | roles/iam.serviceAccountViewer on each listed project, held by a dedicated service account; one JSON key for that account | `GCP_SCANNER_KEY` (a key file: set GCP_SCANNER_KEY_FILE to its path) | oauth2.googleapis.com, iam.googleapis.com |
 | `runtime` | A service key holding the workspace Viewer role | `LANGSMITH_API_KEY` | api.smith.langchain.com or eu.api.smith.langchain.com, or the self-hosted host |
 | `mcp` | Per server, a token that can list tools and nothing else; none when the server takes none | `MCP_<LABEL>_TOKEN` | each server's host |
 | `code` | Read access to the listed directories for the user the scanner runs as | `(none)` | none |
@@ -80,8 +81,14 @@ Source kind: `okta-app`. Credential: `OKTA_API_TOKEN`. Hosts: the Okta org's hos
 **Lets the scanner read.**
 
 - Service apps
-- API token metadata
+- API token metadata, as far as the role shows it (see the limit)
 - The token's own id
+
+**What this grant does not show.**
+
+- Okta's role table lets a Read-only Administrator view API tokens of its own user only. With this grant the scan sees every service app, and of API tokens only those of the token's own user: other users' API tokens are not seen, and the report does not say they are absent.
+- Seeing every API token takes Super Administrator or Org Administrator. Both can write, so this guide does not ask for them; list API tokens in Security, API, Tokens by hand instead.
+- This is from Okta's documentation and has not been confirmed against a live org.
 
 **Not needed, and must not be granted.**
 
@@ -117,7 +124,7 @@ Source kind: `cicd`. Credential: `GITHUB_READ_TOKEN`. Hosts: api.github.com.
 
 ## Google Cloud (service accounts and their keys)
 
-Source kind: `gcp-sa`. Credential: `GCP_SCANNER_KEY_FILE`. Hosts: oauth2.googleapis.com, iam.googleapis.com.
+Source kind: `gcp-sa`. Credential: `GCP_SCANNER_KEY` (a key file: set GCP_SCANNER_KEY_FILE to its path). Hosts: oauth2.googleapis.com, iam.googleapis.com.
 
 **Grant.** roles/iam.serviceAccountViewer on each listed project, held by a dedicated service account; one JSON key for that account.
 

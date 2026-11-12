@@ -14,6 +14,7 @@ import type { Server } from 'node:http';
 
 import {
     createEgressProxy,
+    parseEgressPrivateCidrs,
     decideConnect,
     parseEgressAllowlist,
 } from '../src/egress-proxy';
@@ -158,6 +159,126 @@ describe('3. a real proxy', () => {
         const port = (free.address() as AddressInfo).port;
         await new Promise((r) => free.close(r));
         expect(await nodeEgressProbe.dialDirect('127.0.0.1', port, 2_000)).toBe(false);
+    });
+});
+
+describe('3b. an allowlisted name is not trusted for where it points', () => {
+    /** A proxy on the production path: it resolves with `answers`, and connects to an ADDRESS through `connectAddress`. */
+    async function pinned(answers: (host: string) => Promise<readonly string[]>, privateCidrs: string | undefined = undefined) {
+        const connected: string[] = [];
+        const refusals: Record<string, unknown>[] = [];
+        const echo: TcpServer = createTcpServer((s) => s.pipe(s));
+        await new Promise<void>((r) => echo.listen(0, '127.0.0.1', r));
+        const echoPort = (echo.address() as AddressInfo).port;
+        const proxy: Server = createEgressProxy({
+            allow: ALLOW,
+            log: { ...quiet, warn: (_msg, fields) => void refusals.push(fields ?? {}) },
+            resolve: answers,
+            privateCidrs: parseEgressPrivateCidrs(privateCidrs),
+            connectAddress: (address, port) => {
+                connected.push(`${address}:${port}`);
+                return connect({ host: '127.0.0.1', port: echoPort });
+            },
+        });
+        await new Promise<void>((r) => proxy.listen(0, '127.0.0.1', r));
+        const port = (proxy.address() as AddressInfo).port;
+        const close = async () => {
+            await new Promise((r) => proxy.close(r));
+            await new Promise((r) => echo.close(r));
+        };
+        return { port, connected, refusals, close };
+    }
+    const CONNECT = 'CONNECT inflect.example.com:443 HTTP/1.1\r\nHost: inflect.example.com:443\r\n\r\n';
+
+    it('connects to the address it checked, not to the name', async () => {
+        let lookups = 0;
+        const p = await pinned(async (host) => {
+            lookups += 1;
+            expect(host).toBe('inflect.example.com');
+            return ['93.184.216.34', '93.184.216.35'];
+        });
+        try {
+            expect(await exchange(p.port, CONNECT, /\r\n\r\n/)).toMatch(/^HTTP\/1\.1 200 /);
+            // One lookup, and the dial is to its first answer: the name is not resolved a second time.
+            expect(lookups).toBe(1);
+            expect(p.connected).toEqual(['93.184.216.34:443']);
+        } finally {
+            await p.close();
+        }
+    });
+
+    it.each([
+        ['loopback', ['127.0.0.1']],
+        ['cloud metadata', ['169.254.169.254']],
+        ['the unspecified address', ['0.0.0.0']],
+        ['v6 loopback', ['::1']],
+        ['a private address', ['10.0.0.7']],
+        ['a v4-mapped private address', ['::ffff:10.0.0.7']],
+        ['one bad address among good ones', ['93.184.216.34', '127.0.0.1']],
+    ])('refuses a name that resolves to %s with 403, and connects to nothing', async (_label, addresses) => {
+        const p = await pinned(async () => addresses);
+        try {
+            expect(await exchange(p.port, CONNECT)).toMatch(/^HTTP\/1\.1 403 /);
+            expect(p.connected).toEqual([]);
+            expect(p.refusals).toEqual([{ reason: 'ADDRESS_NOT_ALLOWED', host: 'inflect.example.com' }]);
+        } finally {
+            await p.close();
+        }
+    });
+
+    it('a private address inside EGRESS_PRIVATE_CIDR_ALLOWLIST is dialled; loopback and metadata are refused inside it too', async () => {
+        const inside = await pinned(async () => ['10.20.3.4'], '10.20.0.0/16');
+        const outside = await pinned(async () => ['10.21.3.4'], '10.20.0.0/16');
+        const never = await pinned(async () => ['169.254.169.254'], '0.0.0.0/0');
+        const loopback = await pinned(async () => ['127.0.0.1'], '0.0.0.0/0');
+        try {
+            expect(await exchange(inside.port, CONNECT, /\r\n\r\n/)).toMatch(/^HTTP\/1\.1 200 /);
+            expect(inside.connected).toEqual(['10.20.3.4:443']);
+            for (const p of [outside, never, loopback]) {
+                expect(await exchange(p.port, CONNECT)).toMatch(/^HTTP\/1\.1 403 /);
+                expect(p.connected).toEqual([]);
+            }
+        } finally {
+            for (const p of [inside, outside, never, loopback]) await p.close();
+        }
+    });
+
+    it('a name that does not resolve, or resolves to nothing, is a 502 and connects to nothing', async () => {
+        const failing = await pinned(async () => {
+            throw new Error('ENOTFOUND');
+        });
+        const empty = await pinned(async () => []);
+        try {
+            for (const p of [failing, empty]) {
+                expect(await exchange(p.port, CONNECT)).toMatch(/^HTTP\/1\.1 502 /);
+                expect(p.connected).toEqual([]);
+                expect(p.refusals).toEqual([{ reason: 'HOST_DID_NOT_RESOLVE', host: 'inflect.example.com' }]);
+            }
+        } finally {
+            await failing.close();
+            await empty.close();
+        }
+    });
+
+    it('a host off the allowlist is refused before anything is resolved', async () => {
+        let lookups = 0;
+        const p = await pinned(async () => {
+            lookups += 1;
+            return ['93.184.216.34'];
+        });
+        try {
+            expect(await exchange(p.port, 'CONNECT example.org:443 HTTP/1.1\r\n\r\n')).toMatch(/^HTTP\/1\.1 403 /);
+            expect(lookups).toBe(0);
+        } finally {
+            await p.close();
+        }
+    });
+
+    it('EGRESS_PRIVATE_CIDR_ALLOWLIST: absent is empty, and an entry that is not a CIDR stops the proxy at start', () => {
+        expect(parseEgressPrivateCidrs(undefined)).toEqual([]);
+        expect(parseEgressPrivateCidrs(' ')).toEqual([]);
+        expect(parseEgressPrivateCidrs('10.0.0.0/8, fd00::/8')).toHaveLength(2);
+        expect(() => parseEgressPrivateCidrs('10.0.0.0/8,internal.example')).toThrow('not a CIDR');
     });
 });
 

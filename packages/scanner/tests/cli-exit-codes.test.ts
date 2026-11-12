@@ -216,11 +216,15 @@ describe('4. help and usage', () => {
         }
     });
 
-    it('doctor and hosts without --config are the usage error it has always been', async () => {
-        for (const command of ['doctor', 'hosts']) {
+    it('doctor and hosts without --config are a usage error that names their own flags', async () => {
+        // Was the three-command usage line, which names neither command (Phase 3 review).
+        for (const [command, usage] of [
+            ['doctor', 'usage: scanent doctor --config <file> [--json] [--out <absolute dir>] [--source <kind>]...\n'],
+            ['hosts', 'usage: scanent hosts --config <file> [--format lines|json|egress-allow]\n'],
+        ]) {
             err.length = 0;
             expect(await main([command], {})).toBe(2);
-            expect(err.join('')).toBe('usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n');
+            expect(err.join('')).toBe(usage);
         }
     });
 });

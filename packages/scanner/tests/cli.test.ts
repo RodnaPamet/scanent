@@ -19,7 +19,8 @@ import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
 import { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
-import { main, run } from '../src/cli';
+import { main, run, USAGE_HINT } from '../src/cli';
+import { ConfigError } from '../src/config';
 import { rawPublicKeyHex } from '../src/report';
 import * as schedule from '../src/schedule';
 
@@ -63,7 +64,9 @@ describe('1. usage', () => {
         ['--config without a command', []],
     ])('%s is a usage error and reads nothing', async (_label, argv) => {
         expect(await main(argv, ENV)).toBe(2);
-        expect(err.join('')).toBe('usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n');
+        // The first line is the one scripts have always matched; the second (Phase 3 review) says where every command is listed.
+        expect(err.join('')).toBe(`usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n${USAGE_HINT}`);
+        expect(USAGE_HINT).toBe("run 'scanent help' for every command: init, keygen, doctor, hosts, scan, schedule, public-key, diff\n");
         expect(out).toEqual([]);
     });
 
@@ -79,7 +82,8 @@ describe('1. usage', () => {
         await expect(main(['scan', '--config', join(dir, 'absent.json')], ENV)).rejects.toThrow(/ENOENT/);
         const bad = join(dir, 'bad.json');
         writeFileSync(bad, '{ "estate": ');
-        await expect(main(['scan', '--config', bad], ENV)).rejects.toThrow(SyntaxError);
+        // A ConfigError that repeats none of the file (Phase 3 review): Node's SyntaxError quotes the bytes around the error.
+        await expect(main(['scan', '--config', bad], ENV)).rejects.toThrow(new ConfigError(['(root): the file is not JSON']));
         const unknownField = join(dir, 'extra.json');
         writeFileSync(unknownField, JSON.stringify({ ...JSON.parse(readFileSync(configFile, 'utf8')), apiKey: 'x' }));
         await expect(main(['scan', '--config', unknownField], ENV)).rejects.toThrow();

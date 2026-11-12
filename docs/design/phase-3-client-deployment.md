@@ -1030,7 +1030,7 @@ is ignored); no error message contains file content. End to end through
 `main`: `scan --dry-run` with the signing key given only as a file produces a
 report that verifies.
 
-### 9.3 `doctor` (`doctor.test.ts`, `doctor-local.test.ts`, `doctor-render.test.ts`)
+### 9.3 `doctor` (`doctor.test.ts`, `doctor-local.test.ts`; the renderer is covered from both)
 
 Against `createSourceFakes`:
 
@@ -1336,3 +1336,63 @@ was run for real, and where it differs from the sections above.
 | 9.5 | The rendered cases skip without Helm | As written. Beside them, cases that read the chart as text run everywhere: the template list, the kinds, no `secretKeyRef`, no `command` on the scanner, the schema, the README's hosts |
 | 9.6 | The `chart` job installs on `kind` | Not built. The job lints and renders, with Helm required. An install job was not written because it could not be run here first, and a job that fails for its own reasons blocks every pull request |
 | 10 | Six steps | Step 0 gets the image, then six |
+
+## 15. Implementation record: the review
+
+Reviewers read both halves from three sides: secrets and safety, a first run,
+and packaging. This section records what changed, what was run, and what was
+left.
+
+### What changed
+
+| Area | Before | After |
+|---|---|---|
+| The wizard's secret refusal | The contract's shapes only, so an Okta token, a LangSmith key, an Inflect key, an Entra client secret and a Google key were accepted, and a bare 40-digit token was accepted as an estate name or agent id | `init/secret-shapes.ts` adds those shapes for every answer, and refuses a long bare token where a name is asked for. The contract's list is unchanged, so what a tenant's ingest refuses is unchanged. The sentence saying where the API key goes is said before the tenant's questions |
+| A secret-shaped key | Printed as part of the refusal's path | A hit of its own, written `<key>` |
+| A configuration file that is not JSON | Node's message, which quotes the file, reached the log of `scan`, `schedule`, `hosts` and `public-key` | `(root): the file is not JSON`, exit 4. A file that cannot be read gives its errno code |
+| What `init` keeps | A kept signing key and an existing directory were used whatever their modes | A directory every user can write, and a key that is a link, not a file or writable by anyone else, are refused. A key others can read and a group-writable directory are kept with a warning. The target is checked before the first question |
+| The bundled egress proxy | Dialled whatever an allowlisted name resolved to | Resolves the name itself, refuses loopback, link-local, unspecified and (outside `EGRESS_PRIVATE_CIDR_ALLOWLIST`) private addresses, and connects to the address it checked |
+| A customer-named host behind the Compose overlay | Unreachable: the scanner's own address check needs a resolver the internal network does not have | The overlay sets `EGRESS_PROXY_CHECKS_ADDRESSES=1`: for a host that goes through the bundled proxy the scanner leaves the address check to it. `scan` logs once per host which of the two applies; through any other proxy it warns |
+| `doctor --source <kind>` for a kind the configuration lacks | Ran no source check and said Ready | Exit 2, naming the kinds the configuration has |
+| Okta preflight | Two of the scan's three reads | All three: the API-token listing is asked for one row. The access guide states what the read-only role does not show |
+| Usage | One line naming three commands | The same first line, then a line pointing to `help`; `doctor` and `hosts` print their own usage |
+| The chart | DNS fixed at port 53 and a pod selector; a 52-character release name gave a 65-character Service | `networkPolicy.dns.port` and `networkPolicy.dns.cidrs` in both flavors; the proxy's name is at most 63; `egressProxy.privateCidrs` |
+| The bundle | `verify.sh` compared regular files only; the containerd path left the image under a name the chart does not ask for | Anything that is not a regular file, and an empty directory, fail; the README gives the `ctr images tag` step |
+| The release workflow | `publish` ran for any tag ref and did not wait for the bundle; the bundle and its checksum were a 30-day workflow artifact | `publish` runs for a pushed tag only, after `bundle`, and refuses a version already in the registry. A `release` job, the only one with `contents: write`, attaches the bundle and its `.sha256` to a GitHub release |
+
+Tests that pinned something which legitimately changed were extended, each
+with a comment saying so: the usage line (now two lines, the first unchanged),
+the malformed-configuration error (a `ConfigError` where a `SyntaxError` was),
+the Okta preflight's request count, the overlay's environment, the release
+workflow's jobs and `publish` condition, and `init`'s last next step.
+
+### What was run for real, and what was not
+
+- **Docker**: the image was built from this tree and `deploy/smoke.sh` passed
+  on it. The Compose overlay was started with an MCP host in `EGRESS_ALLOW`:
+  the proxy logged `egress allowed` for it and `doctor` reported
+  `host.resolves` as resolved by the proxy. The read then stopped at this
+  environment's TLS inspection, so a complete MCP read through the overlay was
+  not observed. The proxy, as the image runs it, refused names that resolve to
+  loopback, a metadata address and a private address.
+- **Helm**: `helm template` and `helm lint --strict` ran (Helm 3.19, from a
+  local image), so the rendered cases of `deploy-templates.test.ts` ran here
+  for the first time. Without Helm on the path they are still skipped.
+- **containerd**: `ctr images import` and `ctr images tag` of a real archive
+  ran in a scratch namespace and left the image under both names.
+- **Not run**: an install on a cluster (kind is not installed), so
+  NodeLocal DNSCache and OpenShift DNS values are rendered and not exercised;
+  Podman; `release.yml` and the `chart` job of `ci.yml`, including the new
+  `release` job and the already-published check; Okta's role table against a
+  live org.
+
+### Left for later
+
+- Whether the Okta source should report itself incomplete when the token
+  listing returns only the scanner's own token. It needs a live org to confirm
+  what the role returns, and a decision about a source that would then never be
+  complete under the grant the guide asks for.
+- The contract's `firstSecretShapedMember` still prints a secret-shaped key in
+  its path. Changing it is a change to the shared contract.
+- A step in CI that starts the overlay with an MCP host on the allowlist and
+  reads it end to end.

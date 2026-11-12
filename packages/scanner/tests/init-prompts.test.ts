@@ -9,9 +9,10 @@ import { join } from 'path';
 
 import { looksLikeSecret } from '@scanent/contract/harness-contract';
 import { main, terminalPrompt } from '../src/cli';
-import { parseInitAnswers, type InitAnswers } from '../src/init/answers';
+import { InitError, parseInitAnswers, type InitAnswers } from '../src/init/answers';
 import { planInit } from '../src/init/plan';
 import { collectAnswers, InitAborted, MAX_REFUSALS, SECRET_REFUSAL, type PromptIo } from '../src/init/prompts';
+import { looksLikeBareToken, looksLikeCredential } from '../src/init/secret-shapes';
 
 const GUID = '0d1e2c3b-0000-4000-8000-000000003686';
 /** Built at run time: no credential-shaped literal is in this file. */
@@ -142,14 +143,119 @@ describe('a secret-shaped answer', () => {
         ['the agent id', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y', 'https://tenant.example.com', 'acme'], ['agt', 'n']],
     ];
 
-    it.each(UP_TO)('at %s: refused, asked again, and absent from everything said and returned', async (_label, before, after) => {
-        const s = script([...before, PASTED, ...after]);
-        const answers = await collectAnswers(s.io);
-        expect(s.said.filter((line) => line === SECRET_REFUSAL)).toHaveLength(1);
-        // The question was asked again, word for word.
-        expect(s.asked[before.length + 1]).toBe(s.asked[before.length]);
-        expect(JSON.stringify(answers)).not.toContain(PASTED);
-        expect(s.said.join('\n') + s.asked.join('\n')).not.toContain(PASTED);
+    /**
+     * One value of each credential this scanner is given, built from fragments so no scanner of this
+     * repository reads one as real. Only the first is a shape the contract's own list knows: the rest
+     * are the wizard's (`secret-shapes.ts`), and were accepted at every question before it had them.
+     */
+    const SHAPES: [string, string][] = [
+        ['a GitHub token', PASTED],
+        ['an Okta API token', ['00', 'aB3dE5fG7hJ9kL1mN3pQ5rS7tU9vW1xY3zA5bC7d'].join('')],
+        ['a LangSmith key', ['lsv2', 'pt', '0123456789abcdef0123456789abcdef', '0123456789'].join('_')],
+        ['an Inflect API key', ['iflk', 'Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MGFi'].join('_')],
+        ['an Entra client secret', ['abc8Q', 'dEfGhIjKlMnOpQrStUvWxYz0123456789a'].join('~')],
+        ['a Google API key', ['AIza', 'SyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q'].join('')],
+    ];
+    it('the wizard knows more shapes than the contract, and leaves the contract alone', () => {
+        expect(SHAPES.map(([, v]) => looksLikeSecret(v))).toEqual([true, false, false, false, false, false]);
+        expect(SHAPES.map(([, v]) => looksLikeCredential(v))).toEqual([true, true, true, true, true, true]);
+    });
+
+    describe.each(SHAPES)('%s', (_shape, pasted) => {
+        it.each(UP_TO)('at %s: refused, asked again, and absent from everything said and returned', async (_label, before, after) => {
+            const s = script([...before, pasted, ...after]);
+            const answers = await collectAnswers(s.io);
+            expect(s.said.filter((line) => line === SECRET_REFUSAL)).toHaveLength(1);
+            // The question was asked again, word for word.
+            expect(s.asked[before.length + 1]).toBe(s.asked[before.length]);
+            expect(JSON.stringify(answers)).not.toContain(pasted);
+            expect(s.said.join('\n') + s.asked.join('\n')).not.toContain(pasted);
+            // And it is in nothing init would write.
+            const plan = planInit(answers);
+            expect(plan.configText + plan.envTemplate).not.toContain(pasted);
+        });
+
+        it('in an answers file: refused by path wherever it is, and not repeated', () => {
+            const base = { answers: 'scanent-init-answers/1', estate: 'acme-prod', sources: [{ kind: 'code', roots: [{ label: 'app', path: '/estate/app' }] }] };
+            for (const [json, path] of [
+                [{ ...base, inflect: { baseUrl: 'https://tenant.example.com', tenantSlug: 'acme', agentId: pasted } }, 'inflect.agentId'],
+                [{ ...base, outputDir: `/out/${pasted}` }, 'outputDir'],
+                [{ ...base, sources: [{ kind: 'code', roots: [{ label: 'app', path: `/estate/${pasted}` }] }] }, 'sources[0].roots[0].path'],
+                [{ ...base, inflect: { [pasted]: 'x' } }, 'inflect.<key>'],
+            ] as [unknown, string][]) {
+                let thrown: unknown;
+                try {
+                    parseInitAnswers(json);
+                } catch (err) {
+                    thrown = err;
+                }
+                expect(thrown).toBeInstanceOf(InitError);
+                expect((thrown as InitError).issues).toEqual([`${path}: a credential value in the answers; scanent never takes one. If it was real, rotate it`]);
+                expect((thrown as Error).message).not.toContain(pasted);
+            }
+        });
+    });
+
+    describe('a long bare token where a NAME is asked for', () => {
+        // Forty hexadecimal digits: a token with no prefix to know it by. Lower-case, so it is a valid estate name and label.
+        const HEX40 = '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b';
+        const NAMES = UP_TO.filter(([label]) => ['the estate name', 'an MCP label', 'a code root label', 'the tenant slug', 'the agent id'].includes(label));
+
+        it.each(NAMES)('at %s: refused as a credential, and in nothing that would be written', async (_label, before, after) => {
+            const s = script([...before, HEX40, ...after]);
+            const answers = await collectAnswers(s.io);
+            expect(s.said.filter((line) => line === SECRET_REFUSAL)).toHaveLength(1);
+            expect(planInit(answers).configText).not.toContain(HEX40);
+        });
+
+        it('covers every question that takes a name, and only those', () => {
+            expect(NAMES.map(([label]) => label)).toEqual(['the estate name', 'an MCP label', 'a code root label', 'the tenant slug', 'the agent id']);
+        });
+
+        it('a name that reads as one is not refused for being long, and neither is a GUID where a GUID is asked for', async () => {
+            const long = 'acme-production-eu-west-1-cluster-22';
+            expect(long.length).toBeGreaterThanOrEqual(32);
+            const s = script([long, 'y', GUID, GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'y', 'https://tenant.example.com', 'acme', 'agt_scanner_acme_production_eu_west_1', 'n']);
+            const answers = await collectAnswers(s.io);
+            expect(s.said).not.toContain(SECRET_REFUSAL);
+            expect(answers.estate).toBe(long);
+            expect(looksLikeBareToken(GUID.replace(/-/g, ''))).toBe(true);
+            expect(looksLikeCredential(GUID)).toBe(false);
+        });
+
+        it('in an answers file: refused at the name it is in, and a directory id of the same length is not', () => {
+            const base = { answers: 'scanent-init-answers/1', sources: [{ kind: 'entra-sp', directoryId: GUID, clientId: GUID }] };
+            const refusedAt = (json: unknown): string | null => {
+                try {
+                    parseInitAnswers(json);
+                    return null;
+                } catch (err) {
+                    return (err as InitError).issues[0].split(':')[0];
+                }
+            };
+            expect(refusedAt({ ...base, estate: 'acme' })).toBeNull();
+            expect(refusedAt({ ...base, estate: HEX40 })).toBe('estate');
+            expect(refusedAt({ ...base, estate: 'acme', inflect: { baseUrl: 'https://t.example.com', tenantSlug: 'acme', agentId: HEX40 } })).toBe('inflect.agentId');
+            expect(refusedAt({ ...base, estate: 'acme', inflect: { baseUrl: 'https://t.example.com', tenantSlug: HEX40, agentId: 'agt' } })).toBe('inflect.tenantSlug');
+            expect(refusedAt({ ...base, estate: 'acme', sources: [{ kind: 'mcp', servers: [{ label: HEX40, url: 'https://mcp.acme.example/mcp' }] }] })).toBe('sources[0].servers[0].label');
+            expect(refusedAt({ ...base, estate: 'acme', sources: [{ kind: 'code', roots: [{ label: HEX40, path: '/estate/app' }] }] })).toBe('sources[0].roots[0].label');
+        });
+    });
+
+    it('says where the API key goes BEFORE the first question about the tenant, not after the last', async () => {
+        const events: string[] = [];
+        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y', 'https://tenant.example.com', 'acme', 'agt', 'n']);
+        await collectAnswers({
+            ask: async (q) => {
+                events.push(`ask ${q}`);
+                return s.io.ask(q);
+            },
+            say: (text) => void events.push(`say ${text}`),
+        });
+        const key = events.indexOf('say The API key is not asked for here: it goes in INFLECT_INGEST_KEY.');
+        expect(key).toBeGreaterThan(-1);
+        expect(events[key + 1]).toBe('ask Tenant base URL (https origin): ');
+        expect(events.filter((e) => e.startsWith('ask') && /agent id/.test(e))).toEqual(["ask The scanner's agent id in the tenant's register (a name, not a key): "]);
     });
 
     it('three refusals of one question end the wizard', async () => {

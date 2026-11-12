@@ -17,7 +17,7 @@ import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from '
 import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
 
 import { sourceCredentialEnv, type InflectConfig, type ScannerConfig } from './config';
-import type { ResolveHost } from './customer-host';
+import { customerHostCheckFor, type CustomerHostCheck, type ResolveHost } from './customer-host';
 import { createSourceWire, type FetchLike } from './http';
 import type { ScannerLog } from './log';
 import { postReport, type PostResult } from './post';
@@ -47,6 +47,8 @@ export interface ScanDeps {
     /** How the egress proof reaches the network. A TEST SEAM: production dials. */
     readonly egressProbe?: EgressProbe;
     readonly now?: () => number;
+    /** The Node version, for whether a proxy is in effect. A TEST SEAM: production uses the process's own. */
+    readonly nodeVersion?: string;
 }
 
 /** The Ed25519 signing key, from PKCS#8 PEM. Anything else is refused. */
@@ -54,6 +56,14 @@ export function loadSigningKey(pem: string): { privateKey: KeyObject; publicKey:
     const privateKey = createPrivateKey(pem);
     if (privateKey.asymmetricKeyType !== 'ed25519') throw new Error('the signing key must be Ed25519');
     return { privateKey, publicKey: createPublicKey(privateKey) };
+}
+
+/** What to do about a signing key that is not set. Names the variable and both ways to supply it, and no value. */
+export function signingKeyMissing(name: string): string {
+    return (
+        `the signing key is not set (environment variable ${name}): set ${name} or ${name}_FILE ` +
+        '(init writes the _FILE form in scanent.env; load that file), or make a key with scanent keygen'
+    );
 }
 
 function requiredEnv(env: Env, name: string, what: string): string {
@@ -66,7 +76,7 @@ function requiredEnv(env: Env, name: string, what: string): string {
 export function buildSources(
     config: ScannerConfig,
     env: Env,
-    seams: { readonly resolveHost?: ResolveHost; readonly egressProof?: EgressProof } = {},
+    seams: { readonly resolveHost?: ResolveHost; readonly checkHost?: CustomerHostCheck; readonly egressProof?: EgressProof } = {},
 ): { sources: HarnessSource[]; unreadable: SourceRead[] } {
     const sources: HarnessSource[] = [];
     const unreadable: SourceRead[] = [];
@@ -118,6 +128,7 @@ export function buildSources(
                         };
                     }),
                     resolveHost: seams.resolveHost,
+                    checkHost: seams.checkHost,
                 }),
             );
             continue;
@@ -151,6 +162,7 @@ export function buildSources(
                     windowDays: s.windowDays,
                     readDeployments: s.readDeployments,
                     resolveHost: seams.resolveHost,
+                    checkHost: seams.checkHost,
                 }),
             );
         } else {
@@ -179,7 +191,9 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
     const { config, env, log } = deps;
     const now = deps.now ?? Date.now;
     const fetchImpl: FetchLike = deps.fetchImpl ?? ((url, init) => fetch(url, init));
-    const keys = loadSigningKey(requiredEnv(env, config.scanner.signingKeyEnv, 'the signing key'));
+    const pem = env[config.scanner.signingKeyEnv];
+    if (typeof pem !== 'string' || pem.trim() === '') throw new Error(signingKeyMissing(config.scanner.signingKeyEnv));
+    const keys = loadSigningKey(pem);
 
     const asOf = new Date(now());
     const deadline = asOf.getTime() + config.timeBoxSeconds * 1000;
@@ -198,7 +212,14 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
         if (egressProof.met) log.info('egress proven', {});
         else log.warn('egress not proven', { failed: egressProof.failed });
     }
-    const { sources, unreadable } = buildSources(config, env, { resolveHost: deps.resolveHost, egressProof });
+    // A host the estate names is resolved and checked before each request. Through a
+    // proxy that check binds this machine's resolver and not the proxy's, unless the
+    // proxy is scanent's own, which checks the address it dials: either way, say so once.
+    const checkHost = customerHostCheckFor(env, deps.nodeVersion ?? process.version, (host, checkedByProxy) => {
+        if (checkedByProxy) log.info('customer host checked by the egress proxy', { host });
+        else log.warn('customer host reached through a proxy', { host, note: "the address check binds this machine's resolver, not the proxy's" });
+    });
+    const { sources, unreadable } = buildSources(config, env, { resolveHost: deps.resolveHost, checkHost, egressProof });
 
     const reads = await Promise.all(
         sources.map(async (source) => {

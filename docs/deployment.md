@@ -78,8 +78,26 @@ any plain HTTP request. An empty list refuses everything.
 ```bash
 export EGRESS_ALLOW="$(docker run --rm -v "$PWD/scanent:/etc/scanent:ro" --user "$(id -u):$(id -g)" \
   ghcr.io/rodnapamet/scanent:<version> hosts --config /etc/scanent/config.json --format egress-allow)"
-SCANENT_VERSION=<version> docker compose -f compose.yaml -f compose.egress.yaml up -d
+export SCANENT_VERSION=<version>
+docker compose -f compose.yaml -f compose.egress.yaml up -d
 ```
+
+The proxy does not trust a name because it is on the list. It resolves the
+name itself, refuses when any address is loopback, link-local (cloud metadata)
+or unspecified, refuses a private address that is not inside
+`EGRESS_PRIVATE_CIDR_ALLOWLIST` (comma-separated CIDRs, on the proxy), and
+connects to the address it checked.
+
+**Hosts you name: MCP servers and a self-hosted LangSmith.** They go in
+`EGRESS_ALLOW` like the others, and `scanent hosts` prints them. The scanner
+normally resolves such a host itself and checks the address before every
+request; on the overlay's internal network it has no resolver for an outside
+name, so the overlay sets `EGRESS_PROXY_CHECKS_ADDRESSES=1` on the scanner and
+the proxy's check above is the one that applies. For a host on a private
+address, set `EGRESS_PRIVATE_CIDR_ALLOWLIST` to its range; the per-source
+`egressPrivateCidrAllowlist` in the configuration is not consulted for a host
+the proxy checks. Set `EGRESS_PROXY_CHECKS_ADDRESSES` only beside this proxy:
+beside any other it turns the address check off.
 
 With an `egress` block in the configuration, each scan also proves the
 restriction before it reports it ([scanner.md](scanner.md), "The egress proxy").
@@ -126,15 +144,20 @@ tar -xf scanent-<version>-airgap.tar && cd scanent-<version>-airgap
 ./load.sh          # verifies, loads this machine's image, prints the next command
 ```
 
-- `verify.sh` fails when a file is changed, missing or added.
+- `verify.sh` fails when a file is changed, missing or added, and when
+  anything is present that is not a regular file (a symbolic link) or is an
+  empty directory.
 - **Nothing in the bundle is signed.** The checksums detect a damaged copy,
   not a replaced one: whoever can replace a file can replace the list. Obtain
   the bundle over a channel you trust, and compare the archive's SHA-256 with
-  the one the release states.
+  the one the release states: the GitHub release for the version carries the
+  archive and `scanent-<version>-airgap.tar.sha256`.
 - The bundle holds no SBOM unless the release was built with one; `sbom/` says
   which.
 - For a cluster, push the loaded image to a registry inside your network and
-  set the chart's `image.repository`, or import the archive on each node.
+  set the chart's `image.repository`, or import the archive on each node and
+  tag it with the name the chart asks for (the bundle's README has the two
+  `ctr` commands).
 
 [deploy/airgap/README.md](../deploy/airgap/README.md) lists the contents.
 

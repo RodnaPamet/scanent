@@ -121,7 +121,9 @@ each on port 443. For the `everything` example they are:
 One NetworkPolicy for the scanner pod:
 
 - no ingress rule: nothing may connect in;
-- egress to the cluster's DNS (`networkPolicy.dns`), UDP and TCP 53;
+- egress to the cluster's DNS (`networkPolicy.dns`), UDP and TCP on
+  `networkPolicy.dns.port` (53 by default); see [DNS](#dns) when your cluster's
+  DNS is not the kube-dns pods on port 53;
 - egress on TCP 443 to public addresses: `0.0.0.0/0` except `10.0.0.0/8`,
   `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10` and `169.254.0.0/16`, and
   `::/0` except `fc00::/7` and `fe80::/10`;
@@ -149,12 +151,32 @@ Two ways, both fed by `scanent hosts`:
   image, with `egress.fqdns` as its allowlist. The scanner pod may then reach
   DNS and the proxy and nothing else; the proxy pod may reach TCP 443 on public
   addresses, and forwards only to a listed host. This works on any network
-  plugin that enforces NetworkPolicy. A host on a private address needs
-  `proxy.noProxy` and an `extraEgress` entry.
+  plugin that enforces NetworkPolicy. The proxy resolves each name itself,
+  refuses a loopback, link-local or metadata address, and connects to the
+  address it checked. A host on a private address is refused unless its range
+  is in `egressProxy.privateCidrs` (which also opens TCP 443 to that range for
+  the proxy pod); or keep it off the proxy with `proxy.noProxy` and an
+  `extraEgress` entry.
 
 The two cannot be combined.
 
 `networkPolicy.flavor: none` installs no policy.
+
+### DNS
+
+Both flavors let the pods reach DNS and nothing else on that port. The default
+is the `kube-dns` / CoreDNS pods in `kube-system` on port 53. Where the cluster
+differs, every lookup is dropped and every source reads as unreachable, so set
+the values to match:
+
+| Cluster | Values |
+|---|---|
+| NodeLocal DNSCache | `networkPolicy.dns.cidrs: [169.254.20.10/32]` (the address in the pods' `/etc/resolv.conf`). It is a node address, which a pod selector cannot match |
+| OpenShift | `networkPolicy.dns.namespace: openshift-dns`, `networkPolicy.dns.podLabels: {dns.operator.openshift.io/daemonset-dns: default}`, `networkPolicy.dns.port: 5353` |
+
+`kubectl exec` into any pod and read `/etc/resolv.conf` to see which address
+the pods ask. These two were written from the products' documentation and were
+not run on such a cluster.
 
 ### Is the policy enforced?
 
@@ -189,6 +211,8 @@ It should time out. If it prints a page, the policy is not enforced.
 | `networkPolicy.flavor` | `kubernetes` | `none`, `kubernetes` or `cilium` |
 | `egress.fqdns` | none | The exact hosts, for `cilium` and the egress proxy |
 | `egressProxy.enabled` | `false` | Run the bundled egress proxy |
+| `egressProxy.privateCidrs` | none | Private ranges the bundled proxy may connect to |
+| `networkPolicy.dns.port`, `networkPolicy.dns.cidrs` | `53`, none | Where DNS answers, when it is not the kube-dns pods on 53 |
 
 `ci/` holds the value sets the tests render.
 
@@ -196,5 +220,7 @@ It should time out. If it prints a page, the policy is not enforced.
 
 On a cluster with no registry access, load the image from the air-gapped bundle
 into a registry the cluster can reach and set `image.repository`, or import it
-on each node (`ctr -n k8s.io images import`), then install the chart archive
+on each node (`ctr -n k8s.io images import`, then `ctr -n k8s.io images tag`
+to the name the chart asks for: the bundle's README has the two commands), then
+install the chart archive
 the bundle carries. See [docs/deployment.md](../../../docs/deployment.md).

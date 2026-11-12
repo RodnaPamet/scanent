@@ -42,7 +42,7 @@ import { renderAccessText } from './init/access-guide';
 import { InitError, parseInitAnswers, type InitAnswers } from './init/answers';
 import { planInit } from './init/plan';
 import { collectAnswers, InitAborted, type PromptIo } from './init/prompts';
-import { CONFIG_FILE, InitRefused, writeInit } from './init/write';
+import { checkInitTarget, CONFIG_FILE, InitRefused, writeInit } from './init/write';
 import { generateSigningKey, KeygenError } from './keygen';
 import { jsonLineLog } from './log';
 import { OutputsError, resolveOutputs, scanAndDeliver } from './outputs';
@@ -100,10 +100,16 @@ function unknownArgument(command: string, rest: readonly string[]): string | nul
     return null;
 }
 
-/** The usage error, as it has always read. `help` prints the full set of commands. */
-// Kept byte for byte: scripts match on it. It predates `--out`, `diff`, `help` and
-// the Phase 3 commands, which `scanent help` (or `--help` after any command but `diff`) lists.
-const USAGE = 'usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n';
+/**
+ * The usage error. Its FIRST line is as it has always read, byte for byte:
+ * scripts match on it. It predates `--out`, `diff`, `help` and the Phase 3
+ * commands, so a second line points to `help` and names every command.
+ */
+const USAGE_LINE = 'usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n';
+export const USAGE_HINT = "run 'scanent help' for every command: init, keygen, doctor, hosts, scan, schedule, public-key, diff\n";
+const USAGE = `${USAGE_LINE}${USAGE_HINT}`;
+const DOCTOR_USAGE = `usage: scanent doctor --config <file> [--json] [--out <absolute dir>] [--source <kind>]...\n`;
+const HOSTS_USAGE = 'usage: scanent hosts --config <file> [--format lines|json|egress-allow]\n';
 
 export const HELP = `scanent, the Agent Estate Scanner (alias: aes)
 
@@ -178,7 +184,23 @@ const CONFIG_FILE_FAILURES = new WeakSet<object>();
 
 function loadConfig(file: string): ScannerConfig {
     try {
-        return parseScannerConfig(JSON.parse(readFileSync(file, 'utf8')) as unknown);
+        let text: string;
+        try {
+            text = readFileSync(file, 'utf8');
+        } catch (err) {
+            // The errno code only: the path is the caller's own argument and is not repeated.
+            const code = (err as NodeJS.ErrnoException | null)?.code;
+            throw new ConfigError([`(root): the file could not be read (${typeof code === 'string' && /^[A-Z0-9_]{1,32}$/.test(code) ? code : 'error'})`]);
+        }
+        let json: unknown;
+        try {
+            json = JSON.parse(text) as unknown;
+        } catch {
+            // Node's own message quotes the bytes around the error, which is where a
+            // mistyped or pasted credential sits. None of the file is repeated.
+            throw new ConfigError(['(root): the file is not JSON']);
+        }
+        return parseScannerConfig(json);
     } catch (err) {
         if (err !== null && typeof err === 'object') CONFIG_FILE_FAILURES.add(err);
         throw err;
@@ -282,6 +304,21 @@ async function runInit(argv: readonly string[], io: CliIo): Promise<number> {
     }
     const dir = dirArg === null ? resolvePath(cwd, 'scanent') : isAbsolute(dirArg) ? dirArg : resolvePath(cwd, dirArg);
     const answersFile = arg(argv, '--answers');
+    const refused = (err: InitRefused): number => {
+        stderr(`${err.message}\n`);
+        return err.reason === 'NOT_WRITTEN' ? EXIT.FAILED : EXIT.USAGE;
+    };
+
+    // Before a question is asked or the answers are read: a directory that is in the
+    // way is said now, not after the whole wizard has been answered.
+    if (!argv.includes('--print-access')) {
+        try {
+            checkInitTarget(dir, { force: argv.includes('--force') });
+        } catch (err) {
+            if (!(err instanceof InitRefused)) throw err;
+            return refused(err);
+        }
+    }
 
     let answers: InitAnswers;
     if (answersFile !== null) {
@@ -336,8 +373,7 @@ async function runInit(argv: readonly string[], io: CliIo): Promise<number> {
         written = writeInit(plan, dir, { force: argv.includes('--force'), keygen: !argv.includes('--no-keygen') });
     } catch (err) {
         if (!(err instanceof InitRefused)) throw err;
-        stderr(`${err.message}\n`);
-        return err.reason === 'NOT_WRITTEN' ? EXIT.FAILED : EXIT.USAGE;
+        return refused(err);
     }
     const lines: string[] = ['', 'Written:'];
     for (const f of written.files) lines.push(`  ${f.path}  (mode 0${f.mode.toString(8)})`);
@@ -349,6 +385,7 @@ async function runInit(argv: readonly string[], io: CliIo): Promise<number> {
             lines.push('', `Signing key, public half: ${written.signingKey.publicKeyHex}`, '  Register this only if you post to a tenant.');
         }
     }
+    if (written.warnings.length > 0) lines.push('', ...written.warnings.map((w) => `Warning: ${w}`));
     lines.push('', 'Access to create, read-only, for the sources you chose:', '', tables);
     lines.push('Next:');
     plan.nextSteps.forEach((step, i) => lines.push(`  ${i + 1}. ${step.replace('<dir>/config.json', `${written.dir}/${CONFIG_FILE}`)}`));
@@ -388,7 +425,8 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: 
 
     const file = arg(argv, '--config');
     if (!command || !file) {
-        process.stderr.write(USAGE);
+        // A command with usage of its own says that; everything else gets the line scripts know, and where to look.
+        process.stderr.write(command === 'doctor' ? DOCTOR_USAGE : command === 'hosts' ? HOSTS_USAGE : USAGE);
         return 2;
     }
     if (!(command in FLAGS)) {
@@ -398,7 +436,7 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: 
     const unknown = unknownArgument(command, argv.slice(1));
     if (unknown !== null) {
         // The argument is the caller's own, but it may be a mistyped secret: it is not echoed.
-        process.stderr.write(`${USAGE}unknown argument for ${command}; run 'scanent help' for every command and flag\n`);
+        process.stderr.write(`${USAGE_LINE}unknown argument for ${command}; run 'scanent help' for every command and flag\n`);
         return 2;
     }
 
@@ -407,8 +445,25 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: 
         const only = args(argv, '--source');
         const badOut = named(argv, '--out') && (out === null || !out.startsWith('/') || !isCleanPath(out));
         if (badOut || only.some((k) => !(DOCTOR_KINDS as readonly string[]).includes(k)) || (named(argv, '--source') && only.length === 0)) {
-            process.stderr.write(`usage: scanent doctor --config <file> [--json] [--out <absolute dir>] [--source <kind>]...\n  kinds: ${DOCTOR_KINDS.join(', ')}\n`);
+            process.stderr.write(`${DOCTOR_USAGE}  kinds: ${DOCTOR_KINDS.join(', ')}\n`);
             return EXIT.USAGE;
+        }
+        if (only.length > 0) {
+            // A kind the configuration does not hold would check nothing and report Ready on it.
+            // A configuration that cannot be read is doctor's own to report, so that case passes through.
+            let present: readonly string[] | null = null;
+            try {
+                present = loadConfig(file).sources.map((s) => s.kind);
+            } catch {
+                present = null;
+            }
+            const absent = present === null ? [] : [...new Set(only)].filter((k) => !(present as readonly string[]).includes(k));
+            if (present !== null && absent.length > 0) {
+                process.stderr.write(
+                    `--source ${absent.join(', ')}: the configuration has no such source, so nothing would be checked.\n  it has: ${[...new Set(present)].join(', ')}\n`,
+                );
+                return EXIT.USAGE;
+            }
         }
         const report = await runDoctor({ configPath: file, env, out, only: only as SourceKind[] });
         process.stdout.write(argv.includes('--json') ? renderDoctorJson(report) : renderDoctorText(report));
@@ -427,7 +482,7 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: 
     if (command === 'hosts') {
         const format = arg(argv, '--format') ?? 'lines';
         if (!(HOSTS_FORMATS as readonly string[]).includes(format) || (named(argv, '--format') && arg(argv, '--format') === null)) {
-            process.stderr.write('usage: scanent hosts --config <file> [--format lines|json|egress-allow]\n');
+            process.stderr.write(HOSTS_USAGE);
             return EXIT.USAGE;
         }
         process.stdout.write(renderHosts(hostsFor(config), format as HostsFormat));

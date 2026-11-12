@@ -22,13 +22,29 @@ spec:
             {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 12 }}
       toPorts:
         - ports:
-            - port: "53"
+            - port: {{ .Values.networkPolicy.dns.port | quote }}
               protocol: ANY
           rules:
             dns:
               {{- range .Values.egress.fqdns }}
               - matchName: {{ . | quote }}
               {{- end }}
+    {{- if .Values.networkPolicy.dns.cidrs }}
+    # A DNS answerer that is not a pod (NodeLocal DNSCache): the same names, by address.
+    - toCIDR:
+        {{- range .Values.networkPolicy.dns.cidrs }}
+        - {{ . }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.networkPolicy.dns.port | quote }}
+              protocol: ANY
+          rules:
+            dns:
+              {{- range .Values.egress.fqdns }}
+              - matchName: {{ . | quote }}
+              {{- end }}
+    {{- end }}
     - toFQDNs:
         {{- range .Values.egress.fqdns }}
         - matchName: {{ . | quote }}

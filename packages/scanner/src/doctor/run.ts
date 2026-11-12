@@ -19,7 +19,7 @@
 import { accessSync, lstatSync, readFileSync, statSync } from 'fs';
 
 import { ConfigError, parseScannerConfig, sourceCredentialEnv, type ScannerConfig, type SourceConfig } from '../config';
-import { assertResolvesReachable, parsePrivateCidrAllowlist, resolveWithDns, type PrivateCidrAllowlist, type ResolveHost } from '../customer-host';
+import { addressCheckedByProxy, assertResolvesReachable, customerHostCheckFor, parsePrivateCidrAllowlist, resolveWithDns, type PrivateCidrAllowlist, type ResolveHost } from '../customer-host';
 import type { EgressProbe } from '../egress-proof';
 import { hostsFor } from '../hosts';
 import { createSourceWire, TLS_NOT_TRUSTED, type FetchLike } from '../http';
@@ -152,7 +152,10 @@ async function hostCheck(t: Target, env: Env, nodeVersion: string, resolve: Reso
     let resolved = 0;
     let byProxy = 0;
     for (const { host, guard } of t.hosts) {
-        if (guard !== null) {
+        if (guard !== null && addressCheckedByProxy(host, env, nodeVersion)) {
+            // scanent's own egress proxy resolves the name and checks the address it dials.
+            byProxy += 1;
+        } else if (guard !== null) {
             // A host the estate names: the same check `scan` makes before every request, proxied or not.
             try {
                 await assertResolvesReachable(host, resolve, guard);
@@ -176,7 +179,8 @@ async function hostCheck(t: Target, env: Env, nodeVersion: string, resolve: Reso
             'host.resolves',
             'NETWORK',
             `did not resolve to an address the scanner may reach: ${failed.join(', ')}`,
-            viaProxy ? 'Check DNS for the host, or add it to NO_PROXY if it is on your network.' : 'Check DNS for the host from where the scanner runs; behind a proxy, set HTTPS_PROXY.',
+            viaProxy
+                ? "Check DNS for the host, or add it to NO_PROXY if it is on your network. Behind scanent's own egress proxy, set EGRESS_PROXY_CHECKS_ADDRESSES=1: that proxy resolves the name and checks the address." : 'Check DNS for the host from where the scanner runs; behind a proxy, set HTTPS_PROXY.',
         );
     }
     if (resolved === 0) return c.skip('host.resolves', 'NOT_APPLICABLE', `resolved by the proxy (${byProxy} host${byProxy === 1 ? '' : 's'})`);
@@ -414,7 +418,10 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
     // ─── The sources ───
     const sourceChecks: Check[] = [];
     const dates: string[] = [];
-    const { sources } = buildSources({ ...config, sources: wanted }, secrets.resolved, { resolveHost: deps.resolveHost });
+    const { sources } = buildSources({ ...config, sources: wanted }, secrets.resolved, {
+        resolveHost: deps.resolveHost,
+        checkHost: customerHostCheckFor(env, nodeVersion),
+    });
     const fetchImpl: FetchLike = deps.fetchImpl ?? ((url, init) => fetch(url, init));
 
     /** One source's preflight, in its own wire, time box and byte budget. A throw is the reader's fault, and still a failed read. */
