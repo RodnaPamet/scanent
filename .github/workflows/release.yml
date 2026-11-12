@@ -247,6 +247,12 @@ jobs:
       # The SBOM of the image that was just tested: its OS packages and the
       # packages under node_modules. Syft reads the image from the local
       # store. The action uploads and publishes nothing itself.
+      #
+      # The action writes its output file and does not make the directory it
+      # is in: the workflow's first run failed here, on a file it could not open.
+      - name: A directory for the SBOM
+        run: mkdir -p sbom
+
       - name: SBOM of the image (CycloneDX)
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
