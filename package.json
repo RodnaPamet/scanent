@@ -27,7 +27,7 @@
     "docs:network": "node scripts/render-network-and-permissions.js"
   },
   "devDependencies": {
-    "@eslint/js": "9.39.5",
+    "@eslint/js": "10.0.1",
     "@types/jest": "30.0.0",
     "@types/node": "22.19.1",
     "eslint": "9.39.5",
