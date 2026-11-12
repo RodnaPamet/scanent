@@ -1097,6 +1097,99 @@ resolves to a private address unless its range is in
 `EGRESS_PRIVATE_CIDR_ALLOWLIST`; and `scan`, run through a proxy, logs a
 warning for each host you named.
 
+The hardening pass added these. Each makes the scanner refuse or report
+something it used to accept:
+
+- **A report over 5 MiB is not signed.** The run stops with
+  `the scanner refused to sign its report: (report): <n> bytes, over the 5242880 a report may be`
+  and writes, prints and posts nothing. Before, such a report was signed and
+  written, and then refused as `TOO_LARGE` by every reader. See "Limits and
+  scale".
+- **A next-page link to another path is refused** (`PAGINATION_TORN`), as a
+  link to another host always was.
+- **An address that carries a private or loopback IPv4 address inside an IPv6
+  one is refused**: `::ffff:a00:7`, and the v4-compatible, NAT64 and 6to4
+  spellings. `localhost.` and `metadata.google.internal.` (with a trailing dot)
+  are refused like the names without it, and `.localhost` is refused whatever
+  the allowlist says.
+- **`doctor` fails a read whose answer is not the listing**
+  (`<what> failed (PAGINATION_TORN)`). Before, any JSON answered with 200
+  passed, and the first scan then reported the source incomplete.
+- **A Google project whose listing carries a member other than its collection
+  and its page token is `PAGINATION_TORN`.** Before, any JSON object read as a
+  project with no service account.
+- **A UTF-16 source file is `UNPARSEABLE`.** Before, it was passed over as
+  holding no agent.
+
+## Limits and scale
+
+What bounds a scan, and what happens at each bound. Nothing is cut in silence:
+a bound that is reached is reported, or the run is refused.
+
+| Bound | Value | When it is reached |
+|---|---|---|
+| One response | 4 MiB | The source is `INCOMPLETE` `BYTE_CAP` |
+| All responses of one source | 64 MiB | The source is `INCOMPLETE` `BYTE_CAP` |
+| Pages of one listing | 1,000 | The source is `INCOMPLETE` `BYTE_CAP` |
+| Time per source | `timeBoxSeconds`, 10 to 3,600 | The source is `INCOMPLETE` `TIME_BOX` |
+| Agents in a report | 5,000 | The report carries the first 5,000 by id, and every source that lost an agent is `INCOMPLETE` `BYTE_CAP` |
+| Credentials, tools, models of one agent | 100, 500, 50 | The same, for the source that lost one |
+| Unbound credentials in a report | 10,000 | The same |
+| The signed report | 5 MiB | The run is refused; nothing is written, printed or posted |
+| A code file, the files of a scan, their bytes | 1 MiB, 20,000, 128 MiB | The `code` source is `INCOMPLETE` `BYTE_CAP` |
+| An input of `scanent diff` | 64 MiB | The diff is refused (exit 2) |
+
+**The agent count and the byte size are different limits, and the bytes are
+reached first on an estate whose agents hold tools.** A report of 5 MiB
+averages 1,048 bytes an agent at 5,000 agents. Measured on generated reports:
+
+| Each agent holds | Bytes an agent | 5,000 agents | Agents that fit in 5 MiB |
+|---|---|---|---|
+| no credential, no tool | 367 | 1.75 MiB | 5,000 |
+| 2 credentials | 708 | 3.38 MiB | 5,000 |
+| 2 credentials, 5 tools | 1,687 | 8.04 MiB | about 3,100 |
+| 2 credentials, 10 tools | 2,667 | 12.72 MiB | about 1,960 |
+| 5 credentials, 20 tools | 5,150 | 24.56 MiB | about 1,010 |
+
+So an estate of several thousand agents that are read through a runtime, an
+MCP server or code (the sources that report tools) cannot be put in one
+report. Scan it as several estates, each with its own configuration, signing
+key and output directory. The byte cap is the contract's
+([contract.md](contract.md)); raising it is a change to the contract, not to
+the scanner.
+
+Measured on a generated estate of 5,000 agents and 10,000 credentials read
+through every source kind, with fakes in place of the network (so this is the
+scanner's own cost): the scan took 0.8 s over 1,645 requests and grew the heap
+by 54 MiB; scoring and rendering took 1.9 s and grew it to 366 MiB, because
+`results.json` (33.7 MiB) holds every criterion of every agent. The signed
+report was 3.8 MiB and `summary.html` 5.3 MiB. Allow 1 GiB of memory for a run
+of that size.
+
+### Long tests and the soak
+
+`npm test` runs every suite with a short budget: 200 cases per property, the
+500-agent scale shape, 200 scheduled scans. Three things run only when asked:
+
+```bash
+npm run test:long                                # SCANENT_LONG=1: 50,000 cases per property, the 5,000-agent shape,
+                                                 # 5,000 scheduled scans, every canary shape in every response string
+FUZZ_SEED=12345 FUZZ_ITERATIONS=20000 npx jest packages/scanner/tests/fuzz-inputs.test.ts
+npm run build && npm run soak -- --hours 72 --every-seconds 60
+```
+
+A property that fails names its seed and iteration, and writes its input to a
+file under the system's temporary directory; `FUZZ_SEED=<seed>` runs it again.
+
+`npm run soak` leaves one scanner process scanning the offline example on a
+short cadence, with the real clock and file system, and writes one JSON line
+per run (duration, resident memory, output size). It exits 1 when a run fails,
+a run is missed, memory grows past `--rss-growth-mib` (64) over its level
+after the warm-up, or the output directory holds more runs than retention
+allows. It reaches no network: every host the scanner reads is fixed by kind,
+or refused when it is loopback, so no network source can be pointed at a local
+stand-in.
+
 ## Exit codes
 
 | Code | Name | Meaning |

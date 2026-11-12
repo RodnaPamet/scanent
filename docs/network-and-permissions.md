@@ -17,7 +17,7 @@ anything this page does not list has a different hash, and every report it signs
 
 - **https only**, to port 443. A URL with a user name or password in it is refused.
 - **Redirects are refused.** A redirect ends the read; it is never followed, because the request carries a credential.
-- **A link to another host is not followed.** A next-page link is used only when it stays on the origin being read.
+- **A link to another host or another path is not followed.** A next-page link is used only when it stays on the origin and the path of the listing being read.
 - **Bounded.** At most 4 MiB per response and 64 MiB per source, and one deadline per source (`timeBoxSeconds`). Past a bound the source is reported as not read in full.
 - **No retry.** A request that fails is not sent again in the same scan.
 - **Only GET**, except the requests listed under "Token exchanges", "MCP servers", "The register read" and "The one post" below.

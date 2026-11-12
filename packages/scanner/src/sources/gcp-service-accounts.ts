@@ -177,6 +177,11 @@ const KEY_ID = /^[0-9a-f]{8,64}$/;
 function googlePage(member: string, firstUrl: string) {
     return (body: unknown): { items: readonly unknown[]; next: string | null } | null => {
         if (!isRecord(body)) return null;
+        // An empty collection is an object with no member at all, so "any object"
+        // would read as "a listing of none": a sign-in page served as JSON, or a
+        // proxy's own answer, would be a project with no account and a COMPLETE
+        // read. A listing holds its collection and its page token and nothing else.
+        if (Object.keys(body).some((key) => key !== member && key !== 'nextPageToken')) return null;
         const items = body[member] === undefined ? [] : body[member];
         if (!Array.isArray(items)) return null;
         const token = body.nextPageToken;
@@ -304,8 +309,8 @@ export function gcpServiceAccountSource(opts: GcpServiceAccountSourceOptions): H
                             if (!GCP_PROJECT_ID.test(project)) throw new SourceReadError('UNPARSEABLE', 'a project that is not a project id');
                             return ctx.http.getJson(`${GCP_IAM_ORIGIN}/v1/projects/${project}/serviceAccounts?pageSize=1`, { origin: GCP_IAM_ORIGIN, headers });
                         },
-                        // Google omits an empty collection: an object with no `accounts` is a listing of none.
-                        (body) => isRecord(body) && (body.accounts === undefined || Array.isArray(body.accounts)),
+                        // The scan's own reading of the page: an empty collection is an object with no `accounts`.
+                        (body) => googlePage('accounts', GCP_IAM_ORIGIN)(body) !== null,
                     );
                 }
                 // Google answers what an identity may do through testIamPermissions, a POST this scanner cannot send.

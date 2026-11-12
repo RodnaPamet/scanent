@@ -61,6 +61,7 @@ import {
     MAX_AGENTS,
     MAX_CREDENTIALS_PER_AGENT,
     MAX_MODELS_PER_AGENT,
+    MAX_REPORT_BYTES,
     MAX_TOOLS_PER_AGENT,
     MAX_UNBOUND_CREDENTIALS,
     SOURCE_KINDS_V3,
@@ -277,5 +278,17 @@ export function signReport(body: HarnessReportBodyV3, keys: { privateKey: KeyObj
         signerKey: rawPublicKeyHex(keys.publicKey),
         sig: sign(null, harnessSignedMessage(wireBody), keys.privateKey).toString('hex'),
     };
-    return JSON.stringify({ ...wireBody, signature });
+    const raw = JSON.stringify({ ...wireBody, signature });
+    // The size is the first thing the contract's verifier checks, and the one
+    // check that was not made here: a report over it was signed, written and
+    // posted, and then refused by every reader (the tenant, and `scanent diff`
+    // on the same file) as TOO_LARGE. The schema's caps on agents and members
+    // do not imply it: five thousand agents with a few tools each pass every
+    // count and are well over the byte cap. Nothing is cut to fit: a report
+    // made smaller by dropping agents would describe a slice as the estate.
+    const bytes = Buffer.byteLength(raw, 'utf8');
+    if (bytes > MAX_REPORT_BYTES) {
+        throw new ReportRefusedLocally([`(report): ${bytes} bytes, over the ${MAX_REPORT_BYTES} a report may be; scan the estate as several, each with its own configuration`]);
+    }
+    return raw;
 }
