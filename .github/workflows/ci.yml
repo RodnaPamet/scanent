@@ -1,7 +1,24 @@
 # CI for scanent.
 #
-#   checks  install, lint, type-check, build, test
-#   image   build deploy/Dockerfile, smoke-test the image, Trivy gate
+#   checks         install, the dependency gates (npm audit, the licence
+#                  allowlist), lint, type-check, build, test (with the coverage
+#                  gate on one Node version), and the reproducible-build check
+#   image          build deploy/Dockerfile, smoke-test the image (all eleven
+#                  steps, the Compose egress overlay among them), then the
+#                  Trivy and Grype gates
+#   image-podman   the smoke test again under rootless Podman, as the invoking
+#                  user (`--userns=keep-id` with `--user`)
+#   chart          lint and render the Helm chart with each value set, and run
+#                  the deployment-template tests with Helm required
+#   chart-install  install the chart into a kind cluster, run one scan as a
+#                  Job, read the run back, and probe the NetworkPolicy
+#
+# `npm test` holds the bounded hostile-input, scale, partial-failure and
+# schedule suites (200 cases a property, 500 agents, 200 scheduled scans). The
+# long variants are long-tests.yml, run by hand and weekly.
+#
+# The weekly run is for the gates whose answer changes without a commit: a new
+# advisory fails `npm audit`, Trivy or Grype on code that passed last week.
 #
 # Nothing is published or deployed from here. Every action is pinned to a full
 # commit SHA; the version it was resolved from is in the trailing comment, and
@@ -12,12 +29,15 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "23 4 * * 1"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Read the repository, and nothing else. Neither job writes anywhere.
+# Read the repository, and nothing else. Neither job writes to it; `checks`
+# uploads its coverage report as a workflow artifact.
 permissions:
   contents: read
 
@@ -46,6 +66,34 @@ jobs:
       - name: Install
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      # Production dependencies only: what runs in a client's estate. A registry
+      # that does not answer is retried; after the retries the gate fails
+      # closed, because an audit that could not run found nothing.
+      - name: "Gate: npm audit of the production dependencies (moderate and above)"
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            set +e
+            npm audit --omit=dev --audit-level=moderate --json > audit.json 2> audit.err
+            code=$?
+            set -e
+            # An answer is a report that holds the audit's own metadata. Anything else is the registry failing.
+            if node -e 'const a = JSON.parse(require("node:fs").readFileSync("audit.json", "utf8")); process.exit(a.metadata && a.metadata.vulnerabilities ? 0 : 1)' 2> /dev/null; then
+              node -e 'const v = JSON.parse(require("node:fs").readFileSync("audit.json", "utf8")).metadata.vulnerabilities; console.log(JSON.stringify(v))'
+              [ "$code" -eq 0 ] || { npm audit --omit=dev --audit-level=moderate || true; echo "npm audit found a vulnerability of moderate severity or above" >&2; exit 1; }
+              exit 0
+            fi
+            echo "npm audit gave no report (attempt $attempt); retrying" >&2
+            sleep $((attempt * 15))
+          done
+          echo "npm audit gave no report after four attempts; the gate fails closed" >&2
+          cat audit.err >&2 || true
+          exit 1
+
+      # Every production package's licence is on the allowlist, or the build stops.
+      - name: "Gate: licences of the production dependencies"
+        run: node scripts/check-licences.js
+
       - name: Lint
         run: npm run lint
 
@@ -55,8 +103,31 @@ jobs:
       - name: Build
         run: npm run build
 
+      # One Node version runs the suite under coverage, with the gate in
+      # jest.config.js (80% of statements, branches, functions and lines over
+      # every source file); the other runs it plain. Each test runs on both.
       - name: Test
+        if: matrix.node-version != 24
         run: npm test
+
+      - name: Test with coverage (gate)
+        if: matrix.node-version == 24
+        run: npm run test:coverage
+
+      # Two builds, in two directories, under two time zones and two clocks,
+      # give the same compiled files, byte for byte.
+      - name: Reproducible build
+        if: matrix.node-version == 24
+        run: node scripts/check-reproducible-build.js
+
+      - name: Upload the coverage report
+        if: matrix.node-version == 24 && !cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 14
 
   image:
     name: Image
@@ -90,3 +161,121 @@ jobs:
           ignore-unfixed: true
           vuln-type: "os,library"
           timeout: "15m"
+
+      # A second scanner with its own database. Blocking: HIGH and above, fixed
+      # vulnerabilities only, no exemptions.
+      - name: "Gate: Grype scan of the image (high and above)"
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: ${{ env.IMAGE_REF }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+          grype-version: v0.121.3
+
+  # The quick start's Podman form: the scanner as the invoking user, through
+  # `--userns=keep-id` with `--user`, into a directory only that user can enter. Docker's
+  # `--user` form is step 7 of the `image` job. Step 11 is left out here, and
+  # the smoke test says so: it is the Compose overlay, which `image` runs.
+  image-podman:
+    name: Image, under rootless Podman
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      # Built by Docker, as every other job builds it, then handed to Podman's
+      # own store. Podman names a local image in full.
+      DOCKER_REF: scanent:ci-${{ github.sha }}
+      IMAGE_REF: docker.io/library/scanent:ci-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Podman version
+        run: podman version
+
+      - name: Build the image (no push), and load it into Podman
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: |
+          set -euo pipefail
+          docker build -f deploy/Dockerfile -t "${DOCKER_REF}" .
+          docker save "${DOCKER_REF}" | podman load
+          podman image exists "${IMAGE_REF}"
+
+      - name: Smoke-test the image as the invoking user
+        env:
+          CONTAINER_RUNTIME: podman
+          SMOKE_SKIP_COMPOSE: "1"
+        run: deploy/smoke.sh "${IMAGE_REF}"
+
+  chart:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # Helm is part of the runner image. Without it this job fails here rather
+      # than passing with the chart unrendered.
+      - name: Helm version
+        run: helm version --short
+
+      - name: Lint the chart with each value set
+        run: |
+          set -euo pipefail
+          chart=deploy/helm/scanent
+          helm lint --strict "$chart" -f "$chart/ci/base-values.yaml"
+          for set in cilium egress-proxy proxy-and-ca; do
+            helm lint --strict "$chart" -f "$chart/ci/base-values.yaml" -f "$chart/ci/$set-values.yaml"
+          done
+
+      # The rendered documents are asserted on, one by one, in the Jest suite.
+      # REQUIRE_HELM makes the rendered cases fail, not skip, without Helm.
+      - name: Render the chart and check what it renders
+        env:
+          REQUIRE_HELM: "1"
+        run: npx jest packages/scanner/tests/deploy-templates.test.ts
+
+  # The chart, installed: a kind cluster on the runner, the image built here
+  # and loaded into it. Nothing is pulled from a registry of ours and nothing
+  # is pushed. kind's node image is the one that kind version ships with.
+  chart-install:
+    name: Helm chart, installed on kind
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      IMAGE_REPOSITORY: scanent
+      IMAGE_TAG: ci-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the image (no push)
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker build -f deploy/Dockerfile -t "${IMAGE_REPOSITORY}:${IMAGE_TAG}" .
+
+      - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
+        with:
+          version: v0.33.0
+          cluster_name: scanent
+          wait: 120s
+
+      - name: Load the image into the cluster
+        run: kind load docker-image "${IMAGE_REPOSITORY}:${IMAGE_TAG}" --name scanent
+
+      - name: Install the chart, run one scan, read it back, probe the NetworkPolicy
+        run: deploy/kind-test.sh "${IMAGE_REPOSITORY}" "${IMAGE_TAG}"

@@ -1,6 +1,6 @@
 /**
- * THE AZURE KEY VAULT SOURCE — the `vault` kind (#3678, owner decision
- * 2026-10-18 (b): Azure Key Vault, and no other vault product for now).
+ * THE AZURE KEY VAULT SOURCE — the `vault` kind (Azure Key Vault, and no
+ * other vault product for now).
  *
  * A vault holds the credentials agents run with. This lists them — secrets and
  * certificates, by name and metadata — and reports each one that is TAGGED
@@ -18,7 +18,7 @@
  * vault's secrets belong to agents is the estate's own statement, and the
  * scanner does not guess it from names.
  *
- * READ-ONLY, and METADATA-ONLY (DPIA condition 3). The two LIST endpoints,
+ * READ-ONLY, and METADATA-ONLY. The two LIST endpoints,
  * `GET {vault}/secrets` and `GET {vault}/certificates`, return identifiers,
  * attributes and tags and never a value. `GET {vault}/secrets/{name}` returns
  * the value, so it is never called: `scanner-surface.ts` declares the two list
@@ -41,11 +41,14 @@ import { MAX_AGENTS } from '@scanent/contract/harness-contract';
 
 import {
     ageInDays,
+    isJsonObject,
     readPages,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -182,6 +185,42 @@ export function azureKeyVaultSource(opts: AzureKeyVaultSourceOptions): HarnessSo
             } catch (err) {
                 return sourceResult('vault', rows, observations, err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            await ProbeLog.run(async () => {
+                const token = await log.exchange('token', new URL(AZURE_LOGIN_ORIGIN).hostname, () =>
+                    ctx.tokens.clientCredentials({
+                        tokenUrl: `${AZURE_LOGIN_ORIGIN}/${encodeURIComponent(opts.directoryTenantId)}/oauth2/v2.0/token`,
+                        origin: AZURE_LOGIN_ORIGIN,
+                        clientId: opts.clientId,
+                        clientSecret: opts.clientSecret,
+                        scope: 'https://vault.azure.net/.default',
+                    }),
+                );
+                const headers = { Authorization: `Bearer ${token}` };
+                for (const vault of vaults) {
+                    for (const collection of AZURE_KEY_VAULT_COLLECTIONS) {
+                        await log.listing(
+                            collection,
+                            new URL(vault.origin).hostname,
+                            () =>
+                                ctx.http.getJson(`${vault.origin}/${collection}?api-version=${AZURE_KEY_VAULT_API_VERSION}&maxresults=1`, {
+                                    origin: vault.origin,
+                                    headers,
+                                }),
+                            (body) => isJsonObject(body) && Array.isArray(body.value),
+                        );
+                    }
+                }
+                // The data-plane token carries no role, and reading role
+                // assignments is a management-plane request this scanner does not declare.
+                log.write({
+                    state: 'NOT_OBSERVABLE',
+                    verify: "confirm in each vault's Access control (IAM) that the application holds Key Vault Reader only",
+                });
+            });
+            return log.steps;
         },
     };
 }

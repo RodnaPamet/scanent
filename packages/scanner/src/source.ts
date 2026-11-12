@@ -46,7 +46,7 @@ export type ObservedModel = NonNullable<HarnessReportAgent['models']>[number];
  * One tool a source saw a principal use, and — for a source that counts calls —
  * how many calls it counted in the source's window. The report carries the
  * tool. `inflect-agent-harness/2` has a member for the count (`calls`, with
- * `windowDays`); until a follow-up of #3738 fills it, the count reaches the
+ * `windowDays`); the scanner does not fill it yet, so the count reaches the
  * scanner's log as a per-source total and goes no further. A source that reads
  * definitions rather than calls — the `code` source — counts none and leaves
  * `calls` out.
@@ -54,6 +54,14 @@ export type ObservedModel = NonNullable<HarnessReportAgent['models']>[number];
 export interface ObservedToolUse {
     readonly tool: ObservedTool;
     readonly calls?: number;
+    /**
+     * The `code` source only, on a `<key>:*` placeholder: the MCP server's
+     * whole endpoint as the code wrote it. The report builder compares it with
+     * the servers the `mcp` source read and then drops it. It is never
+     * reported, written or logged: `tool.server` carries the origin alone,
+     * because the path of a URL in code is a place a key can sit.
+     */
+    readonly mcpEndpoint?: string;
 }
 
 /** What one source saw of one principal. Merged across sources by `discoveredId`. */
@@ -153,7 +161,8 @@ export const MAX_PAGES_PER_SOURCE = 1_000;
 
 /**
  * Follow a paged listing from `first`, yielding each page's items. Every link
- * stays on `origin` (`getJson` refuses one that leaves it), a link seen twice
+ * stays on `origin` (`getJson` refuses one that leaves it) and on the path of
+ * `first` (a listing's next page is the same listing), a link seen twice
  * is a loop and so PAGINATION_TORN, and a page that is not the listing's shape
  * is PAGINATION_TORN too — never an empty page silently skipped.
  */
@@ -170,7 +179,13 @@ export async function* readPages(
     const seen = new Set<string>();
     let url: string | null = first;
     let pages = 0;
+    const listing = pathOf(first);
     while (url !== null) {
+        // The next page of a listing is the same listing. A link to another
+        // path on the same origin would be a request the scanner never declared
+        // (a secret's own URL, an app's client secrets), made with the estate's
+        // credential because a response said to: it is refused before it is sent.
+        if (pathOf(url) !== listing) throw new SourceReadError('PAGINATION_TORN', 'the listing linked to another path');
         if (seen.has(url)) throw new SourceReadError('PAGINATION_TORN', 'the listing linked back to a page it had served');
         if (pages >= MAX_PAGES_PER_SOURCE) throw new SourceReadError('BYTE_CAP', 'the listing ran past the page cap');
         seen.add(url);
@@ -183,11 +198,28 @@ export async function* readPages(
     }
 }
 
+/** A URL's path, or null when it is not a URL: `getJson` refuses that one by its own rule. */
+function pathOf(url: string): string | null {
+    try {
+        return new URL(url).pathname;
+    } catch {
+        return null;
+    }
+}
+
 export interface HarnessSource {
     readonly kind: SourceKind;
     /** The product behind the kind, e.g. `okta` or `azure-key-vault`. Not reported. */
     readonly product: string;
     read(ctx: SourceContext): Promise<SourceRead>;
+    /**
+     * The preflight (`scanent doctor`): the smallest reads that show the
+     * source can be read, each one a request `read` already makes. Required,
+     * so a new source cannot ship without one. It returns what it tried, in
+     * order, and stops at the first step that failed; it never throws for a
+     * read that went wrong, and it never writes.
+     */
+    preflight(ctx: SourceContext): Promise<readonly ProbeStep[]>;
 }
 
 /** A source read that stopped, with the contract's reason. */
@@ -195,9 +227,117 @@ export class SourceReadError extends Error {
     constructor(
         readonly reason: IncompleteReason,
         message: string,
+        /** The HTTP status the source answered with, where the wire knows one. Not reported. */
+        readonly status?: number,
     ) {
         super(message);
         this.name = 'SourceReadError';
+    }
+}
+
+/**
+ * What a preflight saw of whether the credential can WRITE. Only a declared
+ * read can reveal it: nothing is ever written to find out.
+ */
+export type WriteObservation =
+    /** The read showed the grant, and it is read-only. `detail` names what was seen (role or scope names). */
+    | { readonly state: 'READ_ONLY'; readonly detail: string }
+    /** The read showed a grant that writes. `names` are the roles or scopes, as the product spells them. */
+    | { readonly state: 'WRITE'; readonly names: readonly string[]; readonly fix: string }
+    /** No declared read shows it. `verify` says what to confirm by hand. */
+    | { readonly state: 'NOT_OBSERVABLE'; readonly verify: string };
+
+/** One thing a preflight tried. */
+export interface ProbeStep {
+    /** `exchange`: a token exchange. `read`: one declared read. `write`: what the reads showed about write access. */
+    readonly id: 'exchange' | 'read' | 'write';
+    /** A sub-scope, for a source that reads several independent targets: an MCP server's label. */
+    readonly scope?: string;
+    /** What was asked for, in fixed words: `applications`, `secrets`. Never a URL or a value. */
+    readonly what: string;
+    /** The host asked, when the step is a request. */
+    readonly host?: string;
+    readonly outcome: 'ok' | SourceReadError;
+    readonly observed?: {
+        /** The response's `Date` header, when the read returned one. */
+        readonly date?: string | null;
+        readonly write?: WriteObservation;
+    };
+}
+
+/**
+ * Collects a preflight's steps. `exchange` and `read` run one request each and
+ * record how it went; a failure is recorded and then ends the preflight (or
+ * the sub-scope), by throwing `ProbeStopped` for `run` to catch.
+ */
+export class ProbeLog {
+    readonly steps: ProbeStep[] = [];
+
+    constructor(private readonly scope?: string) {}
+
+    private async attempt<T>(id: 'exchange' | 'read', what: string, host: string, fn: () => Promise<T>, dateOf: (value: T) => string | null | undefined): Promise<T> {
+        const base = { id, what, host, ...(this.scope === undefined ? {} : { scope: this.scope }) };
+        let value: T;
+        try {
+            value = await fn();
+        } catch (err) {
+            const outcome = err instanceof SourceReadError ? err : new SourceReadError('UNREACHABLE', 'the probe did not complete');
+            this.steps.push({ ...base, outcome });
+            throw new ProbeStopped();
+        }
+        const date = dateOf(value);
+        this.steps.push({ ...base, outcome: 'ok', ...(date === undefined ? {} : { observed: { date } }) });
+        return value;
+    }
+
+    /** One token exchange. */
+    exchange<T>(what: string, host: string, fn: () => Promise<T>): Promise<T> {
+        return this.attempt('exchange', what, host, fn, () => undefined);
+    }
+
+    /** One declared read. The response's `Date` header is kept when `fn` returns headers. */
+    read<T>(what: string, host: string, fn: () => Promise<T>): Promise<T> {
+        return this.attempt('read', what, host, fn, (value) => {
+            const headers = (value as { headers?: unknown } | null)?.headers;
+            return headers instanceof Headers ? headers.get('date') : undefined;
+        });
+    }
+
+    /**
+     * One declared read of a LISTING: as `read`, and the answer must be the
+     * listing's shape. A 200 that is something else (a sign-in page served as
+     * JSON, a proxy's own answer, another API on the same host) is what the
+     * scan would report as PAGINATION_TORN, so the preflight fails on it too
+     * rather than call a source ready that the first scan cannot read.
+     */
+    listing<T extends { readonly body: unknown; readonly absent?: true }>(what: string, host: string, fn: () => Promise<T>, isListing: (body: unknown) => boolean): Promise<T> {
+        return this.read(what, host, async () => {
+            const value = await fn();
+            if (value.absent !== true && !isListing(value.body)) throw new SourceReadError('PAGINATION_TORN', 'the answer was not the listing it should be');
+            return value;
+        });
+    }
+
+    /** What the reads showed about write access. Recorded only after every read succeeded. */
+    write(observation: WriteObservation): void {
+        this.steps.push({ id: 'write', what: 'write access', outcome: 'ok', observed: { write: observation }, ...(this.scope === undefined ? {} : { scope: this.scope }) });
+    }
+
+    /** Run a preflight body; a recorded failure ends it quietly, anything else is the reader's own fault and propagates. */
+    static async run(body: () => Promise<void>): Promise<void> {
+        try {
+            await body();
+        } catch (err) {
+            if (!(err instanceof ProbeStopped)) throw err;
+        }
+    }
+}
+
+/** Thrown by `ProbeLog` after it recorded a failed step: there is nothing further to try. */
+export class ProbeStopped extends Error {
+    constructor() {
+        super('the preflight stopped at a failed step');
+        this.name = 'ProbeStopped';
     }
 }
 
@@ -217,6 +357,11 @@ export function sourceResult(
     if (stoppedBy === null) return { kind, status: 'COMPLETE', rows, observations };
     const reason: IncompleteReason = stoppedBy instanceof SourceReadError ? stoppedBy.reason : 'UNREACHABLE';
     return { kind, status: 'INCOMPLETE', reason, rows, observations };
+}
+
+/** A JSON object: not null, not an array. */
+export function isJsonObject(v: unknown): v is Record<string, unknown> {
+    return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
 
 /** An identifier a source hands back, as it may appear inside a discovered id or a locator. */

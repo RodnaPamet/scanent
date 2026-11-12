@@ -1,13 +1,11 @@
 /**
  * IP address and CIDR parsing. PURE — no environment, no policy, no imports.
  *
- * Split from `egress-allowlist.ts` (#3328) so `src/env.ts` can validate the
- * allowlist's SHAPE at startup without importing anything that reads the
- * Stripe secret out of the environment. `env.ts` is reachable from client code, and
- * a client bundle has no business naming a server secret even to find it
- * undefined. The policy — which ranges are never allowlistable, which
- * deployment may use an allowlist at all — stays next to the thing that
- * enforces it.
+ * Kept apart from the policy that uses it, so that a configuration can be
+ * checked for the SHAPE of an allowlist without loading anything that reads
+ * the environment. The policy — which ranges are never allowlistable, and
+ * who may use an allowlist at all — stays next to the thing that enforces it
+ * (the scanner's `customer-host.ts` and `egress-proxy.ts`).
  *
  * The parsers are deliberately STRICT. `010.1.1.1` and `127.1` are rejected
  * rather than normalised, because a lenient parser is how an address reaches a
@@ -61,9 +59,13 @@ function parseV6(text: string): Uint8Array | null {
     if (halves.length > 2) return null;
     const head = halves[0] === '' ? [] : halves[0].split(':');
     const tail = halves.length === 2 ? (halves[1] === '' ? [] : halves[1].split(':')) : [];
+    // More than eight groups around a `::` leaves a negative count to fill:
+    // not an address, and never an exception (`Array(-1)` throws).
+    const elided = 8 - head.length - tail.length;
+    if (halves.length === 2 && elided < 0) return null;
     const groups: string[] =
         halves.length === 2
-            ? [...head, ...Array(8 - head.length - tail.length).fill('0'), ...tail]
+            ? [...head, ...Array(elided).fill('0'), ...tail]
             : head;
     if (groups.length !== 8) return null;
     const out = new Uint8Array(16);

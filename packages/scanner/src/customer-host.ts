@@ -1,16 +1,13 @@
 /**
  * A HOST THE CUSTOMER NAMES — checked when the configuration is read, and
- * re-resolved before every request (#3738, owner decisions 2026-10-19).
+ * re-resolved before every request.
  *
  * Every other host the scanner reaches is fixed by its kind: Okta's domains,
  * the public cloud's vaults, LangSmith's two cloud API hosts. A self-hosted
  * LangSmith is the first host nobody can enumerate, because it is the
- * customer's own. The owner's ruling is that such a host is validated like any
- * customer-named host in the application: the `publicOrigin` rule kind
- * (`src/app-layer/integrations/config-schema.ts`), which requires https and runs
- * `checkWebhookUrl` at save time, with `safeFetch` re-resolving at use time.
- * The scanner may not import either (`eslint.config.mjs` holds it to the wire
- * contract), so the same two halves live here:
+ * customer's own. Such a host is validated the way any host a customer names
+ * should be: once when it is written down, and again each time it is used.
+ * The two halves live here:
  *
  *   • AT CONFIGURATION. `customerOriginProblem` refuses anything but a bare
  *     https origin, a literal private, loopback, link-local or metadata
@@ -22,45 +19,48 @@
  *     169.254.169.254 tonight is caught tonight, and the request carrying the
  *     API key is never started.
  *
- * THE PRIVATE-RANGE ALLOWLIST (owner decision 2026-10-19). A self-hosted
+ * THE PRIVATE-RANGE ALLOWLIST. A self-hosted
  * LangSmith usually sits on the customer's own network, at a private address.
- * The application's answer to the same problem is its self-hosted egress
- * allowlist (#3328, `src/lib/security/egress-allowlist.ts`,
- * `EGRESS_PRIVATE_CIDR_ALLOWLIST`), and this mirrors it, named
- * `egressPrivateCidrAllowlist` on the self-hosted endpoint:
+ * The answer is an allowlist of private ranges, named
+ * `egressPrivateCidrAllowlist` on the self-hosted endpoint (and
+ * `EGRESS_PRIVATE_CIDR_ALLOWLIST` on the egress proxy, which applies the
+ * same rule):
  *
  *   • NOT TENANT-CONFIGURABLE. The ranges come from the estate's own scanner
  *     configuration file, which only whoever operates the scanner in that
  *     estate can write. No tenant column, form or route reaches it.
  *   • METADATA, LOOPBACK AND LINK-LOCAL STAY REFUSED INSIDE IT.
- *     `NEVER_ALLOWLISTABLE` is the application's list, checked BEFORE the
+ *     `NEVER_ALLOWLISTABLE` is checked BEFORE the
  *     allowlist, so `0.0.0.0/0` still cannot reach 169.254.169.254 or
- *     127.0.0.1. The blocked names stay refused too.
+ *     127.0.0.1, and `::/0` cannot reach the metadata addresses that sit
+ *     outside link-local (listed at `NEVER_ALLOWLISTABLE`). The blocked names
+ *     stay refused too. A provider's metadata address that is not on that
+ *     list and not link-local is the operator's to keep out of the allowlist.
  *   • IT WIDENS WHICH ADDRESSES ARE ACCEPTABLE AND REMOVES NO OTHER CHECK.
  *     https only, redirects refused, the origin pinned, and the host resolved
  *     again before every request with EVERY address checked: a name that
  *     resolves outside the listed ranges is refused however it resolved when
- *     the file was written. As in the application, an allowlist relaxes only
+ *     the file was written. An allowlist relaxes only
  *     the `.local` / `.internal` NAME rule, because with one configured the
  *     question becomes the address rather than the name.
  *
- * The CIDR parser is the application's own (`@/lib/security/cidr`, pure and
- * strict), imported rather than copied. `isPrivateAddress` and
- * `NEVER_ALLOWLISTABLE` are copies — their modules read the environment — and
- * `tests/unit/agent-harness-scanner/langsmith-source.test.ts` holds each copy
- * to the application's answer on every address in its tables.
+ * The CIDR parser is the contract package's (`@scanent/contract/cidr`, pure
+ * and strict). `isPrivateAddress` and `NEVER_ALLOWLISTABLE` are held to tables
+ * of addresses in `tests/langsmith-source.test.ts` and `tests/ssrf.test.ts`.
  *
- * What this does not do, and the application's `safeFetch` does: PIN the
- * connection to the address it checked. That takes an undici dispatcher, which
- * is not a Node built-in. The check therefore runs immediately before each
- * request and the request resolves again, so a resolver that answers
- * differently inside that gap is a residual, recorded in the DPIA (R16).
+ * What this does not do: PIN the connection to the address it checked. That
+ * takes an undici dispatcher, which is not a Node built-in. The check
+ * therefore runs immediately before each request and the request resolves
+ * again, so a resolver that answers differently inside that gap is a residual
+ * risk. Behind scanent's own egress proxy the gap does not exist: the proxy
+ * resolves once and dials the address it checked.
  */
 import { promises as dns } from 'dns';
 
 import { inCidr, isV4Mapped, parseAddress, parseCidr, type Cidr } from '@scanent/contract/cidr';
 
 import { httpsOrigin } from './http';
+import { isProxied, proxyInEffect, type Env } from './proxy-env';
 import { SourceReadError } from './source';
 
 const PRIVATE_V4 = [
@@ -85,14 +85,27 @@ export function isPrivateAddress(host: string): boolean {
 const BLOCKED_HOSTNAMES = new Set(['localhost', 'metadata', 'metadata.google.internal']);
 
 /**
- * Ranges no allowlist may admit, whatever it says: the application's list
- * (`NEVER_ALLOWLISTABLE` in `src/lib/security/egress-allowlist.ts`), copied.
+ * Ranges no allowlist may admit, whatever it says.
  *
  *   127/8, ::1   loopback — the scanner host's own services
  *   0/8, ::      "this host", an alias for loopback
  *   169.254/16   link-local: 169.254.169.254 is cloud metadata
  *   fe80::/10    v6 link-local
+ *
+ * and the instance-metadata addresses that sit OUTSIDE link-local, inside
+ * ranges an operator may well allowlist whole:
+ *
+ *   fd00:ec2::254     AWS, over IPv6 (inside unique-local fc00::/7)
+ *   100.100.100.200   Alibaba Cloud (inside carrier-grade NAT 100.64/10)
+ *   192.0.0.192       Oracle Cloud (inside 192.0.0.0/24)
  */
+const builtIn = (c: string): Cidr => {
+    const parsed = parseCidr(c);
+    // A literal that did not parse would silently shrink the set; fail at load.
+    if (parsed === null) throw new Error(`customer-host: bad built-in CIDR ${c}`);
+    return parsed;
+};
+
 const NEVER_ALLOWLISTABLE: readonly Cidr[] = [
     '127.0.0.0/8',
     '0.0.0.0/8',
@@ -100,12 +113,39 @@ const NEVER_ALLOWLISTABLE: readonly Cidr[] = [
     '::1/128',
     '::/128',
     'fe80::/10',
-].map((c) => {
-    const parsed = parseCidr(c);
-    // A literal that did not parse would silently shrink the set; fail at load.
-    if (parsed === null) throw new Error(`customer-host: bad built-in CIDR ${c}`);
-    return parsed;
-});
+    'fd00:ec2::254/128',
+    '100.100.100.200/32',
+    '192.0.0.192/32',
+].map(builtIn);
+
+/**
+ * Ranges that are not the public internet and that `isPrivateAddress` (the
+ * text rule, kept as it was copied) does not name. An address in one is
+ * treated as a private address is: refused, unless the estate's allowlist
+ * names the range it is in.
+ *
+ *   192.0.0.0/24     IETF protocol assignments
+ *   198.18.0.0/15    benchmarking, routed inside a network and never across the internet
+ *   224.0.0.0/4      multicast
+ *   240.0.0.0/4      reserved, the broadcast address among it
+ *   64:ff9b:1::/48   local-use NAT64 (RFC 8215): a translator on the path decides where it goes
+ *   2001::/32        Teredo: a tunnel to a v4 address the bytes obscure
+ *   fec0::/10        site-local (deprecated, still routed where it is configured)
+ *   ff00::/8         v6 multicast
+ *
+ * The documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24,
+ * 2001:db8::/32) are not here: they route nowhere.
+ */
+const NOT_PUBLIC: readonly Cidr[] = [
+    '192.0.0.0/24',
+    '198.18.0.0/15',
+    '224.0.0.0/4',
+    '240.0.0.0/4',
+    '64:ff9b:1::/48',
+    '2001::/32',
+    'fec0::/10',
+    'ff00::/8',
+].map(builtIn);
 
 /** The ranges an estate's configuration lists, parsed. Empty is "no allowlist". */
 export type PrivateCidrAllowlist = readonly Cidr[];
@@ -138,15 +178,58 @@ export function isNeverAllowlistable(address: string): boolean {
 }
 
 /**
+ * The IPv4 address an IPv6 address carries inside it, as dotted text, or null.
+ *
+ * Six ways to write a v4 destination as a v6 address, each of which reaches
+ * (directly, or through a translator on the path) the v4 address it embeds:
+ *
+ *   ::ffff:a.b.c.d      v4-mapped (RFC 4291): the same socket destination
+ *   ::a.b.c.d           v4-compatible (RFC 4291, deprecated, still parsed)
+ *   ::ffff:0:a.b.c.d    v4-translated (RFC 2765, what a stateless translator uses)
+ *   64:ff9b::a.b.c.d    NAT64, the well-known prefix (RFC 6052)
+ *   64:ff9b:1:…:a.b.c.d local-use NAT64 (RFC 8215), read as its last four
+ *                       bytes; the prefix is also `NOT_PUBLIC` as a whole
+ *   2002:AABB:CCDD::    6to4 (RFC 3056): the v4 address is bytes 2 to 5
+ *
+ * The text check alone (`isPrivateAddress`) knows only the dotted v4-mapped
+ * spelling. `::ffff:a00:7` is 10.0.0.7 written in hex, which is how a URL
+ * parser normalises `[::ffff:10.0.0.7]`, and it read as a public address.
+ */
+function embeddedV4(bytes: Uint8Array): string | null {
+    if (bytes.length !== 16) return null;
+    const dotted = (at: number): string => `${bytes[at]}.${bytes[at + 1]}.${bytes[at + 2]}.${bytes[at + 3]}`;
+    const zero = (from: number, to: number): boolean => bytes.slice(from, to).every((b) => b === 0);
+    if (isV4Mapped(bytes)) return dotted(12);
+    // `::` and `::1` are the unspecified and loopback addresses, not a v4 inside a v6.
+    if (zero(0, 12) && !(zero(12, 15) && bytes[15] <= 1)) return dotted(12);
+    if (zero(0, 8) && bytes[8] === 0xff && bytes[9] === 0xff && bytes[10] === 0 && bytes[11] === 0) return dotted(12);
+    const nat64 = bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b;
+    if (nat64 && zero(4, 12)) return dotted(12);
+    if (nat64 && bytes[4] === 0x00 && bytes[5] === 0x01) return dotted(12);
+    if (bytes[0] === 0x20 && bytes[1] === 0x02) return dotted(2);
+    return null;
+}
+
+/**
  * May the scanner reach `address`, given the estate's allowlist? A public
  * address, yes. A private one only when it is NOT never-allowlistable AND it
- * falls inside a listed range. Every other answer, including an address that
- * does not parse, is no.
+ * falls inside a listed range. Every other answer is no, and an answer that
+ * is not an address at all is no: a resolver that says something this parser
+ * does not read has named nothing the scanner should dial.
+ *
+ * An IPv6 address that carries a v4 address inside it is judged as BOTH: the
+ * address as written, and the v4 destination it stands for.
  */
 export function addressReachable(address: string, allowlist: PrivateCidrAllowlist): boolean {
-    if (isNeverAllowlistable(address)) return false;
-    if (!isPrivateAddress(address)) return true;
-    return allowlist.length > 0 && inAny(address, allowlist);
+    const bytes = parseAddress(address);
+    if (bytes === null) return false;
+    const inner = embeddedV4(bytes);
+    const forms = inner === null ? [address] : [address, inner];
+    return forms.every((form) => {
+        if (isNeverAllowlistable(form)) return false;
+        if (!isPrivateAddress(form) && !inAny(form, NOT_PUBLIC)) return true;
+        return allowlist.length > 0 && inAny(form, allowlist);
+    });
 }
 
 /**
@@ -156,15 +239,18 @@ export function addressReachable(address: string, allowlist: PrivateCidrAllowlis
 export function customerOriginProblem(value: string, allowlist: PrivateCidrAllowlist = []): string | null {
     const origin = httpsOrigin(value);
     if (origin === null) return 'must be a bare https origin: no path, query or credentials';
-    const host = new URL(origin).hostname.toLowerCase();
+    // A trailing dot names the same host (`localhost.` is `localhost`); the rules below are about the name without it.
+    const host = new URL(origin).hostname.toLowerCase().replace(/\.+$/, '');
     if (BLOCKED_HOSTNAMES.has(host)) return 'names a blocked host';
     // The NAME rule is a proxy for "probably internal". With an allowlist the
     // question becomes the address, which is checked before every request.
-    if (allowlist.length === 0 && (host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.localhost'))) {
+    // `.localhost` is loopback by definition (RFC 6761), whatever an allowlist says.
+    if (host.endsWith('.localhost')) return 'names a blocked host';
+    if (allowlist.length === 0 && (host.endsWith('.local') || host.endsWith('.internal'))) {
         return 'names a host that is internal by its suffix';
     }
     if (isIpLiteral(host) && !addressReachable(host.replace(/^\[|\]$/g, ''), allowlist)) {
-        return 'is a private, loopback or link-local address outside the allowlist';
+        return 'is a private, loopback, link-local or otherwise non-public address outside the allowlist';
     }
     return null;
 }
@@ -207,4 +293,60 @@ export async function assertResolvesReachable(
     if (!addresses.every((a) => addressReachable(a, allowlist))) {
         throw new SourceReadError('UNREACHABLE', 'the configured host resolved to an address the scanner may not reach');
     }
+}
+
+/** How a customer-named host is checked before a request. The default is `assertResolvesReachable`. */
+export type CustomerHostCheck = (hostname: string, resolve: ResolveHost, allowlist?: PrivateCidrAllowlist) => Promise<void>;
+
+/**
+ * `EGRESS_PROXY_CHECKS_ADDRESSES=1`: the operator's statement that the proxy
+ * in `HTTPS_PROXY` is scanent's own egress proxy (`egress-proxy.ts`), which
+ * resolves each allowlisted name itself, refuses an address the scanner may
+ * not reach, and connects to the address it checked.
+ *
+ * Behind that proxy on an internal network the scanner has no resolver for an
+ * outside name, so its own check could only ever fail; and the proxy's check
+ * is the stronger one, because it binds the address that is dialled. The
+ * deployment templates that run the bundled proxy set this; nothing else may.
+ * Set beside any other proxy it turns the address check off, which is why it
+ * is a separate, explicit variable and not inferred from `HTTPS_PROXY`.
+ */
+export const PROXY_CHECKS_ADDRESSES_ENV = 'EGRESS_PROXY_CHECKS_ADDRESSES';
+
+/**
+ * Whether the address check for `hostname` is the bundled proxy's: the
+ * variable is set, a proxy is in effect, the host goes through it, and it is a
+ * name. An IP literal is always checked here; the proxy refuses one anyway.
+ */
+export function addressCheckedByProxy(hostname: string, env: Env, nodeVersion: string): boolean {
+    return (
+        env[PROXY_CHECKS_ADDRESSES_ENV] === '1' &&
+        proxyInEffect(env, nodeVersion) &&
+        !isIpLiteral(hostname) &&
+        isProxied(hostname, env)
+    );
+}
+
+/**
+ * The check `scan` and `doctor` make before each request to a customer-named
+ * host, for this environment. `onProxied` is told, once per host, which hosts
+ * go through a proxy and whether the proxy is the one that checks the address.
+ */
+export function customerHostCheckFor(
+    env: Env,
+    nodeVersion: string,
+    onProxied: (hostname: string, checkedByProxy: boolean) => void = () => undefined,
+): CustomerHostCheck {
+    const told = new Set<string>();
+    const viaProxy = proxyInEffect(env, nodeVersion);
+    return async (hostname, resolve, allowlist = []) => {
+        const proxied = viaProxy && isProxied(hostname, env);
+        const delegated = addressCheckedByProxy(hostname, env, nodeVersion);
+        if (proxied && !told.has(hostname)) {
+            told.add(hostname);
+            onProxied(hostname, delegated);
+        }
+        if (delegated) return;
+        await assertResolvesReachable(hostname, resolve, allowlist);
+    };
 }

@@ -1,0 +1,3 @@
+# What an earlier version wrote, byte for byte: the CSV files end their lines with CRLF and start with a
+# byte-order mark, and each file's SHA-256 is in its run's manifest. No conversion, on any platform.
+packages/scanner/tests/fixtures/compat/** -text

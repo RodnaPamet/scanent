@@ -2,9 +2,9 @@
 //
 //   1. typescript-eslint's recommended set over every package's source and
 //      tests;
-//   2. the scanner's structural boundaries, which a type-check cannot hold:
-//      what the scanner may import, and that the `code` source reads an
-//      estate's code and never runs it.
+//   2. the structural boundaries a type-check cannot hold: what each package
+//      may import, that the `code` source reads an estate's code and never
+//      runs it, and that local results are pure functions of their input.
 //
 // The boundary blocks were ported from the repository scanent was extracted
 // from (docs/EXTRACTION.md). There the boundary was an allowlist of
@@ -32,10 +32,13 @@ const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
  * A regex rather than a `group` with negations: gitignore semantics cannot
  * re-include a name under an excluded parent.
  */
-function onlyDeclaredImports(allowed, message) {
+function onlyDeclaredImports(allowed, message, { builtins: admitBuiltins = true } = {}) {
     const builtins = builtinModules.filter((m) => !m.startsWith('_')).map(escapeRegex);
     const names = allowed.map(escapeRegex);
-    const admitted = [`(node:)?(${builtins.join('|')})(/.*)?`, ...(names.length > 0 ? [`(${names.join('|')})(/.*)?`] : [])];
+    const admitted = [
+        ...(admitBuiltins ? [`(node:)?(${builtins.join('|')})(/.*)?`] : []),
+        ...(names.length > 0 ? [`(${names.join('|')})(/.*)?`] : []),
+    ];
     return { regex: `^(?!\\.{1,2}(/|$))(?!(${admitted.join('|')})$)`, message };
 }
 
@@ -53,8 +56,16 @@ const CONTRACT_IMPORT_PATTERNS = [
     ),
 ];
 
+const REPORT_IMPORT_PATTERNS = [
+    onlyDeclaredImports(
+        declaredDependencies('./packages/report/package.json'),
+        'Local results are pure functions: @scanent/contract and the dependencies packages/report/package.json declares, and no Node built-in.',
+        { builtins: false },
+    ),
+];
+
 /**
- * A module loaded at run time is an import the two rules above cannot see: a
+ * A module loaded at run time is an import the rules above cannot see: a
  * computed specifier names nothing a pattern can match. Neither package's
  * source loads one, so both forms are refused outright.
  */
@@ -95,6 +106,55 @@ export default tseslint.config(
         rules: {
             'no-restricted-imports': ['error', { patterns: CONTRACT_IMPORT_PATTERNS }],
             'no-restricted-syntax': ['error', ...NO_RUNTIME_MODULE_LOADING],
+        },
+    },
+    {
+        // ── Local results are a function of their input ──
+        //
+        // Scoring, the inventory rules and (later) the renderers turn data
+        // into data or text. The same scan must give the same results on any
+        // machine at any time, so nothing here may reach a file, the network,
+        // the process, the clock or a random source: the scanner does the
+        // reading and the hashing and hands the values in. No Node built-in
+        // is importable at all.
+        files: ['packages/report/src/**/*.ts'],
+        rules: {
+            'no-restricted-imports': ['error', { patterns: REPORT_IMPORT_PATTERNS }],
+            'no-restricted-syntax': [
+                'error',
+                ...NO_RUNTIME_MODULE_LOADING,
+                {
+                    selector: "NewExpression[callee.name='Date'][arguments.length=0]",
+                    message: 'Local results read no clock: take the time from the scan (`asOf`).',
+                },
+                {
+                    // `Date()` called as a function is the current time as text.
+                    selector: "CallExpression[callee.name='Date']",
+                    message: 'Local results read no clock: take the time from the scan (`asOf`).',
+                },
+                {
+                    // `const D = Date; new D()` would pass the two rules above.
+                    selector: "VariableDeclarator[init.name='Date'], AssignmentExpression[right.name='Date']",
+                    message: 'Local results read no clock: `Date` is not given another name.',
+                },
+            ],
+            'no-restricted-globals': [
+                'error',
+                // `globalThis` (and its older names) reaches every one of the others by another path.
+                ...[
+                    'process', 'fetch', 'Buffer', 'setTimeout', 'setInterval', 'setImmediate', 'queueMicrotask',
+                    'crypto', 'performance', 'navigator', 'WebSocket', 'XMLHttpRequest', 'EventSource',
+                    'globalThis', 'global', 'self', 'window',
+                ].map((name) => ({
+                    name,
+                    message: 'Local results are pure: no process, network, buffer, timer, clock or random source.',
+                })),
+            ],
+            'no-restricted-properties': [
+                'error',
+                { object: 'Date', property: 'now', message: 'Local results read no clock: take the time from the scan (`asOf`).' },
+                { object: 'Math', property: 'random', message: 'Local results are deterministic.' },
+            ],
         },
     },
     {
@@ -148,6 +208,38 @@ export default tseslint.config(
                     selector: "NewExpression[callee.name='Function'], CallExpression[callee.name='Function']",
                     message: 'The code source never evaluates text.',
                 },
+            ],
+        },
+    },
+    {
+        // ── Nothing is printed but through the three places that print ──
+        //
+        // A source holds credentials, and what it reads back can hold them
+        // too. Everything a run says goes through the log it is handed
+        // (`log.ts`), the outputs (`outputs.ts`) or the command line
+        // (`cli.ts`); the secret-canary suites watch those. A `console.log`
+        // or a write to the process's own stdout or stderr anywhere else
+        // would be a way out that none of them sees, so there is none.
+        files: ['packages/*/src/**/*.ts'],
+        ignores: ['packages/scanner/src/cli.ts', 'packages/scanner/src/log.ts', 'packages/scanner/src/outputs.ts'],
+        rules: {
+            'no-console': 'error',
+        },
+    },
+    {
+        // The same, for the process's streams. `packages/report` is left to
+        // its own block, which refuses `process` altogether and whose
+        // `no-restricted-properties` this would otherwise replace.
+        files: ['packages/scanner/src/**/*.ts', 'packages/contract/src/**/*.ts'],
+        ignores: ['packages/scanner/src/cli.ts', 'packages/scanner/src/log.ts', 'packages/scanner/src/outputs.ts'],
+        rules: {
+            'no-restricted-properties': [
+                'error',
+                ...['stdout', 'stderr'].map((property) => ({
+                    object: 'process',
+                    property,
+                    message: 'Only cli.ts, log.ts and outputs.ts write to the process: everything else says what it has to through the log or the output it is handed.',
+                })),
             ],
         },
     },

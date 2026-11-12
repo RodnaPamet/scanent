@@ -1,13 +1,13 @@
 /**
- * THE MCP SOURCE — `mcp` (#3686, owner decisions 2026-10-19).
+ * THE MCP SOURCE — `mcp`.
  *
  * Each configured MCP server is asked what it serves, and nothing else:
  * `initialize`, the one-way `notifications/initialized` the protocol requires,
- * and `tools/list`, paged (DPIA condition 1, amended by owner decision 5). The
+ * and `tools/list`, paged. No tool is ever called. The
  * wire it holds (`McpListingWire`) has no way to spell `tools/call`, and a
  * test holds the request log to those three messages.
  *
- * WHICH AGENT A SERVER'S TOOLS BELONG TO (owner decision 2). Neither answer
+ * WHICH AGENT A SERVER'S TOOLS BELONG TO. Neither answer
  * names a caller, so a server's tools reach an agent two ways:
  *
  *   • the estate's configuration lists, per server, the agents that use it
@@ -28,7 +28,7 @@
  * live (SHA-256 over each tool's name and hash, in name order), so a server
  * whose tools changed after the estate pinned them reads as unpinned.
  *
- * AUTHENTICATION (owner decision 6). A server may take a read token, named by
+ * AUTHENTICATION. A server may take a read token, named by
  * an environment variable and sent as a bearer token with the three messages
  * above and nothing else. For Inflect's own `/api/mcp` that is a key holding
  * `mcp:read` only. A configured token that is missing from the environment
@@ -47,6 +47,7 @@ import { MAX_AGENTS, MAX_TOOLS_PER_AGENT } from '@scanent/contract/harness-contr
 
 import {
     assertResolvesReachable,
+    type CustomerHostCheck,
     parsePrivateCidrAllowlist,
     resolveWithDns,
     type PrivateCidrAllowlist,
@@ -55,12 +56,14 @@ import {
 import type { McpSession } from '../http';
 import {
     MAX_PAGES_PER_SOURCE,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type McpServerRead,
     type Observation,
     type ObservedTool,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -84,6 +87,8 @@ export interface McpSourceOptions {
     readonly servers: readonly McpServerOptions[];
     /** How each server's host is re-resolved before each request. DNS unless a test passes its own. */
     readonly resolveHost?: ResolveHost;
+    /** The check made before each request. Absent, `assertResolvesReachable`; `scan` passes the environment's (`customerHostCheckFor`). */
+    readonly checkHost?: CustomerHostCheck;
 }
 
 const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
@@ -109,6 +114,7 @@ function readOnlyHintOf(definition: Record<string, unknown>): boolean | null {
 
 export function mcpSource(opts: McpSourceOptions): HarnessSource {
     const resolve = opts.resolveHost ?? resolveWithDns;
+    const check: CustomerHostCheck = opts.checkHost ?? assertResolvesReachable;
 
     return {
         kind: 'mcp',
@@ -122,7 +128,7 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
             for (const server of opts.servers) {
                 const allowlist: PrivateCidrAllowlist = parsePrivateCidrAllowlist(server.egressPrivateCidrAllowlist) ?? [];
                 const hostname = new URL(server.url).hostname;
-                const guard = () => assertResolvesReachable(hostname, resolve, allowlist);
+                const guard = () => check(hostname, resolve, allowlist);
                 // Tools read so far from this server, by name: what WAS read is real.
                 const byName = new Map<string, ObservedTool>();
                 const hashes: { name: string; manifestHash: string }[] = [];
@@ -131,8 +137,8 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                     if (server.token === 'MISSING') throw new SourceReadError('AUTH_FAILED', 'the read token is not set');
                     const headers: Record<string, string> =
                         server.token === null ? {} : { Authorization: `Bearer ${server.token.value}` };
-                    await guard();
-                    const session: McpSession = await ctx.mcp.open({ url: server.url, headers });
+                    // The wire runs the guard before each request it sends: the handshake's two, and every page.
+                    const session: McpSession = await ctx.mcp.open({ url: server.url, headers, beforeRequest: guard });
                     if (session.offersTools) {
                         const seen = new Set<string>();
                         let cursor: string | null = null;
@@ -144,7 +150,6 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                             if (pages >= MAX_PAGES_PER_SOURCE) throw new SourceReadError('BYTE_CAP', 'the listing ran past the page cap');
                             if (cursor !== null) seen.add(cursor);
                             pages += 1;
-                            await guard();
                             const page = await ctx.mcp.listTools(session, cursor);
                             for (const raw of page.tools) {
                                 rows += 1;
@@ -202,6 +207,28 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
             }
 
             return { ...sourceResult('mcp', rows, observations, stoppedBy), mcpServers: fullyRead };
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const steps: ProbeStep[] = [];
+            // Each server is its own scope, so one failing server does not hide the others.
+            for (const server of opts.servers) {
+                // A server whose token is configured and missing is reported by the caller, which knows the variable.
+                if (server.token === 'MISSING') continue;
+                const log = new ProbeLog(server.label);
+                const allowlist: PrivateCidrAllowlist = parsePrivateCidrAllowlist(server.egressPrivateCidrAllowlist) ?? [];
+                const hostname = new URL(server.url).hostname;
+                const guard = () => check(hostname, resolve, allowlist);
+                const headers: Record<string, string> = server.token === null ? {} : { Authorization: `Bearer ${server.token.value}` };
+                await ProbeLog.run(async () => {
+                    const session = await log.read('the handshake', hostname, () => ctx.mcp.open({ url: server.url, headers, beforeRequest: guard }));
+                    if (session.offersTools) {
+                        await log.read('the tool listing', hostname, () => ctx.mcp.listTools(session, null));
+                    }
+                    log.write({ state: 'NOT_OBSERVABLE', verify: "confirm with the server's administrator that the token can list tools and cannot call one" });
+                });
+                steps.push(...log.steps);
+            }
+            return steps;
         },
     };
 }

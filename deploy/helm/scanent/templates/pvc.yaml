@@ -1,0 +1,20 @@
+{{- if eq .Values.output.type "pvc" }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "scanent.fullname" . }}-out
+  labels:
+    {{- include "scanent.labels" . | nindent 4 }}
+  annotations:
+    # The runs are evidence: removing the release does not remove them.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.output.storageClassName }}
+  storageClassName: {{ .Values.output.storageClassName | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.output.size | quote }}
+{{- end }}

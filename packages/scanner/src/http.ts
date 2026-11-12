@@ -9,22 +9,21 @@
  * (`TokenExchange`), and it changes nothing in the estate — it asks the
  * source's identity provider for a token to READ with. It has two grants and
  * no grant parameter: the client-credentials grant, and the JWT-bearer grant
- * (RFC 7523) Google's service accounts use (#3785).
+ * (RFC 7523) Google's service accounts use.
  *
  * MCP is JSON-RPC over POST, so an MCP server is the one place a source sends a
  * body. `McpListingWire` has two functions and no method parameter: `open`
  * sends `initialize` and then the one-way `notifications/initialized` the
  * protocol requires, and `listTools` sends `tools/list`. There is no way to
- * spell `tools/call` with it (DPIA conditions 1 and 2, owner decisions 5 and 6
- * on #3686, 2026-10-19).
+ * spell `tools/call` with it: no tool of an estate's server is ever called.
  *
  * `RegisterReadWire` is the one place a `tools/call` is sent, and it names its
  * tool itself: `read` calls `get_harness_register` with no arguments on the
- * Inflect endpoint the caller hands it, and can call nothing else (DPIA
- * condition 2 as amended by owner decision 7: one named tool, the scanner's own
- * tenant). Before it, it exchanges the ingest key at the same tenant's
+ * Inflect endpoint the caller hands it, and can call nothing else (one named
+ * tool, on the scanner's own tenant). Before it, it exchanges the ingest key at
+ * the same tenant's
  * `/api/mcp/token` for a short-lived token whose audience is that one tool
- * (RFC 8693, #5004), and only that token reaches `/api/mcp`: the key itself is
+ * (RFC 8693), and only that token reaches `/api/mcp`: the key itself is
  * sent to the exchange and nowhere else on that origin but the ingest.
  *
  * Every request is held to four rules, each of which ends the source's read
@@ -80,6 +79,13 @@ export interface McpTarget {
     readonly url: string;
     /** The read token's header, when the server takes one. Nothing else. */
     readonly headers: Readonly<Record<string, string>>;
+    /**
+     * Run before EVERY request sent to the target, the handshake's second one
+     * included: where a source re-resolves a host the estate named and refuses
+     * an address the scanner may not reach. It throws `SourceReadError`, and
+     * the request is then never started.
+     */
+    readonly beforeRequest?: () => Promise<void>;
 }
 
 /** An open MCP session: what `initialize` returned, and what every later request must carry. */
@@ -123,9 +129,7 @@ export const HARNESS_REGISTER_TOOL = 'get_harness_register';
 
 /**
  * RFC 8693's grant and token type, as Inflect's `/api/mcp/token` takes them.
- * Spelled here because the scanner may not import the server's module;
- * `tests/unit/agent-harness-scanner/inflect-register-source.test.ts` holds them
- * equal to it.
+ * Spelled here because the scanner holds no code of the server's.
  */
 export const TOKEN_EXCHANGE_GRANT = 'urn:ietf:params:oauth:grant-type:token-exchange';
 export const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
@@ -155,7 +159,7 @@ export interface OpenShellTarget {
  * pinned release declares 84 RPCs on `openshell.v1.OpenShell` and carries ZERO
  * `google.api.http` annotations, so there is no REST transcoding for `getJson`
  * to reach. Widening `ReadOnlyHttp` with a second verb was considered and
- * refused (owner ruling 2026-10-24): its one-method shape is what makes a
+ * refused: its one-method shape is what makes a
  * source unable to write BY CONSTRUCTION, and a second method would turn that
  * into a property maintained by review. `McpListingWire` and `RegisterReadWire`
  * are the precedent — a narrow wire per protocol, each with its own declared
@@ -270,6 +274,8 @@ export interface TokenExchange {
 
 /** RFC 7523's grant type, the one value `jwtBearer` sends. */
 export const JWT_BEARER_GRANT = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
+/** The client-credentials grant (RFC 6749 §4.4): the scanner's own application, for a token to read with. */
+export const CLIENT_CREDENTIALS_GRANT = 'client_credentials';
 
 /** One response body, in bytes. A listing page is far smaller. */
 export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -304,7 +310,33 @@ function classifyThrow(err: unknown): SourceReadError {
     if (err instanceof SourceReadError) return err;
     const name = err instanceof Error ? err.name : '';
     if (name === 'TimeoutError' || name === 'AbortError') return new SourceReadError('TIME_BOX', 'the read ran past its time box');
+    // A certificate the process does not trust: the reason is still
+    // UNREACHABLE (the report does not change), and the message says why, so
+    // `doctor` can name the fix. The usual cause is a TLS-inspecting proxy
+    // whose authority has not been added with NODE_EXTRA_CA_CERTS.
+    if (isCertificateFailure(err)) return new SourceReadError('UNREACHABLE', TLS_NOT_TRUSTED);
     return new SourceReadError('UNREACHABLE', 'the request did not complete');
+}
+
+/** The message of a read that failed on an untrusted certificate. `doctor` matches on it. */
+export const TLS_NOT_TRUSTED = 'the TLS certificate was not trusted';
+
+/** Node's codes for a certificate chain it would not accept. */
+export const CERTIFICATE_ERROR_CODES: readonly string[] = [
+    'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'CERT_HAS_EXPIRED',
+];
+
+/** Whether a thrown fetch error, or its cause, carries one of Node's certificate codes. */
+function isCertificateFailure(err: unknown): boolean {
+    for (let e: unknown = err, depth = 0; e !== null && typeof e === 'object' && depth < 4; e = (e as { cause?: unknown }).cause, depth++) {
+        const code = (e as { code?: unknown }).code;
+        if (typeof code === 'string' && CERTIFICATE_ERROR_CODES.includes(code)) return true;
+    }
+    return false;
 }
 
 function reasonForStatus(status: number): IncompleteReason {
@@ -450,7 +482,7 @@ export function createSourceWire(
                 }
                 if (!res.ok) {
                     await res.body?.cancel();
-                    throw new SourceReadError(reasonForStatus(res.status), `the source answered HTTP ${res.status}`);
+                    throw new SourceReadError(reasonForStatus(res.status), `the source answered HTTP ${res.status}`, res.status);
                 }
                 return { body: parseJson(await readCapped(res, responseCap, charge)), headers: res.headers };
             } catch (err) {
@@ -476,7 +508,7 @@ export function createSourceWire(
                 await res.body?.cancel();
                 // Any refusal of the exchange is a credential the source could not use.
                 const reason = res.status === 429 ? 'RATE_LIMITED' : res.status >= 500 ? 'UNREACHABLE' : 'AUTH_FAILED';
-                throw new SourceReadError(reason, `the token endpoint answered HTTP ${res.status}`);
+                throw new SourceReadError(reason, `the token endpoint answered HTTP ${res.status}`, res.status);
             }
             const body = parseJson(await readCapped(res, 64 * 1024, charge)) as { access_token?: unknown };
             if (typeof body.access_token !== 'string' || body.access_token === '') {
@@ -493,7 +525,7 @@ export function createSourceWire(
             return exchange(
                 tokenUrl,
                 origin,
-                new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret, scope }),
+                new URLSearchParams({ grant_type: CLIENT_CREDENTIALS_GRANT, client_id: clientId, client_secret: clientSecret, scope }),
             );
         },
         jwtBearer({ tokenUrl, origin, assertion }) {
@@ -529,6 +561,7 @@ export function createSourceWire(
         if (session.protocolVersion !== null) headers['MCP-Protocol-Version'] = session.protocolVersion;
         const message = { jsonrpc: '2.0', ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) };
         try {
+            await target.beforeRequest?.();
             const res = await t.fetchImpl(target.url, {
                 method: 'POST',
                 headers,
@@ -538,7 +571,7 @@ export function createSourceWire(
             });
             if (!res.ok) {
                 await res.body?.cancel();
-                throw new SourceReadError(reasonForStatus(res.status), `the MCP server answered HTTP ${res.status}`);
+                throw new SourceReadError(reasonForStatus(res.status), `the MCP server answered HTTP ${res.status}`, res.status);
             }
             return { res, id };
         } catch (err) {
@@ -559,7 +592,7 @@ export function createSourceWire(
         } catch (err) {
             throw classifyThrow(err);
         }
-        if ('error' in answer) throw new SourceReadError('UNREACHABLE', `the MCP server refused ${method}`);
+        if ('error' in answer) throw new SourceReadError('UNREACHABLE', `the MCP server refused ${method}`, res.status);
         const result = answer.result;
         if (result === null || typeof result !== 'object' || Array.isArray(result)) {
             throw new SourceReadError('PAGINATION_TORN', `the MCP server's ${method} result was not an object`);
@@ -630,7 +663,7 @@ export function createSourceWire(
         none.
 
         The source itself is complete and fully tested against a fake wire
-        (`tests/unit/agent-harness-scanner/openshell-source.test.ts`): the
+        (`tests/openshell-source.test.ts`): the
         policy-to-verdict mapping is pure and needs no transport. Only the
         bytes are missing.
     */
@@ -654,7 +687,7 @@ export function createSourceWire(
 
     /**
      * The key, exchanged for a token whose audience is the register tool alone
-     * (#5004). JSON, as Inflect's exchange takes it. Any refusal is a credential
+     *. JSON, as Inflect's exchange takes it. Any refusal is a credential
      * the source could not use; an answer that is not an exchanged token is
      * refused rather than forwarded, so nothing but such a token reaches the
      * MCP endpoint.
@@ -679,7 +712,7 @@ export function createSourceWire(
             if (!res.ok) {
                 await res.body?.cancel();
                 const reason = res.status === 429 ? 'RATE_LIMITED' : res.status >= 500 ? 'UNREACHABLE' : 'AUTH_FAILED';
-                throw new SourceReadError(reason, `the token exchange answered HTTP ${res.status}`);
+                throw new SourceReadError(reason, `the token exchange answered HTTP ${res.status}`, res.status);
             }
             const body = parseJson(await readCapped(res, 64 * 1024, charge)) as { access_token?: unknown };
             if (typeof body.access_token !== 'string' || !EXCHANGED_TOKEN.test(body.access_token)) {

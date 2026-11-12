@@ -1,0 +1,8 @@
+# Exact hosts through the bundled egress proxy. Use with base-values.yaml.
+egressProxy:
+  enabled: true
+egress:
+  fqdns:
+    - api.github.com
+    - iam.googleapis.com
+    - oauth2.googleapis.com

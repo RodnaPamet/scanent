@@ -1,6 +1,5 @@
 /**
- * THE REGISTER SOURCE — `inflect-register` (#3686, part c; owner decisions 3,
- * 4 and 7 on the issue, 2026-10-19).
+ * THE REGISTER SOURCE — `inflect-register`.
  *
  * The scanner's own tenant's agent register, read through the one MCP tool the
  * scanner may call, `get_harness_register`, on that tenant's `/api/mcp`, with
@@ -9,9 +8,9 @@
  * the ONLY source whose `registeredAgentId` reaches the report: the register's
  * own record links a principal, never a label in the estate.
  *
- * WHAT IT REPORTS (owner decision 4), per live registered agent:
+ * WHAT IT REPORTS, per live registered agent:
  *
- *   • the principals a person confirmed as the agent (#3671), each as its own
+ *   • the principals a person confirmed as the agent, each as its own
  *     `discoveredId` (`entra:sp:<objectId>`) linked to the agent — so the Entra
  *     source's observation of the same principal merges with this one; an agent
  *     with no confirmed principal is `inflect:agent:<id>`;
@@ -28,7 +27,7 @@
  *     no: its credential may be one another source sees, and a "no" here would
  *     outvote it.
  *
- * AND WHAT THE GATE ENFORCES (#5004, owner decisions of 2026-11-08):
+ * AND WHAT THE GATE ENFORCES:
  *
  *   • `H2.audience_tokens` — only when the agent holds a key that reaches
  *     `/api/mcp`, and met only when every such key requires the exchange. No
@@ -66,10 +65,12 @@ import type { EgressProof } from '../egress-proof';
 import {
     ageInDays,
     isPlainId,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -82,13 +83,13 @@ export interface InflectRegisterSourceOptions {
     readonly apiKey: string;
     /** The scanner's own registered agent (`scanner.agentId`), the one its self-verdicts are about. */
     readonly scannerAgentId?: string;
-    /** This scan's egress proof (#5004 part C), when the deployment is confined to a proxy. */
+    /** This scan's egress proof, when the deployment is confined to a proxy. */
     readonly egressProof?: EgressProof;
 }
 
 /** The register's MCP endpoint, on the scanner's own tenant's Inflect. */
 export const INFLECT_MCP_PATH = '/api/mcp';
-/** The token exchange the ingest key is traded at for the register read (#5004), on the same origin. */
+/** The token exchange the ingest key is traded at for the register read, on the same origin. */
 export const INFLECT_TOKEN_PATH = '/api/mcp/token';
 
 const plainId = z.string().refine(isPlainId, 'an id');
@@ -144,8 +145,8 @@ const RegisterViewSchema = z
 type RegisterAgent = z.infer<typeof RegisterViewSchema>['agents'][number];
 
 /**
- * The read-only bound the four no-write H3 criteria stand on (owner decision
- * 1 on #5004): every term is something the gate ENFORCES, and the bound is all
+ * The read-only bound the four no-write H3 criteria stand on: every term is
+ * something the gate ENFORCES, and the bound is all
  * of them in one expression. `skillsMounted` must be read as false — unknown
  * is not "none".
  */
@@ -260,6 +261,20 @@ export function inflectRegisterSource(opts: InflectRegisterSourceOptions): Harne
             } catch (err) {
                 return sourceResult('inflect-register', rows, observations, err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            await ProbeLog.run(async () => {
+                // The exchange, the handshake and the one tool call: the read itself, once.
+                await log.read('the register', new URL(origin).hostname, () =>
+                    ctx.register.read({ url: `${origin}${INFLECT_MCP_PATH}`, tokenUrl: `${origin}${INFLECT_TOKEN_PATH}`, apiKey: opts.apiKey }),
+                );
+                log.write({
+                    state: 'NOT_OBSERVABLE',
+                    verify: "confirm on the tenant's API keys page that the key holds admin:harness_ingest and mcp:read and no other scope",
+                });
+            });
+            return log.steps;
         },
     };
 }

@@ -1,0 +1,69 @@
+# The long variants of the tests `npm test` runs bounded: 50,000 cases per
+# property, the 5,000-agent estate, 5,000 scheduled scans, and every
+# secret-shaped canary in every response string (`npm run test:long`).
+#
+# By hand, and weekly. The weekly run takes its seed from the run's id, so each
+# week tries inputs no earlier week tried; a run by hand uses the seed given,
+# or the fixed one `npm test` uses. A failure prints its seed and iteration,
+# and the input that failed is uploaded.
+#
+# The 72-hour soak (`npm run soak`) is not here: it needs a machine that stays
+# up for three days. docs/release-checklist.md says when it is run.
+name: Long tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "FUZZ_SEED: a whole number. Empty: the fixed seed npm test uses."
+        required: false
+        default: ""
+  schedule:
+    - cron: "7 1 * * 6"
+
+concurrency:
+  group: long-tests-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  long:
+    name: npm run test:long
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      # Read as a number by the tests; anything that is not one is the fixed seed.
+      FUZZ_SEED: ${{ github.event_name == 'schedule' && github.run_id || inputs.seed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      - name: The seed
+        run: echo "FUZZ_SEED=${FUZZ_SEED:-the fixed seed}"
+
+      - name: Long tests
+        run: npm run test:long
+
+      # A property that failed wrote its input under the temporary directory.
+      - name: Upload the inputs of failed properties
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: failed-property-inputs
+          path: /tmp/scanent-fuzz-*/
+          if-no-files-found: ignore
+          retention-days: 14
