@@ -22,20 +22,33 @@
 #      a scan that could not be delivered is never reported as a success;
 #   6. `scan --dry-run --out /out`, with the root filesystem still read-only
 #      and one writable mount, writes one directory per run holding the six
-#      files, and a second run leaves the first run's files as they were.
+#      files, and a second run leaves the first run's files as they were;
+#   7. run as the invoking user (`--user`, or `--userns=keep-id` under Podman)
+#      into an output directory that user owns with mode 0700, a scan writes
+#      runs the invoking user can read without the container: the run
+#      directory 0750, its files 0640, all owned by that user;
+#   8. the signing key given only as a mounted file (mode 0444) named by
+#      SCANNER_SIGNING_KEY_FILE: `public-key` prints the same key;
+#   9. `init --answers` writes a configuration, an env template and a signing
+#      key into a writable mount, and `doctor --json` on what it wrote exits 0
+#      or 3 with no failed check;
+#  10. `hosts` on a code-only configuration prints nothing and exits 0.
+#
+#   CONTAINER_RUNTIME   docker (default) or podman
 #
 # The estate is written here rather than committed: a committed `.ts` fixture
 # would be type-checked and linted as this repository's own code.
 set -euo pipefail
 
 IMAGE="${1:?usage: smoke.sh <image>}"
+RUNTIME="${CONTAINER_RUNTIME:-docker}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORK="$(mktemp -d)"
 # The runs of step 6 are written by the image's user, in directories this user
 # may not be able to enter, so they are removed the way they were made.
 cleanup() {
     if [ -d "$WORK/out" ]; then
-        docker run --rm --network none -v "$WORK/out:/out" --entrypoint sh "$IMAGE" -c 'rm -rf /out/runs /out/latest.json' > /dev/null 2>&1 || true
+        "$RUNTIME" run --rm --network none -v "$WORK/out:/out" --entrypoint sh "$IMAGE" -c 'rm -rf /out/runs /out/latest.json' > /dev/null 2>&1 || true
     fi
     rm -rf "$WORK"
 }
@@ -48,7 +61,7 @@ fail() {
 
 # The way an estate runs the image, plus whatever a step adds.
 run() {
-    docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges "$@"
+    "$RUNTIME" run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges "$@"
 }
 
 mkdir -p "$WORK/config" "$WORK/estate/support" "$WORK/estate/research"
@@ -183,5 +196,95 @@ scan_out
 after="$(inspect "cd /out/runs/$first && sha256sum ./*")"
 [ "$before" = "$after" ] || fail "the second run changed the first run's files"
 echo "ok   a second run left the first as it was"
+
+echo "== 7. scan --out as the invoking user, into a directory only that user can enter"
+# The way the quick start says to run it: the scanner is the person running it,
+# so the runs are theirs to read, and the directory needs no opening up.
+if [ "$RUNTIME" = "podman" ]; then
+    AS_ME=(--userns=keep-id)
+else
+    AS_ME=(--user "$(id -u):$(id -g)")
+fi
+mkdir -m 0700 "$WORK/mine"
+run "${AS_ME[@]}" -e SCANNER_SIGNING_KEY "${MOUNTS[@]}" -v "$WORK/mine:/out" "$IMAGE" scan --dry-run --out /out --config /etc/scanent/config.json \
+    > /dev/null 2> "$WORK/mine.log" || { cat "$WORK/mine.log" >&2; fail "scan --out as uid $(id -u) exited non-zero"; }
+# Read back here, with no container: that is the point.
+[ -s "$WORK/mine/latest.json" ] || fail "latest.json is not readable by the invoking user"
+mine="$(ls "$WORK/mine/runs")"
+[ "$(printf '%s\n' "$mine" | wc -l)" -eq 1 ] || fail "one run should have written one directory, found: $mine"
+grep -q '<html' "$WORK/mine/runs/$mine/summary.html" || fail "summary.html is not readable by the invoking user"
+[ "$(stat -c '%a %u' "$WORK/mine/runs/$mine")" = "750 $(id -u)" ] \
+    || fail "the run directory is $(stat -c '%a, owned by uid %u' "$WORK/mine/runs/$mine"), not 750 owned by uid $(id -u)"
+for f in "$WORK/mine/runs/$mine"/*; do
+    [ "$(stat -c '%a %u' "$f")" = "640 $(id -u)" ] || fail "$(basename "$f") is $(stat -c '%a, owned by uid %u' "$f"), not 640 owned by uid $(id -u)"
+done
+[ "$(stat -c '%a' "$WORK/mine")" = "700" ] || fail "the output directory's mode changed"
+echo "ok   uid $(id -u) reads its own run: directory 750, six files 640"
+
+echo "== 8. the signing key from a mounted file"
+mkdir "$WORK/secrets"
+printf '%s\n' "$SCANNER_SIGNING_KEY" > "$WORK/secrets/signing-key.pem"
+chmod 0444 "$WORK/secrets/signing-key.pem"
+chmod 0755 "$WORK/secrets"
+from_file="$(run -e SCANNER_SIGNING_KEY_FILE=/run/secrets/scanner_signing_key \
+    -v "$WORK/secrets/signing-key.pem:/run/secrets/scanner_signing_key:ro" \
+    "${MOUNTS[@]}" "$IMAGE" public-key --config /etc/scanent/config.json)"
+[ "$from_file" = "$key" ] || fail "public-key from SCANNER_SIGNING_KEY_FILE printed '$from_file', not the key of step 2"
+if run -e SCANNER_SIGNING_KEY -e SCANNER_SIGNING_KEY_FILE=/run/secrets/scanner_signing_key \
+    -v "$WORK/secrets/signing-key.pem:/run/secrets/scanner_signing_key:ro" \
+    "${MOUNTS[@]}" "$IMAGE" public-key --config /etc/scanent/config.json > /dev/null 2>&1; then
+    fail "the key given both as a value and as a file was accepted; one of the two would be silently ignored"
+fi
+echo "ok   the same key, and both forms at once are refused"
+
+echo "== 9. init --answers, then doctor on what it wrote"
+mkdir -m 0700 "$WORK/init" "$WORK/answers"
+cat > "$WORK/answers/answers.json" <<'JSON'
+{
+  "answers": "scanent-init-answers/1",
+  "estate": "smoke-init",
+  "outputDir": "/out",
+  "sources": [{ "kind": "code", "roots": [{ "label": "estate", "path": "/estate" }] }]
+}
+JSON
+chmod 0755 "$WORK/answers"
+chmod 0644 "$WORK/answers/answers.json"
+run "${AS_ME[@]}" -v "$WORK/init:/etc/scanent" -v "$WORK/answers:/answers:ro" "$IMAGE" \
+    init --dir /etc/scanent --answers /answers/answers.json > /dev/null 2> "$WORK/init.log" \
+    || { cat "$WORK/init.log" >&2; fail "init --answers exited non-zero"; }
+for f in config.json scanent.env signing-key.pem; do
+    [ "$(stat -c '%a' "$WORK/init/$f")" = "600" ] || fail "init wrote $f with mode $(stat -c '%a' "$WORK/init/$f"), not 600"
+done
+grep -qx 'SCANNER_SIGNING_KEY_FILE=/etc/scanent/signing-key.pem' "$WORK/init/scanent.env" \
+    || fail "scanent.env does not name the signing key's file"
+# Every line of the env template is a comment, blank, or a NAME with nothing or a path after it.
+if grep -vE '^(#.*|[A-Z][A-Z0-9_]*=(/[^[:space:]]*)?)?$' "$WORK/init/scanent.env" > /dev/null; then
+    fail "scanent.env holds a line that is not a NAME, an empty value or a path"
+fi
+mkdir -m 0700 "$WORK/init-out"
+set +e
+run "${AS_ME[@]}" --env-file "$WORK/init/scanent.env" -v "$WORK/init:/etc/scanent:ro" -v "$WORK/estate:/estate:ro" -v "$WORK/init-out:/out" \
+    "$IMAGE" doctor --json --config /etc/scanent/config.json > "$WORK/doctor.json" 2> "$WORK/doctor.log"
+doctor_exit=$?
+set -e
+[ "$doctor_exit" -eq 0 ] || [ "$doctor_exit" -eq 3 ] || { cat "$WORK/doctor.json" "$WORK/doctor.log" >&2; fail "doctor exited $doctor_exit, not 0 or 3"; }
+run -i --entrypoint node "$IMAGE" -e '
+const doc = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+const failed = doc.checks.filter((c) => c.status === "FAIL");
+const passed = doc.checks.filter((c) => c.status === "PASS").length;
+if (doc.doctor !== "scanent-doctor/1" || failed.length > 0 || passed === 0 || doc.counts.PASS !== passed) {
+    console.error(JSON.stringify({ schema: doc.doctor, failed, passed }));
+    process.exit(1);
+}
+console.log(`ok   doctor: ${passed} passed, ${doc.counts.WARN} warnings, 0 failed, ${doc.counts.SKIPPED} not checked`);
+' < "$WORK/doctor.json" || fail "doctor reported a failed check, or nothing that passed"
+[ -z "$(ls -A "$WORK/init-out")" ] || fail "doctor wrote into the output directory"
+echo "ok   doctor exited $doctor_exit and wrote nothing"
+
+echo "== 10. hosts on a code-only configuration"
+hosts="$(run "${AS_ME[@]}" -v "$WORK/init:/etc/scanent:ro" "$IMAGE" hosts --config /etc/scanent/config.json)" \
+    || fail "hosts exited non-zero"
+[ -z "$hosts" ] || fail "a code-only configuration reaches no host, but hosts printed: $hosts"
+echo "ok   no host"
 
 echo "smoke: passed"

@@ -1,0 +1,43 @@
+# An overlay for deploy/compose.yaml: the scanner's only way out is a proxy
+# that forwards to an exact list of hosts.
+#
+#   export EGRESS_ALLOW="$(docker run --rm -v "$PWD/scanent:/etc/scanent:ro" \
+#     ghcr.io/rodnapamet/scanent:<version> hosts --config /etc/scanent/config.json --format egress-allow)"
+#   SCANENT_VERSION=<version> docker compose -f compose.yaml -f compose.egress.yaml up -d
+#
+# `scanent` is moved to a network with no route out (`internal: true`). The
+# proxy is on that network and on one that reaches the internet. It is the same
+# image as the scanner, runs the CONNECT-only proxy that ships in it, and
+# refuses any host that is not in EGRESS_ALLOW, any port but 443 and any plain
+# HTTP request. An empty EGRESS_ALLOW refuses everything.
+#
+# A host on your own network that the proxy cannot reach (a self-hosted
+# LangSmith, an MCP server) is not reachable from the internal network either:
+# put it in EGRESS_ALLOW and let the proxy reach it.
+services:
+  scanent:
+    environment:
+      HTTPS_PROXY: http://egress-proxy:3128
+    networks: [scanent-internal]
+    depends_on: [egress-proxy]
+
+  egress-proxy:
+    image: ghcr.io/rodnapamet/scanent:${SCANENT_VERSION:?set SCANENT_VERSION to the image version}
+    entrypoint: ["node", "/app/packages/scanner/dist/egress-proxy.js"]
+    command: []
+    user: "${SCANENT_UID:-1000}:${SCANENT_GID:-1000}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    init: false
+    pids_limit: 256
+    mem_limit: 256m
+    environment:
+      EGRESS_ALLOW: ${EGRESS_ALLOW:?set EGRESS_ALLOW from scanent hosts --format egress-allow}
+    networks: [scanent-internal, scanent-egress]
+
+networks:
+  scanent-internal:
+    internal: true
+  scanent-egress: {}

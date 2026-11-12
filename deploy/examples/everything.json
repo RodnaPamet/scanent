@@ -1,0 +1,85 @@
+{
+  "estate": "acme-prod",
+  "scanner": {
+    "agentId": "scanent-acme-prod",
+    "signingKeyEnv": "SCANNER_SIGNING_KEY"
+  },
+  "outputs": [
+    {
+      "kind": "file",
+      "dir": "/out",
+      "retainRuns": 90
+    }
+  ],
+  "schedule": {
+    "everyHours": 24
+  },
+  "sources": [
+    {
+      "kind": "entra-sp",
+      "directoryId": "11111111-2222-4333-8444-555555555555",
+      "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+      "clientSecretEnv": "ENTRA_CLIENT_SECRET"
+    },
+    {
+      "kind": "vault",
+      "product": "azure-key-vault",
+      "vaultUrls": [
+        "https://acme-agents.vault.azure.net"
+      ],
+      "directoryTenantId": "11111111-2222-4333-8444-555555555555",
+      "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+      "clientSecretEnv": "AZURE_CLIENT_SECRET"
+    },
+    {
+      "kind": "okta-app",
+      "orgUrl": "https://acme.okta.com",
+      "apiTokenEnv": "OKTA_API_TOKEN"
+    },
+    {
+      "kind": "cicd",
+      "product": "github-actions",
+      "repositories": [
+        "acme/payments-api",
+        "acme/support-bot"
+      ],
+      "tokenEnv": "GITHUB_READ_TOKEN"
+    },
+    {
+      "kind": "gcp-sa",
+      "product": "gcp-iam",
+      "projects": [
+        "acme-prod-204"
+      ],
+      "keyEnv": "GCP_SCANNER_KEY"
+    },
+    {
+      "kind": "runtime",
+      "product": "langsmith",
+      "endpoint": {
+        "cloud": "eu"
+      },
+      "apiKeyEnv": "LANGSMITH_API_KEY"
+    },
+    {
+      "kind": "mcp",
+      "servers": [
+        {
+          "label": "crm",
+          "url": "https://mcp.acme.example/crm/mcp",
+          "readTokenEnv": "MCP_CRM_TOKEN"
+        }
+      ]
+    },
+    {
+      "kind": "code",
+      "product": "langchain",
+      "roots": [
+        {
+          "label": "agents",
+          "path": "/estate"
+        }
+      ]
+    }
+  ]
+}
