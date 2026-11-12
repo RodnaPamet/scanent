@@ -37,7 +37,7 @@ import {
     type Fakes,
     type RegisterFixture,
 } from './helpers/agent-harness-source-fakes';
-import { verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { ConfigError, parseScannerConfig } from '../src/config';
 import { ACCESS_TOKEN_TYPE, createSourceWire, TOKEN_EXCHANGE_GRANT } from '../src/http';
 import { jsonLineLog } from '../src/log';

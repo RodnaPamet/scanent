@@ -20,7 +20,7 @@ table is updated in the same change as any dependency.
 |---|---|---|---|
 | `typescript` | 5.9.3 | Apache-2.0 | Its parser reads JavaScript and TypeScript source as text, for the `code` source. Nothing is compiled or run at run time |
 | `zod` | 4.6.7 | MIT | Strict schemas for the report, the configuration and every other input |
-| `@scanent/contract` | 0.0.0 | BUSL-1.1 | scanent's own package: the report contract |
+| `@rodnapamet/scanent-contract` | 0.12.0 | BUSL-1.1 | scanent's own package: the report contract |
 | `@scanent/report` | 0.0.0 | BUSL-1.1 | scanent's own package: local results |
 | `@scanent/scanner` | 0.0.0 | BUSL-1.1 | scanent's own package: the scanner and its command line |
 | `argparse` | 3.0.4 | PSF-2.0 | A dependency of `js-yaml` |
@@ -31,9 +31,12 @@ Four third-party packages, each pinned to an exact version, each with an
 integrity hash in the lockfile. Development dependencies (the test runner,
 the linter, type definitions) are not in the image and are not listed here.
 
-The three own packages show version `0.0.0` because they are not published
-anywhere. The scanner's version is a constant in the code
-(`packages/scanner/src/scanner-surface.ts`, `SCANNER_VERSION`), currently
+`@scanent/report` and `@scanent/scanner` show version `0.0.0` because they
+are never published. `@rodnapamet/scanent-contract` is the one package a
+release publishes, to GitHub Packages, and it carries the scanner's version;
+no version of it has been published yet. The scanner's version is a constant
+in the code (`packages/scanner/src/scanner-surface.ts`, `SCANNER_VERSION`),
+currently
 0.12.0.
 
 ### What else is in the image

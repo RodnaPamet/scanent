@@ -32,7 +32,7 @@ import {
     MAX_CREDENTIALS_PER_AGENT,
     MAX_UNBOUND_CREDENTIALS,
     verifyAndParseHarnessReport,
-} from '@scanent/contract/harness-contract';
+} from '@rodnapamet/scanent-contract/harness-contract';
 import { parseScannerConfig, type ScannerConfig } from '../src/config';
 import { jsonLineLog } from '../src/log';
 import { buildReportBody, rawPublicKeyHex, ReportRefusedLocally, signReport } from '../src/report';

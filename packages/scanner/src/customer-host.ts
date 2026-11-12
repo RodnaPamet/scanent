@@ -44,7 +44,7 @@
  *     the `.local` / `.internal` NAME rule, because with one configured the
  *     question becomes the address rather than the name.
  *
- * The CIDR parser is the contract package's (`@scanent/contract/cidr`, pure
+ * The CIDR parser is the contract package's (`@rodnapamet/scanent-contract/cidr`, pure
  * and strict). `isPrivateAddress` and `NEVER_ALLOWLISTABLE` are held to tables
  * of addresses in `tests/langsmith-source.test.ts` and `tests/ssrf.test.ts`.
  *
@@ -57,7 +57,7 @@
  */
 import { promises as dns } from 'dns';
 
-import { inCidr, isV4Mapped, parseAddress, parseCidr, type Cidr } from '@scanent/contract/cidr';
+import { inCidr, isV4Mapped, parseAddress, parseCidr, type Cidr } from '@rodnapamet/scanent-contract/cidr';
 
 import { httpsOrigin } from './http';
 import { isProxied, proxyInEffect, type Env } from './proxy-env';

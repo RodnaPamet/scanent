@@ -14,7 +14,7 @@
  * written before anything leaves it. Each output is attempted whatever
  * happened to the others, and a run is delivered only when every one was.
  */
-import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
+import type { HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
 import type { ParsedInventory } from '@scanent/report/results/inventory';
 
 import type { OutputConfig, ScannerConfig } from './config';

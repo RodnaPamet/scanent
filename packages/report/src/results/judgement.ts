@@ -18,7 +18,7 @@
  *
  * PURE: no clock, no I/O.
  */
-import type { HarnessSourceKind } from '@scanent/contract/harness-findings';
+import type { HarnessSourceKind } from '@rodnapamet/scanent-contract/harness-findings';
 
 /**
  * Which source kinds report verdicts under an id another source discovers.

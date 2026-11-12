@@ -21,7 +21,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 
 import type { ScannerLog } from '../src/log';
 import { scanAndDeliver } from '../src/outputs';

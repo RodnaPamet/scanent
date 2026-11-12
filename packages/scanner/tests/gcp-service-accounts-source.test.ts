@@ -19,7 +19,7 @@
  */
 import { createVerify, generateKeyPairSync } from 'crypto';
 
-import { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { credentialEnvNames, parseScannerConfig } from '../src/config';
 import { createSourceWire, JWT_BEARER_GRANT, type FetchLike } from '../src/http';
 import { jsonLineLog } from '../src/log';

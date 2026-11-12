@@ -24,8 +24,8 @@ import { createHash } from 'crypto';
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, renameSync, rmSync, writeSync } from 'fs';
 import { dirname, join } from 'path';
 
-import { looksLikeSecret } from '@scanent/contract/harness-contract';
-import { firstSecretShapedMember } from '@scanent/contract/harness-findings';
+import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract';
+import { firstSecretShapedMember } from '@rodnapamet/scanent-contract/harness-findings';
 import { renderAgentsCsv, renderFindingsCsv } from '@scanent/report/render/csv';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
 import { renderSummaryHtml } from '@scanent/report/render/html';

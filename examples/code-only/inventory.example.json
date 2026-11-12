@@ -1,12 +1,12 @@
 {
-  "inventory": "scanent-inventory/1",
+  "inventory": "scanent-inventory/2",
   "agents": [
     {
       "discoveredId": "code:example/support/agent.py#support_executor",
       "name": "Support order lookup",
       "owner": "support-operations",
       "purpose": "Answers customers' questions about an order's status",
-      "axes": { "autonomy": "human-reviews", "dataClass": "internal", "reach": "read-only" },
+      "axes": { "autonomyLevel": 1, "dataAccessScope": "READ_TENANT_DATA", "reversibility": "REVERSIBLE", "provenance": "FIRST_PARTY" },
       "riskTier": "LOW",
       "riskAssessedOn": "2026-10-01"
     },

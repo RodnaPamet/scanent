@@ -4,7 +4,11 @@
  * Without a register nothing can show an agent is registered or owned, so
  * every agent would read as a shadow agent. The inventory is the operator's own
  * list: an id, a name, an owner, a purpose, and optionally the declared axes
- * and a dated risk tier. Four rules hold it:
+ * and a dated risk tier. The axes and the tiers are the ones Inflect's agent
+ * register holds, by the same names and values, so a row uses the register's own
+ * words for an agent. (It is not a register entry: the tier is declared rather
+ * than scored, and a THIRD_PARTY agent needs no named supplier here.) Four
+ * rules hold it:
  *
  *   • IT MATCHES BY EXACT `discoveredId` AND NOTHING ELSE. No case folding, no
  *     trimming, no prefix, no name. An exact id is the only match that cannot
@@ -22,23 +26,60 @@
  */
 import { z } from 'zod';
 
-import { MAX_AGENTS, MAX_ID_CHARS } from '@scanent/contract/harness-contract';
-import { firstSecretShapedMember } from '@scanent/contract/harness-findings';
-import type { CriterionVerdict } from '@scanent/contract/harness-ladder';
+import { MAX_AGENTS, MAX_ID_CHARS } from '@rodnapamet/scanent-contract/harness-contract';
+import { firstSecretShapedMember } from '@rodnapamet/scanent-contract/harness-findings';
+import type { CriterionVerdict } from '@rodnapamet/scanent-contract/harness-ladder';
 
-/** The id a JSON inventory names itself by. */
-export const INVENTORY_SCHEMA_ID = 'scanent-inventory/1';
+/**
+ * The id a JSON inventory names itself by. `/2` replaced `/1` when the axes
+ * and the risk tiers took the names and values of Inflect's agent register;
+ * `/1` is refused, and the refusal says what changed (`RETIRED_INVENTORY_SCHEMAS`).
+ */
+export const INVENTORY_SCHEMA_ID = 'scanent-inventory/2';
 
 /** A report carries at most this many agents, so an inventory names at most as many. */
 export const MAX_INVENTORY_ROWS = MAX_AGENTS;
 
-/** How old a declared risk assessment may be, in whole days before the scan's `asOf`, and still count. */
+/**
+ * How old a declared risk assessment may be, in whole days before the scan's
+ * `asOf`, and still count.
+ *
+ * THIS WINDOW IS SCANENT'S OWN. Inflect's register has no age limit: there a
+ * tier is fresh while the agent's newest completed risk assessment has not been
+ * marked stale, and it is marked stale when the agent changes in a way that
+ * raises risk, or its declared model changes, after it was assessed. An inventory holds no assessment to
+ * compare an agent with, so a date and a window are what it can state.
+ */
 export const INVENTORY_TIER_MAX_AGE_DAYS = 365;
 
-export const INVENTORY_AUTONOMY = ['human-approves', 'human-reviews', 'autonomous'] as const;
-export const INVENTORY_DATA_CLASS = ['public', 'internal', 'confidential', 'restricted'] as const;
-export const INVENTORY_REACH = ['read-only', 'write', 'external'] as const;
-export const INVENTORY_RISK_TIERS = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+/**
+ * THE FOUR AXES, AS INFLECT'S AGENT REGISTER DECLARES THEM: the same names,
+ * the same values, in the same order. All four or none.
+ *
+ * `autonomyLevel` is a whole number on the register's ladder, 0 (suggests
+ * only) to 6 (acts unattended across systems). `dataAccessScope` runs from the
+ * least exposing to the most. `reversibility` runs from what can be restored
+ * to what cannot be undone. `provenance` is who wrote the agent.
+ */
+export const INVENTORY_AUTONOMY_LEVEL_MIN = 0;
+export const INVENTORY_AUTONOMY_LEVEL_MAX = 6;
+export const INVENTORY_DATA_ACCESS_SCOPES = ['NONE', 'READ_METADATA', 'READ_TENANT_DATA', 'WRITE_TENANT_DATA', 'EXTERNAL_EGRESS'] as const;
+export const INVENTORY_REVERSIBILITIES = ['REVERSIBLE', 'COMPENSABLE', 'TERMINAL'] as const;
+export const INVENTORY_PROVENANCES = ['FIRST_PARTY', 'THIRD_PARTY'] as const;
+/** The members of `axes`, in the order the documents and the CSV header give them. */
+export const INVENTORY_AXES = ['autonomyLevel', 'dataAccessScope', 'reversibility', 'provenance'] as const;
+/** The register's risk tiers, lowest first. */
+export const INVENTORY_RISK_TIERS = ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'] as const;
+
+/**
+ * Schema ids this version once read and now refuses, each with what changed
+ * since. The text is this module's own, so a refusal may repeat it.
+ */
+export const RETIRED_INVENTORY_SCHEMAS: Readonly<Record<string, string>> = {
+    'scanent-inventory/1':
+        'the axes are now autonomyLevel (a whole number, 0 to 6), dataAccessScope, reversibility and provenance, '
+        + 'in place of autonomy, dataClass and reach, and the risk tier MEDIUM is now MODERATE',
+};
 
 /** The four criteria a matched row can evidence. Nothing else, ever. */
 export const INVENTORY_CRITERIA = ['H1.registered', 'H1.owner', 'H1.axes_declared', 'H1.tier_scored_fresh'] as const;
@@ -78,9 +119,10 @@ const InventoryRowSchema = z
         purpose: text(512),
         axes: z
             .object({
-                autonomy: z.enum(INVENTORY_AUTONOMY),
-                dataClass: z.enum(INVENTORY_DATA_CLASS),
-                reach: z.enum(INVENTORY_REACH),
+                autonomyLevel: z.number().int().min(INVENTORY_AUTONOMY_LEVEL_MIN).max(INVENTORY_AUTONOMY_LEVEL_MAX),
+                dataAccessScope: z.enum(INVENTORY_DATA_ACCESS_SCOPES),
+                reversibility: z.enum(INVENTORY_REVERSIBILITIES),
+                provenance: z.enum(INVENTORY_PROVENANCES),
             })
             .strict()
             .optional(),
@@ -136,7 +178,7 @@ export class InventoryRefused extends Error {
     }
 }
 
-/** `agents[3].axes.reach` and `['agents', 3, 'axes', 'reach']` both as `row 4: axes.reach`. */
+/** `agents[3].axes.provenance` and `['agents', 3, 'axes', 'provenance']` both as `row 4: axes.provenance`. */
 function describePath(path: readonly PropertyKey[]): string {
     if (path[0] === 'agents' && typeof path[1] === 'number') {
         const field = path.slice(2).map(String).join('.');
@@ -184,7 +226,9 @@ export function parseInventory(decoded: unknown, source: { readonly sha256: stri
         if (parsed.error.issues.some((i) => i.path.length === 1 && i.path[0] === 'inventory')) {
             const found = (decoded as { inventory?: unknown }).inventory;
             const named = typeof found === 'string' && /^scanent-inventory\/\d{1,4}$/.test(found) ? JSON.stringify(found) : found === undefined ? 'no schema' : 'a schema this version does not know';
-            throw new InventoryRefused([`inventory: the file names ${named}; this version reads ${INVENTORY_SCHEMA_ID}`]);
+            // A retired id is told what changed since: its file is one this scanner wrote the rules for.
+            const changed = typeof found === 'string' && Object.hasOwn(RETIRED_INVENTORY_SCHEMAS, found) ? `: ${RETIRED_INVENTORY_SCHEMAS[found]}` : '';
+            throw new InventoryRefused([`inventory: the file names ${named}; this version reads ${INVENTORY_SCHEMA_ID}${changed}`]);
         }
         throw new InventoryRefused(parsed.error.issues.map(describeIssue));
     }

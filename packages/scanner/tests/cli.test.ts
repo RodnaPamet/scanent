@@ -18,7 +18,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
-import { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { main, run, USAGE_HINT } from '../src/cli';
 import { ConfigError } from '../src/config';
 import { rawPublicKeyHex } from '../src/report';

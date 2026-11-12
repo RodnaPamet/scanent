@@ -13,7 +13,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { INVENTORY_SCHEMA_ID, InventoryRefused } from '@scanent/report/results/inventory';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
 

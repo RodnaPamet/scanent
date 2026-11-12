@@ -17,7 +17,7 @@
  *
  * The seed and the count come from `helpers/prng.ts`.
  */
-import { verifyAndParseHarnessReport, INCOMPLETE_REASONS_V2 } from '@scanent/contract/harness-contract';
+import { verifyAndParseHarnessReport, INCOMPLETE_REASONS_V2 } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { parseScannerConfig } from '../src/config';
 import type { FetchLike } from '../src/http';

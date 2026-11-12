@@ -1,9 +1,13 @@
+// No source map here, unlike the other two packages: what `npm pack` puts in the
+// published package is this build's output, and a map names source files the
+// package does not hold.
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "composite": true,
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "sourceMap": false
   },
   "include": ["src/**/*.ts"]
 }

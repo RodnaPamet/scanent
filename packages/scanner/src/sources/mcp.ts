@@ -42,8 +42,8 @@
  */
 import { createHash } from 'crypto';
 
-import { canonicalJson } from '@scanent/contract/canonical-json';
-import { MAX_AGENTS, MAX_TOOLS_PER_AGENT } from '@scanent/contract/harness-contract';
+import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
+import { MAX_AGENTS, MAX_TOOLS_PER_AGENT } from '@rodnapamet/scanent-contract/harness-contract';
 
 import {
     assertResolvesReachable,

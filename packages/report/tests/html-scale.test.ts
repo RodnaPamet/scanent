@@ -29,7 +29,7 @@
  *      every row.
  *   6. Nothing is dropped from the other files.
  */
-import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
+import type { HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { parseCsv } from './helpers/results';
 import { scaleAgentId, scaleBody, scaleResults } from './helpers/scale';

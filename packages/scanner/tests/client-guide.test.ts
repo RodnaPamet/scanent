@@ -21,9 +21,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { INCOMPLETE_REASONS, type HarnessReportBody } from '@scanent/contract/harness-contract';
-import { HARNESS_FINDING_CODES, planHarnessScan, type PriorHarnessState } from '@scanent/contract/harness-findings';
-import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LEVELS, type HarnessLevel } from '@scanent/contract/harness-ladder';
+import { INCOMPLETE_REASONS, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
+import { HARNESS_FINDING_CODES, planHarnessScan, type PriorHarnessState } from '@rodnapamet/scanent-contract/harness-findings';
+import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LEVELS, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 import { AGENTS_CSV_LEADING_COLUMNS, csvCriterionState, FINDINGS_CSV_COLUMNS } from '@scanent/report/render/csv';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
 import { coverageOf, scoreReportLocally } from '@scanent/report/results/score';

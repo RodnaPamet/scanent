@@ -10,7 +10,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { LADDER_VERSION, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { LADDER_VERSION, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { CSV_BOM } from '@scanent/report/render/csv';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
 import { INVENTORY_SCHEMA_ID } from '@scanent/report/results/inventory';
@@ -183,7 +183,7 @@ describe('the inventory', () => {
                         name: 'Support agent',
                         owner: 'support-team',
                         purpose: 'Answers order questions',
-                        axes: { autonomy: 'human-reviews', dataClass: 'internal', reach: 'read-only' },
+                        axes: { autonomyLevel: 1, dataAccessScope: 'READ_TENANT_DATA', reversibility: 'REVERSIBLE', provenance: 'FIRST_PARTY' },
                         riskTier: 'LOW',
                         riskAssessedOn: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
                     },

@@ -350,3 +350,110 @@ A report written to a file (`report.signed.json`) is the same bytes.
 - That `findings` lists what is wrong. It lists where the scanner could not
   read.
 - That a later contract id reads as an earlier one. Each id is its own schema.
+
+## Use the reference implementation
+
+The code this page is written from is one npm package,
+`@rodnapamet/scanent-contract` (`packages/contract`). A consumer that depends
+on it verifies and reads a report with the functions named above, and keeps
+no copy of its own that can drift.
+
+> **Status: not published yet.** No release of scanent exists, so no version
+> of the package is in any registry. The release workflow publishes it at the
+> first version tag. Until then nothing in this section has been run against
+> the registry, and the package can only be taken from a checkout of this
+> repository. What can be checked without a registry is checked on every
+> change (`packages/scanner/tests/contract-package.test.ts`): what `npm pack`
+> puts in the package, that it loads and type-checks where a consumer
+> installs it, and that this section names its modules.
+
+**The name.** The package is published to GitHub Packages. Its npm registry
+takes scoped packages only, and the scope is the account the package belongs
+to, in lower case. This repository belongs to `RodnaPamet`, so the scope is
+`@rodnapamet`. The other two packages of this repository, `@scanent/report`
+and `@scanent/scanner`, are not published and keep their names.
+
+**The version** is the scanner's: the release `v<version>` publishes
+`@rodnapamet/scanent-contract@<version>`, and a published version is never
+replaced. The package version says which release the code is from. What a
+consumer compares is on this page: the contract ids and the ladder version.
+
+### Install it
+
+GitHub Packages asks for a token on every install of an npm package, whether
+the package is public or private.
+
+1. In the consuming project, in `.npmrc` beside its `package.json`. This file
+   is committed:
+
+   ```
+   @rodnapamet:registry=https://npm.pkg.github.com
+   ```
+
+   Only that scope goes to GitHub Packages. Every other package still comes
+   from the registry the project already uses.
+
+2. The token, which is never committed. On a person's machine it goes in
+   their own `~/.npmrc`:
+
+   ```
+   //npm.pkg.github.com/:_authToken=<token>
+   ```
+
+   `<token>` is a GitHub personal access token (classic) with the
+   `read:packages` scope, and no other. GitHub Packages does not accept a
+   fine-grained token. The account the token belongs to needs read access to
+   the package.
+
+3. Add the dependency at an exact version:
+
+   ```bash
+   npm install --save-exact @rodnapamet/scanent-contract@<version>
+   ```
+
+**In a GitHub Actions workflow** of the consuming repository, use the
+workflow's own token and no person's:
+
+- once, in the package's settings on GitHub, under "Manage Actions access",
+  add the consuming repository with the Read role;
+- give the job `permissions: packages: read`;
+- let `actions/setup-node` write the token line, and give the install step
+  the token:
+
+  ```yaml
+  - uses: actions/setup-node@<commit SHA>
+    with:
+      registry-url: https://npm.pkg.github.com
+      scope: "@rodnapamet"
+  - run: npm ci
+    env:
+      NODE_AUTH_TOKEN: ${{ github.token }}
+  ```
+
+### Import it
+
+Each module is imported by its own path. There is no index module.
+
+```ts
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { planHarnessScan } from '@rodnapamet/scanent-contract/harness-findings';
+import { scoreHarness } from '@rodnapamet/scanent-contract/harness-ladder';
+import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
+```
+
+<!-- contract:package-modules -->
+`audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `receipt-verification`
+<!-- /contract:package-modules -->
+
+- The package holds compiled CommonJS and type declarations, for Node 22 or
+  later. It holds no TypeScript source, no test and no source map.
+- It uses Node's `crypto`, so it runs on a server and not in a browser.
+- Its one dependency is `zod`, at an exact version. A consumer that passes
+  the exported schemas to its own `zod` needs that same version; with another
+  one, npm installs a second copy for the package.
+
+### Check where a tarball came from
+
+The release attests the build provenance of the tarball it publishes.
+[verify-a-release.md](verify-a-release.md#the-contract-package) has the
+command.

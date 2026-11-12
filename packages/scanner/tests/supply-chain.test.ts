@@ -39,7 +39,7 @@ describe('scripts/check-licences.js', () => {
     const lock = (over: Record<string, Record<string, unknown> | undefined> = {}) => {
         const packages: Record<string, Record<string, unknown> | undefined> = {
             '': { name: 'scanent', workspaces: ['packages/contract'] },
-            'node_modules/@scanent/contract': { resolved: 'packages/contract', link: true },
+            'node_modules/@rodnapamet/scanent-contract': { resolved: 'packages/contract', link: true },
             'node_modules/zod': { version: '4.0.0', license: 'MIT' },
             'node_modules/typescript': { version: '5.9.3', license: 'Apache-2.0' },
             'node_modules/jest': { version: '30.0.0', license: 'GPL-3.0', dev: true },

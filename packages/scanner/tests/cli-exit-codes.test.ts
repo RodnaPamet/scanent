@@ -14,7 +14,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
-import { verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { InventoryRefused } from '@scanent/report/results/inventory';
 import { exitCodeForError, HELP, main, run } from '../src/cli';
 import { ConfigError } from '../src/config';

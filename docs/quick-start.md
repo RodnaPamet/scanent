@@ -29,8 +29,9 @@ authority: add `--secret id=ca,src=/path/to/ca.pem` (the
 [README](../README.md#quick-start-container) says what it is used for).
 
 From the first release on, this step is `docker pull "$IMAGE"` and needs no
-checkout; and a site with no internet loads the image from the air-gapped
-bundle (`./load.sh`, see [below](#a-site-with-no-internet)).
+checkout. The image is public: the pull needs no account and no login. A site
+with no internet loads the image from the air-gapped bundle (`./load.sh`, see
+[below](#a-site-with-no-internet)).
 
 Every command below runs the container the same way. Put it in a shell
 function once:

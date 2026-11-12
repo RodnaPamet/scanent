@@ -31,7 +31,7 @@ import { lstat, readdir, readFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { parseScannerConfig, SourceConfigSchema, type ScannerConfig } from '../src/config';
 import { runDoctor } from '../src/doctor/run';
 import { createSourceWire, MCP_MESSAGES, type FetchLike } from '../src/http';

@@ -10,10 +10,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
-import { HARNESS_CONTRACT_IDS } from '@scanent/contract/harness-contract-rules';
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { HARNESS_CONTRACT_IDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import { diffResults, TOOL_EVIDENCE_OLDER_RULE } from '@scanent/report/diff/diff';
-import { InventoryRefused, INVENTORY_SCHEMA_ID } from '@scanent/report/results/inventory';
+import { InventoryRefused, INVENTORY_SCHEMA_ID, RETIRED_INVENTORY_SCHEMAS } from '@scanent/report/results/inventory';
 import { RESULTS_SCHEMA, type LocalResults } from '@scanent/report/results/types';
 
 import { parseScannerConfig } from '../src/config';
@@ -28,6 +28,18 @@ import { buildSupportBundle } from '../src/support-bundle';
 import { capturedLog, configOf, ENV, EXAMPLE_AGENT, noFetch, REPO } from './helpers/output-fixtures';
 
 const COMPAT = path.join(__dirname, 'fixtures', 'compat');
+/** The example inventory of this version: the same two agents every fixture's inventory declares. */
+const CURRENT_INVENTORY = path.join(REPO, 'examples', 'code-only', 'inventory.example.json');
+/** The issues a refused inventory file names. Fails if it was read. */
+function inventoryRefusal(file: string): readonly string[] {
+    try {
+        loadInventoryFile(file);
+    } catch (err) {
+        expect(err).toBeInstanceOf(InventoryRefused);
+        return (err as InventoryRefused).issues;
+    }
+    throw new Error('the inventory was read');
+}
 const VERSIONS = fs
     .readdirSync(COMPAT, { withFileTypes: true })
     .filter((e) => e.isDirectory())
@@ -93,8 +105,9 @@ describe.each(VERSIONS)('what %s wrote', (version) => {
 
     it('a diff against a run of the same example by this version works, and says which rule it used', async () => {
         const old = loadDiffSide(read(`${run}/results.json`), 'old', null);
-        // The same example, the same inventory, a day later, by this version.
-        const config = configOf({ estate: old.scan.estate, scanner: { agentId: old.scan.scanner.agentId, signingKeyEnv: 'SCANNER_SIGNING_KEY' }, inventory: { path: path.join(root, 'inventory.example.json') } });
+        // The same example, the same two agents declared, a day later, by this version. The
+        // inventory is this version's: a fixture's own may be of a schema since retired (below).
+        const config = configOf({ estate: old.scan.estate, scanner: { agentId: old.scan.scanner.agentId, signingKeyEnv: 'SCANNER_SIGNING_KEY' }, inventory: { path: CURRENT_INVENTORY } });
         const now = Date.parse(old.scan.asOf) + 24 * 3_600_000;
         const scan = await runScan({ config, env: ENV, log: capturedLog().log, fetchImpl: noFetch, now: () => now });
         const current: LocalResults = scoreScanLocally({ config, raw: scan.raw, body: scan.body, inventory: loadConfiguredInventory(config) });
@@ -137,14 +150,47 @@ describe.each(VERSIONS)('what %s wrote', (version) => {
         });
     });
 
-    it('the inventory still loads from JSON and from CSV, to the same rows', () => {
-        const json = loadInventoryFile(path.join(root, 'inventory.example.json'));
-        const csv = loadInventoryFile(path.join(root, 'inventory.example.csv'));
-        expect(json.format).toBe('json');
-        expect(csv.format).toBe('csv');
-        expect(json.rows).toHaveLength(2);
-        expect(csv.rows).toEqual(json.rows);
-        expect(json.rows[0].discoveredId).toBe(EXAMPLE_AGENT);
+    const inventoryId = (JSON.parse(read('inventory.example.json')) as { inventory: string }).inventory;
+
+    it('its inventory is of a schema this version reads or one it retired by name, and 0.12.0 wrote scanent-inventory/1', () => {
+        expect([INVENTORY_SCHEMA_ID, ...Object.keys(RETIRED_INVENTORY_SCHEMAS)]).toContain(inventoryId);
+        if (version === '0.12.0') expect(inventoryId).toBe('scanent-inventory/1');
+    });
+
+    it('the inventory still loads from JSON and from CSV to the same rows, or, of a retired schema, is refused whole in both forms and told what changed', () => {
+        const jsonFile = path.join(root, 'inventory.example.json');
+        const csvFile = path.join(root, 'inventory.example.csv');
+        if (inventoryId === INVENTORY_SCHEMA_ID) {
+            const json = loadInventoryFile(jsonFile);
+            const csv = loadInventoryFile(csvFile);
+            expect(json.format).toBe('json');
+            expect(csv.format).toBe('csv');
+            expect(json.rows).toHaveLength(2);
+            expect(csv.rows).toEqual(json.rows);
+            expect(json.rows[0].discoveredId).toBe(EXAMPLE_AGENT);
+            return;
+        }
+        // Nothing was released with the retired schema, so no file of it is converted: it is refused, and the
+        // refusal names the schema the file gave, the one this version reads, and every member that changed.
+        const changed = RETIRED_INVENTORY_SCHEMAS[inventoryId];
+        expect(changed).toMatch(/\S/);
+        expect(inventoryRefusal(jsonFile)).toEqual([`inventory: the file names "${inventoryId}"; this version reads ${INVENTORY_SCHEMA_ID}: ${changed}`]);
+        // A CSV file names no schema; its columns are what tell it apart.
+        const csvIssues = inventoryRefusal(csvFile);
+        expect(csvIssues).toHaveLength(2);
+        expect(csvIssues[0]).toMatch(/^header: \d+ unknown columns?$/);
+        expect(csvIssues[1]).toBe(`header: columns of ${inventoryId}; this version reads ${INVENTORY_SCHEMA_ID}: ${changed}`);
+        // Neither refusal repeats a row.
+        expect([...inventoryRefusal(jsonFile), ...csvIssues].join(' ')).not.toMatch(/support-operations|Billing|order/);
+    });
+
+    it("this version's example inventory declares the same agents that version's did, in the same order", () => {
+        const then = JSON.parse(read('inventory.example.json')) as { agents: { discoveredId: string; name: string; owner: string; purpose: string }[] };
+        const now = loadInventoryFile(CURRENT_INVENTORY);
+        expect(now.rows.map(({ discoveredId, name, owner, purpose }) => ({ discoveredId, name, owner, purpose }))).toEqual(
+            then.agents.map(({ discoveredId, name, owner, purpose }) => ({ discoveredId, name, owner, purpose })),
+        );
+        expect(now.rows[0].discoveredId).toBe(EXAMPLE_AGENT);
     });
 
     it('the doctor report is still one this version would have produced from its checks', () => {
@@ -217,23 +263,25 @@ describe('a file of a schema this version does not read is refused whole, and to
         expect(err.join('')).toBe('scanent diff: new: the file names "scanent-results/2" as its schema; this version reads scanent-results/1\n');
     });
 
-    it('inventory: a later schema id, no id, and a known id with an unknown member', () => {
-        const inventory = JSON.parse(fs.readFileSync(path.join(root, 'inventory.example.json'), 'utf8')) as Record<string, unknown>;
+    it('inventory: a later schema id, an earlier one, no id, and a known id with an unknown member', () => {
+        const inventory = JSON.parse(fs.readFileSync(CURRENT_INVENTORY, 'utf8')) as Record<string, unknown>;
         const refused = (value: unknown): readonly string[] => {
             const file = path.join(dir, 'inventory.json');
             fs.writeFileSync(file, JSON.stringify(value));
-            try {
-                loadInventoryFile(file);
-            } catch (err) {
-                expect(err).toBeInstanceOf(InventoryRefused);
-                return (err as InventoryRefused).issues;
-            }
-            throw new Error('the inventory was read');
+            return inventoryRefusal(file);
         };
-        expect(INVENTORY_SCHEMA_ID).toBe('scanent-inventory/1');
-        expect(refused({ ...inventory, inventory: 'scanent-inventory/2' })).toEqual(['inventory: the file names "scanent-inventory/2"; this version reads scanent-inventory/1']);
+        expect(INVENTORY_SCHEMA_ID).toBe('scanent-inventory/2');
+        expect(refused({ ...inventory, inventory: 'scanent-inventory/3' })).toEqual(['inventory: the file names "scanent-inventory/3"; this version reads scanent-inventory/2']);
+        // The earlier id is refused even over rows this version would read: the id decides.
+        expect(refused({ ...inventory, inventory: 'scanent-inventory/1' })).toEqual([
+            `inventory: the file names "scanent-inventory/1"; this version reads scanent-inventory/2: ${RETIRED_INVENTORY_SCHEMAS['scanent-inventory/1']}`,
+        ]);
+        // And the file 0.12.0 read, as it is in the repository.
+        expect(inventoryRefusal(path.join(root, 'inventory.example.json'))).toEqual([
+            `inventory: the file names "scanent-inventory/1"; this version reads scanent-inventory/2: ${RETIRED_INVENTORY_SCHEMAS['scanent-inventory/1']}`,
+        ]);
         const { inventory: _id, ...noId } = inventory;
-        expect(refused(noId)).toEqual(['inventory: the file names no schema; this version reads scanent-inventory/1']);
+        expect(refused(noId)).toEqual(['inventory: the file names no schema; this version reads scanent-inventory/2']);
         expect(refused({ ...inventory, addedLater: [] })).toEqual(['(file): 1 unknown field']);
         const rows = inventory.agents as Record<string, unknown>[];
         expect(refused({ ...inventory, agents: [{ ...rows[0], addedLater: 'x' }, rows[1]] })).toEqual(['row 1: 1 unknown field']);

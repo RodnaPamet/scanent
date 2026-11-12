@@ -17,8 +17,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { harnessKeyFingerprint, LADDER_VERSION, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
-import { firstSecretShapedMember } from '@scanent/contract/harness-findings';
+import { harnessKeyFingerprint, LADDER_VERSION, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { firstSecretShapedMember } from '@rodnapamet/scanent-contract/harness-findings';
 import { INVENTORY_SCHEMA_ID, InventoryRefused } from '@scanent/report/results/inventory';
 import { LocalResultsSchema } from '@scanent/report/results/schema';
 
@@ -109,7 +109,7 @@ describe('2. with an inventory that names the agent', () => {
             name: 'Support assistant',
             owner: 'support-operations',
             purpose: 'Answers support questions',
-            axes: { autonomy: 'human-reviews', dataClass: 'internal', reach: 'read-only' },
+            axes: { autonomyLevel: 1, dataAccessScope: 'READ_TENANT_DATA', reversibility: 'REVERSIBLE', provenance: 'FIRST_PARTY' },
             riskTier: 'LOW',
             riskAssessedOn: '2026-10-01',
         };

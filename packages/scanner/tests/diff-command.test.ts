@@ -138,7 +138,7 @@ describe('2. inputs', () => {
                         name: 'Support agent',
                         owner: 'support-team',
                         purpose: 'Answers order questions',
-                        axes: { autonomy: 'human-reviews', dataClass: 'internal', reach: 'read-only' },
+                        axes: { autonomyLevel: 1, dataAccessScope: 'READ_TENANT_DATA', reversibility: 'REVERSIBLE', provenance: 'FIRST_PARTY' },
                         riskTier: 'LOW',
                         riskAssessedOn: '2026-09-30',
                     },

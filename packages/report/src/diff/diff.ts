@@ -16,7 +16,7 @@
  *
  * Pure: two results in, one object out.
  */
-import { rungOf, type CriterionState, type HarnessCriterionId, type HarnessLevel } from '@scanent/contract/harness-ladder';
+import { rungOf, type CriterionState, type HarnessCriterionId, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import type { LocalAgentResult, LocalFinding, LocalResults, VerdictBasis } from '../results/types';
 

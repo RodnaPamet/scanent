@@ -39,7 +39,7 @@
  * tokens without the rights to do so; the read then stops with AUTH_FAILED
  * and the source is INCOMPLETE, which is the contract working.
  */
-import { MAX_AGENTS } from '@scanent/contract/harness-contract';
+import { MAX_AGENTS } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { nextLinkFrom } from '../http';
 import {
