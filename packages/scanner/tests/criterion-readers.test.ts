@@ -15,9 +15,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as ts from 'typescript';
 
-import { AGENT_SDK_OPTION_CRITERIA, type HarnessSourceKind } from '@scanent/contract/harness-findings';
-import { SOURCE_KINDS } from '@scanent/contract/harness-contract-rules';
-import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, isHarnessCriterionId, type CriterionVerdict, type HarnessCriterionId } from '@scanent/contract/harness-ladder';
+import { AGENT_SDK_OPTION_CRITERIA, type HarnessSourceKind } from '@rodnapamet/scanent-contract/harness-findings';
+import { SOURCE_KINDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
+import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, isHarnessCriterionId, type CriterionVerdict, type HarnessCriterionId } from '@rodnapamet/scanent-contract/harness-ladder';
 import { CROSS_AGENT_VERDICT_SOURCE } from '@scanent/report/results/judgement';
 import { coverageOf } from '@scanent/report/results/score';
 

@@ -14,7 +14,7 @@
  */
 import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from 'crypto';
 
-import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
+import type { HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { sourceCredentialEnv, type InflectConfig, type ScannerConfig } from './config';
 import { customerHostCheckFor, type CustomerHostCheck, type ResolveHost } from './customer-host';

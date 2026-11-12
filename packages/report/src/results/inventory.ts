@@ -24,9 +24,9 @@
  */
 import { z } from 'zod';
 
-import { MAX_AGENTS, MAX_ID_CHARS } from '@scanent/contract/harness-contract';
-import { firstSecretShapedMember } from '@scanent/contract/harness-findings';
-import type { CriterionVerdict } from '@scanent/contract/harness-ladder';
+import { MAX_AGENTS, MAX_ID_CHARS } from '@rodnapamet/scanent-contract/harness-contract';
+import { firstSecretShapedMember } from '@rodnapamet/scanent-contract/harness-findings';
+import type { CriterionVerdict } from '@rodnapamet/scanent-contract/harness-ladder';
 
 /**
  * The id a JSON inventory names itself by. `/2` replaced `/1` when the axes

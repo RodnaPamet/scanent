@@ -386,9 +386,18 @@ describe('docs/roadmap.md', () => {
 
     it('says the packages are unpublished, as their manifests have it', () => {
         expect(text).toContain('**The contract package is not published.**');
-        for (const pkg of ['contract', 'report', 'scanner']) {
+        // Two packages cannot be published at all. The contract can, since the owner's decision on issue 7, and the
+        // page says where it is to go and that it has not gone there: the manifest names that registry and that name.
+        for (const pkg of ['report', 'scanner']) {
             expect((JSON.parse(read(`packages/${pkg}/package.json`)) as { private?: boolean }).private).toBe(true);
         }
+        expect(text).toContain('`@scanent/report` and `@scanent/scanner` are private workspace packages');
+        const contract = JSON.parse(read('packages/contract/package.json')) as { name: string; private?: boolean; publishConfig?: { registry?: string } };
+        expect(contract.private).toBeUndefined();
+        expect(contract.publishConfig).toEqual({ registry: 'https://npm.pkg.github.com' });
+        expect(text).toContain(`It is to be published to GitHub\n  Packages as \`${contract.name}\``);
+        // Nothing has been released, so nothing of it is in a registry: the repository holds no version tag.
+        expect(text).toContain('**No release.** No tag, no published image, no signed artefact.');
     });
 
     it('names the cloud platforms no source reads, and offers none as coming', () => {

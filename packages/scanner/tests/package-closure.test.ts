@@ -108,7 +108,7 @@ describe('each package ships its import closure, and nothing else', () => {
         // The denominator. An empty walk would make every equality below hold.
         expect(scanner.files).toEqual(expect.arrayContaining(['cli.ts', 'scan.ts', 'sources/code/recognize.ts']));
         expect(scanner.files.length).toBeGreaterThanOrEqual(25);
-        expect(scanner.packages).toContain('@scanent/contract');
+        expect(scanner.packages).toContain('@rodnapamet/scanent-contract');
     });
 
     it('the contract is the eight files the scanner ran with before the extraction, and no other', () => {
@@ -130,7 +130,8 @@ describe('each package ships its import closure, and nothing else', () => {
     });
 
     it('the contract imports no other package of this repository', () => {
-        expect(contract.packages.filter((p) => p.startsWith('@scanent/'))).toEqual([]);
+        // Its own scope is the registry's (the repository owner's); the other two packages keep theirs.
+        expect(contract.packages.filter((p) => p.startsWith('@scanent/') || p.startsWith('@rodnapamet/'))).toEqual([]);
     });
 
     it('declares each package the closure imports, and nothing else', () => {
@@ -162,7 +163,7 @@ describe('each package ships its import closure, and nothing else', () => {
         });
 
         it('imports the contract and zod, and no other package', () => {
-            expect(report.packages).toEqual(['@scanent/contract', 'zod']);
+            expect(report.packages).toEqual(['@rodnapamet/scanent-contract', 'zod']);
         });
 
         it('imports no Node built-in: local results are functions of their input', () => {

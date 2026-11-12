@@ -17,7 +17,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { looksLikeSecret } from '@scanent/contract/harness-contract-rules';
+import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import * as yaml from 'js-yaml';
 
 import { credentialEnvNames, parseScannerConfig } from '../src/config';
@@ -1545,9 +1545,12 @@ describe('the release workflow', () => {
         // A PUSHED tag (the review): a manual run on a tag ref, which is also ref_type tag, pushes nothing.
         expect(release.jobs.publish.if).toBe("github.event_name == 'push' && github.ref_type == 'tag'");
         expect(release.jobs.release.if).toBe(release.jobs.publish.if);
+        // The contract package is published under the same condition, and packed and checked on every run.
+        expect(release.jobs['publish-contract'].if).toBe(release.jobs.publish.if);
+        expect(release.jobs['contract-package'].if).toBeUndefined();
     });
 
-    it('may read the repository everywhere and write packages in the publishing job alone', () => {
+    it('may read the repository everywhere and write packages in the two publishing jobs alone', () => {
         expect(release.permissions).toEqual({ contents: 'read' });
         // Phase 4: keyless signing needs the job's identity token, and the provenance attestation its own permission.
         expect(release.jobs.publish.permissions).toEqual({ contents: 'read', packages: 'write', 'id-token': 'write', attestations: 'write' });
@@ -1562,20 +1565,26 @@ describe('the release workflow', () => {
         for (const [name, job] of Object.entries(release.jobs as Record<string, Json>)) {
             const granted = (job.permissions ?? {}) as Record<string, string>;
             if (granted['id-token'] !== undefined || granted.attestations !== undefined) {
-                expect(['publish', 'sign-bundle']).toContain(name);
+                // `publish-contract` joined with the contract package: it attests the tarball it publishes.
+                expect(['publish', 'sign-bundle', 'publish-contract']).toContain(name);
                 expect(job.if).toBe("github.event_name == 'push' && github.ref_type == 'tag'");
             }
         }
-        // No job but `publish` may write a package, and none may write the repository's contents but `release`.
+        // No job but `publish` (the image) and `publish-contract` (the npm package) may write a package, and none
+        // may write the repository's contents but `release`.
         for (const [name, job] of Object.entries(release.jobs as Record<string, Json>)) {
             const granted = (job.permissions ?? {}) as Record<string, string>;
-            if (name !== 'publish') expect(granted.packages).toBeUndefined();
+            if (name !== 'publish' && name !== 'publish-contract') expect(granted.packages).toBeUndefined();
             if (name !== 'release') expect(granted.contents ?? 'read').toBe('read');
             for (const scope of Object.keys(granted)) expect(['contents', 'packages', 'id-token', 'attestations']).toContain(scope);
         }
         // `release` is new with the review: the one job that may write a release, and it may write nothing else.
         // The Phase 4 review added `gates` (what main is held to, before anything is built) and `sign-bundle`.
-        expect(Object.keys(release.jobs)).toEqual(['gates', 'build', 'publish', 'bundle', 'sign-bundle', 'release']);
+        // The contract package added two: `contract-package` packs and checks with no more than a read of the
+        // repository, and `publish-contract` holds what `publish` holds and publishes that tarball.
+        expect(Object.keys(release.jobs)).toEqual(['gates', 'build', 'publish', 'bundle', 'sign-bundle', 'contract-package', 'publish-contract', 'release']);
+        expect(release.jobs['contract-package'].permissions).toEqual({ contents: 'read' });
+        expect(release.jobs['publish-contract'].permissions).toEqual(release.jobs.publish.permissions);
         expect(release.jobs.release.permissions).toEqual({ contents: 'write' });
         expect(ci.permissions).toEqual({ contents: 'read' });
     });
@@ -1634,7 +1643,8 @@ describe('the release workflow', () => {
 
     it('releases the bundle and the checksum the documents tell a site to compare', () => {
         const job = release.jobs.release;
-        expect(job.needs).toEqual(['build', 'bundle', 'sign-bundle', 'publish']);
+        // `publish-contract` joined the list with the contract package: a release names what was published, all of it.
+        expect(job.needs).toEqual(['build', 'bundle', 'sign-bundle', 'publish', 'publish-contract']);
         // The artifact it attaches is the one the signing job checked and uploaded: the signed bundle, never the unsigned one.
         const upload = steps(release.jobs['sign-bundle']).find((s) => String(s.name ?? '') === 'Upload the bundle');
         expect(upload?.with.name).toBe('scanent-${{ needs.build.outputs.version }}-airgap');

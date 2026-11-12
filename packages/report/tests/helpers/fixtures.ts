@@ -2,10 +2,10 @@
  * Fixtures for the local-results tests: a reader table, report bodies of an
  * estate with no register, and inventories.
  */
-import { HARNESS_CONTRACT_V3 } from '@scanent/contract/harness-contract-rules';
-import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
-import type { HarnessSourceKind } from '@scanent/contract/harness-findings';
-import { ALL_HARNESS_CRITERIA, type HarnessCriterionId } from '@scanent/contract/harness-ladder';
+import { HARNESS_CONTRACT_V3 } from '@rodnapamet/scanent-contract/harness-contract-rules';
+import type { HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
+import type { HarnessSourceKind } from '@rodnapamet/scanent-contract/harness-findings';
+import { ALL_HARNESS_CRITERIA, type HarnessCriterionId } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { INVENTORY_SCHEMA_ID, parseInventory, type ParsedInventory } from '../../src/results/inventory';
 import type { CriterionReaders, ReaderKind, ScoreInput, ScoreMeta } from '../../src/results/types';

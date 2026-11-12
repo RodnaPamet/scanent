@@ -28,9 +28,9 @@ import {
     fakeAnthropicKey,
     writeCodeEstate,
 } from './helpers/agent-harness-code-fixtures';
-import { looksLikeSecret, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
-import { AGENT_SDK_OPTION_CRITERIA, firstSecretShapedMember } from '@scanent/contract/harness-findings';
-import { isHarnessCriterionId } from '@scanent/contract/harness-ladder';
+import { looksLikeSecret, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { AGENT_SDK_OPTION_CRITERIA, firstSecretShapedMember } from '@rodnapamet/scanent-contract/harness-findings';
+import { isHarnessCriterionId } from '@rodnapamet/scanent-contract/harness-ladder';
 import { parseScannerConfig } from '../src/config';
 import { jsonLineLog } from '../src/log';
 import { rawPublicKeyHex } from '../src/report';

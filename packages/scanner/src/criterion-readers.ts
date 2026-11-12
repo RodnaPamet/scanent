@@ -25,7 +25,7 @@
  * The OpenShell reader is not listed: no configuration selects it, so no run
  * can have it as a reader.
  */
-import type { HarnessSourceKind } from '@scanent/contract/harness-findings';
+import type { HarnessSourceKind } from '@rodnapamet/scanent-contract/harness-findings';
 import type { CriterionReaders, ReaderKind } from '@scanent/report/results/types';
 
 import type { ScannerConfig } from './config';

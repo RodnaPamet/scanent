@@ -18,7 +18,7 @@ const ESLINT = path.join(REPO_ROOT, 'node_modules', 'eslint', 'bin', 'eslint.js'
 const PROBE = `import { readFileSync } from 'fs';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { scoreHarness } from '@scanent/contract/harness-ladder';
+import { scoreHarness } from '@rodnapamet/scanent-contract/harness-ladder';
 import * as yaml from 'js-yaml';
 
 export const a = readFileSync('/etc/hostname', 'utf8');
@@ -101,7 +101,7 @@ describe('under packages/report/src', () => {
     });
 
     it.each([
-        ['the contract', "from '@scanent/contract/harness-ladder'"],
+        ['the contract', "from '@rodnapamet/scanent-contract/harness-ladder'"],
         ['zod', "from 'zod'"],
         ['a Date made from a value', 'new Date(0)'],
         ['parsing a date', 'Date.parse('],

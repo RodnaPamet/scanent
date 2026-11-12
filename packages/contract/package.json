@@ -1,15 +1,26 @@
 {
-  "name": "@scanent/contract",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@rodnapamet/scanent-contract",
+  "version": "0.12.0",
   "license": "BUSL-1.1",
   "description": "The scanner report contract: the strict report schemas, the harness ladder, the findings planner, and the signature and canonical-JSON rules a report is verified by.",
   "author": "Inflect Ltd.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RodnaPamet/scanent.git",
+    "directory": "packages/contract"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "engines": {
     "node": ">=22"
   },
   "files": [
-    "dist"
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
   ],
   "exports": {
     "./package.json": "./package.json",
@@ -26,6 +37,9 @@
     }
   },
   "sideEffects": false,
+  "scripts": {
+    "prepack": "tsc -b ."
+  },
   "dependencies": {
     "zod": "4.6.7"
   }

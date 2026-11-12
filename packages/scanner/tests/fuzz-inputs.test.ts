@@ -19,10 +19,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { canonicalJson } from '@scanent/contract/canonical-json';
-import { parseAddress, parseCidr } from '@scanent/contract/cidr';
-import { HARNESS_REFUSALS, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
-import { looksLikeSecret } from '@scanent/contract/harness-contract-rules';
+import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
+import { parseAddress, parseCidr } from '@rodnapamet/scanent-contract/cidr';
+import { HARNESS_REFUSALS, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import { csvCell } from '@scanent/report/render/csv';
 import { InventoryRefused } from '@scanent/report/results/inventory';
 

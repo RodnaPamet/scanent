@@ -1,4 +1,4 @@
-# The release of scanent's image and air-gapped bundle.
+# The release of scanent's image, air-gapped bundle and contract package.
 #
 #   gates        what ci.yml's `checks` job holds a commit to, run again on the
 #                commit being released: the dependency gates (npm audit, the
@@ -20,14 +20,24 @@
 #                three by digest, attach each SBOM as an attestation, and
 #                attest the build's provenance for the manifest and for each
 #                image. A version already in the registry is never pushed again
+#   contract-package
+#                the report contract as an npm package: packed, and the tarball
+#                held to its compiled files, its manifest, README, LICENSE and
+#                NOTICE and nothing else. It cannot publish and cannot ask for
+#                the signing identity
+#   publish-contract
+#                a pushed tag only, and only after the images were published:
+#                attest that tarball's provenance and publish it to GitHub
+#                Packages as @rodnapamet/scanent-contract. A version already in
+#                the registry is never published again
 #   release      a pushed tag only: a GitHub release holding the bundle and its
 #                SHA-256, the SBOMs, the signed SHA256SUMS, and the provenance
 #                attestations
 #
 # A pushed tag `v<MAJOR>.<MINOR>.<PATCH>` publishes. A manual run
-# (workflow_dispatch) builds, tests and bundles, and pushes and signs nothing,
-# whatever ref it is started on; so does a re-run that finds the version
-# published.
+# (workflow_dispatch) builds, tests, bundles and packs, and pushes, publishes
+# and signs nothing, whatever ref it is started on; so does a re-run that finds
+# the version published.
 #
 # SIGNING IS KEYLESS. There is no signing key in this repository or its
 # secrets. `cosign` asks GitHub for a token that says "this is release.yml of
@@ -39,6 +49,12 @@
 # The images are built with --provenance=false and stay plain manifests: the
 # provenance attestation is made for the digest that was tested, by the job
 # that pushes it, and not by a second build. No `latest` tag is ever pushed.
+#
+# THE IMAGE IS MEANT TO BE PUBLIC, and GitHub creates a package private. After
+# the first release a person sets the visibility of the image's package to
+# Public, once (docs/release-checklist.md); until then a pull needs a login.
+# `publish` says which it found. The contract package's visibility is a
+# separate choice: installing it needs a token either way (docs/contract.md).
 #
 # Every action is pinned to a full commit SHA, as in ci.yml. Registry login and
 # the manifest use the Docker CLI on the runner, not a third-party action.
@@ -53,10 +69,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# Read the repository, and nothing else. `publish` alone may write packages,
-# `publish` and `sign-bundle` alone may ask for the signing identity and write
-# attestations, and both run for a pushed tag only; `release` alone may write
-# a release.
+# Read the repository, and nothing else. `publish` and `publish-contract`
+# alone may write packages; they and `sign-bundle` alone may ask for the signing
+# identity and write attestations, and all three run for a pushed tag only;
+# `release` alone may write a release.
 permissions:
   contents: read
 
@@ -323,8 +339,9 @@ jobs:
         run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
 
       # A version is immutable: a re-run of a tag's workflow must not replace
-      # published bytes with a rebuild. Asked after the login, so a private
-      # package answers. Only a positive answer refuses; a first release finds nothing.
+      # published bytes with a rebuild. Asked after the login, so the package
+      # answers while it is still private, as GitHub creates it. Only a
+      # positive answer refuses; a first release finds nothing.
       - name: Refuse a version that is already published
         run: |
           set -euo pipefail
@@ -478,6 +495,19 @@ jobs:
       - name: Log out
         if: always()
         run: docker logout ghcr.io
+
+      # The image is meant to be pulled with no login. GitHub creates a package
+      # private, and only a person can make it public (docs/release-checklist.md,
+      # "After the tag"). Asked after the logout, so with no credential: a
+      # public image answers and a private one does not. Either answer is
+      # reported; neither stops the release.
+      - name: Say whether the image can be pulled with no login
+        run: |
+          if docker buildx imagetools inspect "${IMAGE_REPOSITORY}:${VERSION}" > /dev/null 2>&1; then
+            echo "public: ${IMAGE_REPOSITORY}:${VERSION} answers with no login"
+          else
+            echo "::warning title=The image is not public yet::${IMAGE_REPOSITORY}:${VERSION} does not answer without a login. Set the package's visibility to Public: docs/release-checklist.md, After the tag."
+          fi
 
   bundle:
     name: Air-gapped bundle
@@ -646,10 +676,134 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # The report contract as an npm package, for a repository that verifies
+  # reports with the reference implementation. Made and checked here by a job
+  # that holds no token that can publish and no signing identity: it runs the
+  # repository's compiler and scripts, on a manual run from any branch too.
+  contract-package:
+    name: Contract package
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # `npm pack` runs the package's `prepack`, which compiles it, and writes
+      # one tarball named for the package and its version. The package carries
+      # the scanner's version; a tarball of any other name fails here.
+      - name: Pack the contract
+        run: |
+          set -euo pipefail
+          mkdir contract-package
+          (cd packages/contract && npm pack --pack-destination "$GITHUB_WORKSPACE/contract-package")
+          test -s "contract-package/rodnapamet-scanent-contract-${VERSION}.tgz"
+          [ "$(find contract-package -type f | wc -l)" -eq 1 ]
+
+      # The tarball's own entries, read from the archive: the compiled file and
+      # the declaration of each source module, package.json, README.md, LICENSE
+      # and NOTICE. A source map, a test, a source file or a path of this
+      # runner stops the release.
+      - name: The package holds the compiled contract and its licence, and nothing else
+        run: node scripts/check-contract-package.js "contract-package/rodnapamet-scanent-contract-${VERSION}.tgz" --version "${VERSION}"
+
+      - name: Upload the package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: contract-package
+          path: contract-package/rodnapamet-scanent-contract-*.tgz
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-contract:
+    name: Publish the contract package
+    # A PUSHED tag, as `publish`.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # After the images: a version whose images were not published gets no package.
+    needs: [build, contract-package, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      # The provenance attestation of the tarball (keyless).
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      PACKAGE: "@rodnapamet/scanent-contract"
+      REGISTRY: https://npm.pkg.github.com
+    steps:
+      # The tarball `contract-package` checked. There is no checkout: this job
+      # runs nothing of the repository's.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: contract-package
+          path: contract-package
+
+      # Node and npm, and an npm configuration that sends the @rodnapamet scope
+      # to GitHub Packages and reads the token from NODE_AUTH_TOKEN.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: "@rodnapamet"
+
+      - name: The package is here, and is the only one
+        run: |
+          set -euo pipefail
+          test -s "contract-package/rodnapamet-scanent-contract-${VERSION}.tgz"
+          [ "$(find contract-package -type f | wc -l)" -eq 1 ]
+          sha256sum "contract-package/rodnapamet-scanent-contract-${VERSION}.tgz"
+
+      # A version is immutable, as the image's is. Only a positive answer
+      # refuses; a first release finds nothing.
+      - name: Refuse a version that is already published
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          found="$(npm view "${PACKAGE}@${VERSION}" version --registry "${REGISTRY}" 2> /dev/null || true)"
+          if [ "$found" = "$VERSION" ]; then
+            echo "${PACKAGE}@${VERSION} is already published; a version is never published twice" >&2
+            exit 1
+          fi
+
+      # Provenance for the tarball that is about to be published: which
+      # workflow, at which commit, produced these bytes. Made first, so no
+      # version is ever published without it. GitHub Packages' npm registry
+      # documents no support for npm's own `--provenance` statement, so the
+      # attestation is GitHub's, as for the image and the bundle.
+      - name: Attest the package's provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: contract-package/rodnapamet-scanent-contract-${{ needs.build.outputs.version }}.tgz
+
+      # The tarball itself, not the directory: what is published is what was
+      # checked and attested, and no script of the package runs.
+      - name: Publish to GitHub Packages
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: npm publish "contract-package/rodnapamet-scanent-contract-${VERSION}.tgz" --ignore-scripts --registry "${REGISTRY}"
+
   release:
     name: GitHub release with the bundle, its checksum, the SBOMs, the signature and the provenance
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [build, bundle, sign-bundle, publish]
+    # After both publishing jobs: a release names what was published.
+    needs: [build, bundle, sign-bundle, publish, publish-contract]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -717,7 +871,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$REF_NAME" --verify-tag --title "scanent ${VERSION}" \
-            --notes "Image: ${IMAGE_REPOSITORY}:${VERSION} (linux/amd64, linux/arm64), signed by this repository's release workflow, with an SBOM and build provenance attached. The air-gapped bundle, its SHA-256, the SBOM of each image, the signed list of the bundle's checksums, and the build provenance of the manifest, of each image and of the bundle are attached. docs/verify-a-release.md has the commands that check each of them." \
+            --notes "Image: ${IMAGE_REPOSITORY}:${VERSION} (linux/amd64, linux/arm64), signed by this repository's release workflow, with an SBOM and build provenance attached. The air-gapped bundle, its SHA-256, the SBOM of each image, the signed list of the bundle's checksums, and the build provenance of the manifest, of each image and of the bundle are attached. The report contract is published to GitHub Packages as @rodnapamet/scanent-contract@${VERSION}, with build provenance. docs/verify-a-release.md has the commands that check each of them." \
             "scanent-${VERSION}-airgap.tar" "scanent-${VERSION}-airgap.tar.sha256" \
             "scanent-${VERSION}-linux-amd64.cdx.json" "scanent-${VERSION}-linux-arm64.cdx.json" \
             "scanent-${VERSION}-airgap.SHA256SUMS" "scanent-${VERSION}-airgap.SHA256SUMS.sigstore.json" \

@@ -17,8 +17,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { harnessKeyFingerprint, LADDER_VERSION, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
-import { firstSecretShapedMember } from '@scanent/contract/harness-findings';
+import { harnessKeyFingerprint, LADDER_VERSION, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { firstSecretShapedMember } from '@rodnapamet/scanent-contract/harness-findings';
 import { INVENTORY_SCHEMA_ID, InventoryRefused } from '@scanent/report/results/inventory';
 import { LocalResultsSchema } from '@scanent/report/results/schema';
 

@@ -233,11 +233,26 @@ A scheduler can act on them: retry on 6, page on 5, fail a pipeline on 3 with
 
 ## Releases
 
+> **No release has been published yet.** There is no tag, no image in the
+> registry and no bundle to download. Today the image is built from a checkout
+> ([quick-start.md](quick-start.md#0-get-the-image)). This section says what
+> the release workflow is written to do at the first version tag.
+
 A tag `v<version>` builds the image on an amd64 and an arm64 runner, runs the
 smoke test and the vulnerability gate on each, and pushes
 `ghcr.io/rodnapamet/scanent:<version>` as one manifest over both. The same
 workflow builds the air-gapped bundle and checks it by unpacking, verifying
-and loading it. No image has been published yet.
+and loading it.
+
+**The image is public.** Pulling it needs no GitHub account and no login:
+
+```bash
+docker pull ghcr.io/rodnapamet/scanent:<version>
+```
+
+So a Compose host needs no `docker login`, and the chart's `imagePullSecrets`
+stays empty. That value is for a copy of the image in a registry of your own
+that asks for a credential.
 
 A release is signed, with no key of ours to trust: the workflow signs the
 manifest and each architecture's image by digest (keyless, through Sigstore),

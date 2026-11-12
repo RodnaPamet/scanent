@@ -5,6 +5,9 @@ made by pushing a tag `v<MAJOR>.<MINOR>.<PATCH>`; `.github/workflows/release.yml
 does the rest. Nothing here is automated away: each line is something a person
 checks.
 
+**No release has been made yet.** No tag has been pushed, so no image, bundle
+or package is published, and neither package named below exists on GitHub.
+
 ## Settings that must be on
 
 Once, and again whenever the repository's settings change. Each is under the
@@ -24,19 +27,36 @@ repository's **Settings**.
       can push a tag can make a signed release.
 - [ ] **Actions**: workflow permissions default to read-only; "Allow GitHub
       Actions to create and approve pull requests" is off.
-- [ ] **The package** `ghcr.io/rodnapamet/scanent` has the visibility you
-      intend, and inherits access from this repository.
+- [ ] **The organisation lets its packages be public**: the organisation's
+      Settings, **Packages**, "Package Creation", with **Public** enabled.
+- [ ] **The image's package** `ghcr.io/rodnapamet/scanent` is **public**, and
+      is linked to this repository. It does not exist before the first
+      release: GitHub creates a package when it is first pushed, and creates
+      it private. "After the tag" has the step that makes it public, once. At
+      every later release, check that it still is.
+- [ ] **The contract package** `@rodnapamet/scanent-contract` (GitHub
+      Packages, npm) is linked to this repository, and each repository that
+      installs it is listed in its settings under "Manage Actions access"
+      with the Read role. It too is created private, at the first publish.
+      Its visibility is yours to choose: an install needs a token whether it
+      is public or private, and a package made public cannot be made private
+      again.
 - [ ] Decide whether the OpenSSF Scorecard result is published. It is not:
       `scorecard.yml` has `publish_results: false`. Publishing also needs
       `id-token: write` on that job.
 
 ## Before the tag
 
-- [ ] The version is the same in three places:
+- [ ] The version is the same in four places:
       `SCANNER_VERSION` in `packages/scanner/src/scanner-surface.ts`,
-      `version` and `appVersion` in `deploy/helm/scanent/Chart.yaml`, and the
-      examples in `docs/quick-start.md`. The release workflow refuses a tag
-      that does not name `SCANNER_VERSION`.
+      `version` and `appVersion` in `deploy/helm/scanent/Chart.yaml`, the
+      examples in `docs/quick-start.md`, and the contract package:
+      `version` in `packages/contract/package.json`, with the same version
+      where `packages/report/package.json` and `packages/scanner/package.json`
+      depend on it, and `package-lock.json` refreshed
+      (`npm install --package-lock-only`). The release workflow refuses a tag
+      that does not name `SCANNER_VERSION`, and a contract package of any
+      other version.
 - [ ] The generated pages are current: `npm run build`, then
       `npm run docs:access`, `npm run docs:network` and `npm run docs:examples`
       change nothing (`git status` is clean).
@@ -61,8 +81,8 @@ repository's **Settings**.
 - [ ] `npm audit --omit=dev` and the two image scans are clean today, not only
       when CI last ran.
 - [ ] A manual run of the **Release** workflow (`workflow_dispatch`) on the
-      commit passes. It builds, tests and bundles, and pushes and signs
-      nothing.
+      commit passes. It builds, tests, bundles and packs the contract
+      package, and pushes, publishes and signs nothing.
 
 ## The tag
 
@@ -70,16 +90,33 @@ repository's **Settings**.
       then `git push origin v<version>`.
 - [ ] The **Release** workflow passes: `gates` (the tagged commit is on main
       and passes what main is held to), `build` on both architectures,
-      `bundle`, `sign-bundle`, `publish`, `release`.
+      `bundle`, `sign-bundle`, `publish`, `contract-package`,
+      `publish-contract`, `release`.
 
 A version is never released twice. If the workflow fails after the images were
-pushed, fix forward with a new patch version; do not delete and re-push.
+pushed or the contract package was published, fix forward with a new patch
+version; do not delete and re-push.
 
 ## After the tag
 
-Verify what was published, as a client would, with the commands of
+First, at the first release only:
+
+- [ ] **Make the image public.** GitHub creates a package private, and the
+      image is meant to be pulled with no login. On GitHub: the
+      organisation's **Packages** tab, the package `scanent`, **Package
+      settings**, then under "Danger Zone" **Change visibility**, and
+      **Public**. It cannot be made private again. The `publish` job's last
+      step says which it found: before this step it warns that the image did
+      not answer without a login.
+- [ ] Under the contract package's settings, "Manage Actions access", add
+      each repository that installs it, with the Read role
+      (`docs/EXTRACTION.md` says which and why).
+
+Then verify what was published, as a client would, with the commands of
 `docs/verify-a-release.md`:
 
+- [ ] **With no login** (`docker logout ghcr.io` first):
+      `docker pull ghcr.io/rodnapamet/scanent:<version>` succeeds.
 - [ ] `cosign verify` of `ghcr.io/rodnapamet/scanent:<version>` passes for the
       identity of that tag, and fails for another version's identity.
 - [ ] `cosign verify-attestation --type cyclonedx` passes for each
@@ -106,6 +143,16 @@ Verify what was published, as a client would, with the commands of
       correct `docs/verify-a-release.md` if what it says did not hold.
 - [ ] The image runs by its digest: `docker run --rm ghcr.io/rodnapamet/scanent@sha256:<digest> help`.
 - [ ] No tag `latest` exists on the package.
+- [ ] The contract package is published. With a token that can read it
+      (`docs/contract.md`):
+      `npm view @rodnapamet/scanent-contract@<version> version` prints the
+      version, and `npm pack @rodnapamet/scanent-contract@<version>` followed
+      by `gh attestation verify rodnapamet-scanent-contract-<version>.tgz --repo RodnaPamet/scanent`
+      passes. If the tarball the registry serves is not the one that was
+      attested, correct `docs/verify-a-release.md`.
+- [ ] An empty project with the two `.npmrc` lines of `docs/contract.md`
+      installs the package and loads
+      `@rodnapamet/scanent-contract/harness-contract`.
 
 ## What has never been run
 
@@ -123,6 +170,14 @@ when it has happened once, and say in which release.
 - The release workflow as a workflow, by tag or by hand, and with it the Syft
   SBOM step. Of the image scans, Trivy and Grype have run in CI; no SBOM has
   been made by Syft.
+- The contract package's two jobs, `contract-package` and
+  `publish-contract`: `npm pack` and the check of the tarball on a runner, the
+  provenance attestation of the tarball, and `npm publish` to GitHub
+  Packages. The pack and the check have been run on a workstation only.
+- An install of the contract package from GitHub Packages, with a person's
+  token or a workflow's.
+- A pull of the image with no login, and the `publish` job's step that tries
+  one.
 - The long-test workflow (`long-tests.yml`).
 - The arm64 image: built and bundled on a workstation, never started. It is
   built and tested only by the release workflow's arm64 runner.

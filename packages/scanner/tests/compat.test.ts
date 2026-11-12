@@ -10,8 +10,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
-import { HARNESS_CONTRACT_IDS } from '@scanent/contract/harness-contract-rules';
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { HARNESS_CONTRACT_IDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import { diffResults, TOOL_EVIDENCE_OLDER_RULE } from '@scanent/report/diff/diff';
 import { InventoryRefused, INVENTORY_SCHEMA_ID, RETIRED_INVENTORY_SCHEMAS } from '@scanent/report/results/inventory';
 import { RESULTS_SCHEMA, type LocalResults } from '@scanent/report/results/types';

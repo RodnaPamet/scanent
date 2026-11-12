@@ -5,7 +5,7 @@
 import { generateKeyPairSync } from 'crypto';
 import { resolve } from 'path';
 
-import { verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import * as api from '../src/index';
 import * as config from '../src/config';
 import * as post from '../src/post';

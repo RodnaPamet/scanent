@@ -42,7 +42,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { MAX_AGENTS, MAX_REPORT_BYTES, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { MAX_AGENTS, MAX_REPORT_BYTES, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { LocalResultsSchema } from '@scanent/report/results/schema';
 import type { LocalResults } from '@scanent/report/results/types';
 

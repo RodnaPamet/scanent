@@ -33,7 +33,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { diffResults } from '@scanent/report/diff/diff';
 import { renderDiffText } from '@scanent/report/render/diff-text';
 import { renderSummaryHtml } from '@scanent/report/render/html';

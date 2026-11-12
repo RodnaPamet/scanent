@@ -84,8 +84,10 @@ No tag has been pushed and no release exists. So:
 - Nobody can obtain a verified binary today. The only way to run scanent is
   to build it from source.
 
-The first tag waits on an owner decision about whether the image is public
-(issue 19).
+The image is to be public (owner decision, 2026-11-12, issue 19): once a
+release exists, pulling it will need no login. The contract package is to be
+published to GitHub Packages by the same workflow (issue 7). Neither has
+happened: no tag has been pushed.
 
 ### Repository settings that are not on
 

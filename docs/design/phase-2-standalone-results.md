@@ -25,7 +25,7 @@ in the signed `inflect-agent-harness/3` report.
 | D9 | `LADDER_VERSION` is a hash of the levels, the criteria table and the bar rule. It is exported from `harness-contract.ts` and carried in `results.json` and `summary.html`. It is not in the signed body. |
 | D10 | `packages/contract/src` stays the eight files the package-closure test pins. Scoring, the inventory rules, the diff and the renderers go in `@scanent/report`. This differs from the roadmap's "scoring in the contract"; section 6 says why. |
 | D11 | The existing usage line stays byte-for-byte. New commands and flags are described by a new `scanent help` and by the documents. |
-| D12 | No new third-party dependency. `@scanent/report` depends on `@scanent/contract` and `zod`, both already in the lockfile. CSV and HTML are written by hand. |
+| D12 | No new third-party dependency. `@scanent/report` depends on `@rodnapamet/scanent-contract` and `zod`, both already in the lockfile. CSV and HTML are written by hand. |
 
 ## 1. Local scoring (P2.1)
 
@@ -823,8 +823,8 @@ not done here:
 
 | Package | Holds | May import |
 |---|---|---|
-| `@scanent/contract` | The eight existing files. Two edits: `LADDER_VERSION` in `harness-contract.ts`; the parameter type of `firstSecretShapedMember` widened to `unknown` | `zod`, Node built-ins (as now) |
-| `@scanent/report` | `results/score.ts` (`scoreReportLocally`), `results/types.ts` and `results/schema.ts` (`LocalResults`, `LocalResultsSchema`), `results/inventory.ts` (`InventorySchema`, `parseInventory`, declared verdicts), `results/judgement.ts` (`CROSS_AGENT_VERDICT_SOURCE`), `diff/diff.ts`, `render/escape.ts`, `render/csv.ts`, `render/html.ts`, `render/diff-text.ts`, `render/results-json.ts`. Every export is a pure function: data in, data or string out. No clock, no file, no network, no hashing | `@scanent/contract/*`, `zod`. No Node built-in at all |
+| `@rodnapamet/scanent-contract` | The eight existing files. Two edits: `LADDER_VERSION` in `harness-contract.ts`; the parameter type of `firstSecretShapedMember` widened to `unknown` | `zod`, Node built-ins (as now) |
+| `@scanent/report` | `results/score.ts` (`scoreReportLocally`), `results/types.ts` and `results/schema.ts` (`LocalResults`, `LocalResultsSchema`), `results/inventory.ts` (`InventorySchema`, `parseInventory`, declared verdicts), `results/judgement.ts` (`CROSS_AGENT_VERDICT_SOURCE`), `diff/diff.ts`, `render/escape.ts`, `render/csv.ts`, `render/html.ts`, `render/diff-text.ts`, `render/results-json.ts`. Every export is a pure function: data in, data or string out. No clock, no file, no network, no hashing | `@rodnapamet/scanent-contract/*`, `zod`. No Node built-in at all |
 | `@scanent/scanner` | `inventory-file.ts` (read, cap, hash, decode JSON or CSV), `criterion-readers.ts`, `outputs.ts` (resolve and deliver), `file-output.ts` (atomic writer, retention), `diff-command.ts` (read, verify, call the pure diff, print), and the changes to `cli.ts`, `config.ts`, `scan.ts`, `index.ts` | as now, plus `@scanent/report/*` |
 
 Why scoring is in `@scanent/report` and not in the contract, as the roadmap's
@@ -841,7 +841,7 @@ pull request; nothing else in this design depends on the choice.
 Wiring that follows from `@scanent/report` having code:
 
 - `packages/report/package.json`: `exports` and `typesVersions` like the
-  contract's, `dependencies: { "@scanent/contract": "0.0.0", "zod": "4.6.7" }`,
+  contract's, `dependencies: { "@rodnapamet/scanent-contract": "0.12.0", "zod": "4.6.7" }`,
   `sideEffects: false`; a `tsconfig.json` with a reference to the contract.
 - `packages/scanner/package.json`: add `"@scanent/report": "0.0.0"`;
   `packages/scanner/tsconfig.json`: add the reference.
@@ -874,7 +874,7 @@ ESLint (`eslint.config.mjs`):
   report package.
 
 `package-closure.test.ts` gains cases (added, none changed): the report
-package's closure escapes nowhere, imports only `@scanent/contract` and `zod`,
+package's closure escapes nowhere, imports only `@rodnapamet/scanent-contract` and `zod`,
 imports no built-in, declares exactly what it imports with exact versions.
 
 ## 7. Test plan
@@ -1340,3 +1340,15 @@ What did not change, because Inflect has no rule to match:
   agent with no vendor on record. The inventory has no vendor field: a
   supplier's name is not needed for `H1.axes_declared`, which in the register
   too reads only the four axes.
+
+### The contract package was renamed and made publishable
+
+Owner decision, 2026-11-12 (issue 7): the contract is published to GitHub
+Packages. Its npm registry takes the scope of a package to be the account
+that owns it, so the package is `@rodnapamet/scanent-contract`, and this note
+now uses that name throughout where it said `@scanent/contract`. It carries
+the scanner's version instead of `0.0.0`, and the two packages that depend on
+it name that version. `@scanent/report` and `@scanent/scanner` are unchanged
+and stay private. Nothing about scoring, the results or the boundaries of
+section 6 changed. `docs/contract.md` ("Use the reference implementation")
+describes the package.

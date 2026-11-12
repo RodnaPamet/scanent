@@ -9,8 +9,8 @@
  *   6. The axes and the risk tiers are the ones Inflect's agent register holds.
  *   7. A file of the schema before this one is refused, and told what changed.
  */
-import { MAX_AGENTS, MAX_ID_CHARS } from '@scanent/contract/harness-contract';
-import { ALL_HARNESS_CRITERIA } from '@scanent/contract/harness-ladder';
+import { MAX_AGENTS, MAX_ID_CHARS } from '@rodnapamet/scanent-contract/harness-contract';
+import { ALL_HARNESS_CRITERIA } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import {
     dayNumberOf,

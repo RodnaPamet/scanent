@@ -10,7 +10,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { HARNESS_CONTRACT_IDS } from '@scanent/contract/harness-contract-rules';
+import { HARNESS_CONTRACT_IDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import { RESULTS_SCHEMA } from '@scanent/report/results/types';
 
 import { HELP, main } from '../src/cli';

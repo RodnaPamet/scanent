@@ -34,6 +34,10 @@ The first line gives the image a name. The other steps use that name.
 If your network inspects encrypted traffic, the build needs your network's
 certificate: [../quick-start.md](../quick-start.md#0-get-the-image) says how.
 
+Once a release exists, you will download the finished scanner instead of
+building it. The download is public: it needs no account with us or with
+GitHub, and no password.
+
 ## 2. Make a short name for "run the scanner safely"
 
 Every step runs the scanner the same way. Type this once in the terminal you

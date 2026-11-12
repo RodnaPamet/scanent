@@ -14,8 +14,8 @@
  * "Inside a tag" is decided by a small tokenizer below, not by a guess at the
  * surrounding text.
  */
-import { LADDER_VERSION } from '@scanent/contract/harness-contract';
-import { ALL_HARNESS_CRITERIA } from '@scanent/contract/harness-ladder';
+import { LADDER_VERSION } from '@rodnapamet/scanent-contract/harness-contract';
+import { ALL_HARNESS_CRITERIA } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { escapeHtml, html, htmlText, joinHtml, type SafeHtml } from '../src/render/escape';
 import { RUN_FILE_NAMES } from '../src/render/files';

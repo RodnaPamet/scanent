@@ -2,7 +2,7 @@
  * Results fixtures for the renderer and diff tests: scored from the bodies of
  * `fixtures.ts`, so every fixture is something the scorer really produces.
  */
-import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
+import type { HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { scoreReportLocally } from '../../src/results/score';
 import type { LocalResults } from '../../src/results/types';

@@ -11,6 +11,8 @@ image:
   # sha256:<64 hex>. When set it is used instead of the tag.
   digest: ""
   pullPolicy: IfNotPresent
+# Empty for the published image: it is public, and a pull needs no credential.
+# Set it for a copy in a registry of your own that asks for one.
 imagePullSecrets: []
 
 # When a scan runs (cron syntax), and in which time zone (empty: the cluster's).

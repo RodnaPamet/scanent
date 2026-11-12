@@ -66,11 +66,11 @@ RUN --mount=type=secret,id=ca,required=false \
     && rm -rf node_modules/.bin packages/contract/node_modules/.bin packages/report/node_modules/.bin packages/scanner/node_modules/.bin node_modules/.package-lock.json \
     && find packages/contract/dist packages/report/dist packages/scanner/dist -type f ! -name '*.js' -delete \
     && test -f packages/scanner/dist/cli.js \
-    && test -f node_modules/@scanent/contract/dist/harness-contract.js \
+    && test -f node_modules/@rodnapamet/scanent-contract/dist/harness-contract.js \
     && test -f node_modules/@scanent/report/dist/results/score.js \
-    && (cd packages/scanner && node -e "for (const m of ['@scanent/contract/harness-contract', 'js-yaml', 'typescript', 'zod']) require(m)") \
+    && (cd packages/scanner && node -e "for (const m of ['@rodnapamet/scanent-contract/harness-contract', 'js-yaml', 'typescript', 'zod']) require(m)") \
     && (cd packages/scanner && node -e "require('@scanent/report/results/score')") \
-    && (cd packages/report && node -e "for (const m of ['@scanent/contract/harness-ladder', 'zod']) require(m)") \
+    && (cd packages/report && node -e "for (const m of ['@rodnapamet/scanent-contract/harness-ladder', 'zod']) require(m)") \
     && (cd packages/contract && node -e "require('zod')")
 
 # ─── Stage 2: the runtime ───

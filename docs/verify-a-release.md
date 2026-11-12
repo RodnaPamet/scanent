@@ -1,16 +1,21 @@
 # Verify a release
 
-How to check that an image, a bundle or an SBOM of scanent is the one this
-repository's release workflow produced, and what each check does and does not
-prove.
+How to check that an image, a bundle, an SBOM or the contract package of
+scanent is the one this repository's release workflow produced, and what each
+check does and does not prove.
 
 > **Status: no release has been published yet.** There is no tag, no signed
-> image and no signed bundle. None of the `cosign` or `gh` commands on this
-> page has been run against a real signature, and where the page says what a
-> command prints, that is what the tool's documentation says it prints. They
-> run for the first time at the first tag; the release checklist
-> (`docs/release-checklist.md`) has the steps and records what has never been
-> run.
+> image, no signed bundle and no published package. None of the `cosign`,
+> `gh`, `docker pull` or `npm` commands on this page has been run against a
+> real release, and where the page says what a command prints, that is what
+> the tool's documentation says it prints. They run for the first time at the
+> first tag; the release checklist (`docs/release-checklist.md`) has the
+> steps and records what has never been run.
+
+**The image is public.** Pulling it, and every check of it below, needs no
+GitHub account and no login to the registry. The contract package is
+different: GitHub Packages asks for a token on every npm install, public or
+not ([contract.md](contract.md#install-it)).
 
 Nothing here needs a key from us. Signing is keyless: the release workflow
 asks GitHub for a short-lived token that says which workflow of which
@@ -27,6 +32,7 @@ You need [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/
 - [The SBOM](#the-sbom)
 - [The build's provenance](#the-builds-provenance)
 - [The air-gapped bundle](#the-air-gapped-bundle)
+- [The contract package](#the-contract-package)
 - [What these checks do not prove](#what-these-checks-do-not-prove)
 
 ## The identity
@@ -70,6 +76,10 @@ docker pull "ghcr.io/rodnapamet/scanent:$VERSION"
 docker image inspect --format '{{index .RepoDigests 0}}' "ghcr.io/rodnapamet/scanent:$VERSION"
 # ghcr.io/rodnapamet/scanent@sha256:…   use this in Compose, or as the chart's image.digest
 ```
+
+The pull needs no `docker login`. If it is refused as unauthorized, the
+package's visibility has not been set to public yet: that is a step of the
+release checklist, taken by hand after the first release.
 
 The release signs three digests: the manifest that names both architectures
 (what the tag points to), and each architecture's own image. Verifying the tag
@@ -210,6 +220,28 @@ release checklist (`docs/release-checklist.md`) for the first tag.
 for that tag, and so that every file in the bundle is the one that release
 contained. The images in the bundle are the ones the release pushed: the same
 archives, saved before the push.
+
+## The contract package
+
+A release also publishes the report contract as an npm package,
+`@rodnapamet/scanent-contract@<version>`, to GitHub Packages, and attests the
+build provenance of the tarball it publishes. Download that tarball and check
+it. The download needs the `.npmrc` lines and the token of
+[contract.md](contract.md#install-it):
+
+```bash
+npm pack "@rodnapamet/scanent-contract@$VERSION"
+gh attestation verify "rodnapamet-scanent-contract-$VERSION.tgz" --repo RodnaPamet/scanent
+```
+
+**It proves** which repository, workflow, commit and run produced those
+bytes. The tarball carries no signature of its own and no SBOM: its one
+dependency is `zod`, named at an exact version in its `package.json`.
+
+Before it is published, the release workflow checks the tarball's own list of
+files: the compiled JavaScript and the type declarations of the contract's
+modules, `package.json`, `README.md`, `LICENSE` and `NOTICE`, and nothing
+else (`scripts/check-contract-package.js`).
 
 ## What these checks do not prove
 

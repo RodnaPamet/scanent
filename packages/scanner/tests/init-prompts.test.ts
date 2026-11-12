@@ -7,7 +7,7 @@ import { PassThrough } from 'stream';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { looksLikeSecret } from '@scanent/contract/harness-contract';
+import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract';
 import { main, terminalPrompt } from '../src/cli';
 import { InitError, parseInitAnswers, type InitAnswers } from '../src/init/answers';
 import { planInit } from '../src/init/plan';

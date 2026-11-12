@@ -32,7 +32,7 @@
  *
  * PURE: no clock, no I/O, no hashing. Same input, same value.
  */
-import { LADDER_VERSION, type HarnessReportAgent, type HarnessReportBody } from '@scanent/contract/harness-contract';
+import { LADDER_VERSION, type HarnessReportAgent, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 import {
     harnessBarFor,
     isHarnessShortfall,
@@ -46,8 +46,8 @@ import {
     type IntakeClaim,
     type PlannedAgent,
     type PlannedFinding,
-} from '@scanent/contract/harness-findings';
-import { isScanComplete } from '@scanent/contract/harness-contract-rules';
+} from '@rodnapamet/scanent-contract/harness-findings';
+import { isScanComplete } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import {
     ALL_HARNESS_CRITERIA,
     collapseVerdicts,
@@ -58,7 +58,7 @@ import {
     type CriterionVerdict,
     type HarnessCriterionId,
     type HarnessLevel,
-} from '@scanent/contract/harness-ladder';
+} from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { declaredVerdicts, inventoryRegistrationRef, type InventoryRow } from './inventory';
 import { judgementBasisOf } from './judgement';

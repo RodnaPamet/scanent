@@ -82,17 +82,22 @@ to add sources that evidence H4 and H5 is an open product decision (issue 15).
 ## Packaging and distribution
 
 - **No release.** No tag, no published image, no signed artefact. The release
-  workflow is written and has never run. Whether the image is to be public is
-  an open owner decision (issue 19).
-- **The contract package is not published.** `@scanent/contract`,
-  `@scanent/report` and `@scanent/scanner` are private workspace packages.
-  A consumer that wants to verify reports with the reference implementation
-  has to take it from this repository. Publishing needs a decision on the
-  registry, and `LICENSE` and `NOTICE` copied into each package first
-  (issue 7).
+  workflow is written and has never run. The image is to be public (owner
+  decision, 2026-11-12, issue 19): a pull will need no login. GitHub creates
+  a package private, so making it public is a step somebody takes by hand
+  after the first release (`docs/release-checklist.md`).
+- **The contract package is not published.** It is to be published to GitHub
+  Packages as `@rodnapamet/scanent-contract` (owner decision, 2026-11-12,
+  issue 7), by the release workflow, at the first version tag. Until then a
+  consumer that wants to verify reports with the reference implementation
+  has to take it from this repository. Installing it from GitHub Packages
+  needs a token, even when the package is public (`docs/contract.md`).
+  `@scanent/report` and `@scanent/scanner` are private workspace packages and
+  are not published.
 - **The originating application carries its own copy of the contract.** The
-  two were identical at extraction and nothing keeps them so (issue 7,
-  `docs/EXTRACTION.md`).
+  two were identical at extraction and nothing keeps them so until that
+  application depends on the package (issue 7; `docs/EXTRACTION.md` lists
+  what remains for it to do).
 - **The Helm chart writes to a volume only.** There is no object-store output
   (issue 19).
 

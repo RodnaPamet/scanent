@@ -15,7 +15,7 @@
  */
 const { readFileSync } = require('node:fs');
 
-const { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } = require('@scanent/contract/harness-contract');
+const { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } = require('@rodnapamet/scanent-contract/harness-contract');
 const { SCANNER_VERSION, scannerManifestHash } = require('./packages/scanner/dist/scanner-surface.js');
 
 /** The agents `smoke.sh`'s estate defines, by the id the `code` source gives each, and a tool each binds. */

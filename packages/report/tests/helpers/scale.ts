@@ -7,7 +7,7 @@
  * results. Each agent that holds an unpinned write tool raises three findings
  * (shadow agent, unpinned write tool, shortfall), as the planner has it.
  */
-import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
+import type { HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { scoreReportLocally } from '../../src/results/score';
 import type { LocalResults } from '../../src/results/types';

@@ -160,12 +160,13 @@ run: no release exists.**
 
 | Item | Where |
 |---|---|
-| The image for amd64 and arm64 under one manifest, `ghcr.io/rodnapamet/scanent:<version>`. No `latest` tag; a published version is never pushed again | The container registry |
+| The image for amd64 and arm64 under one manifest, `ghcr.io/rodnapamet/scanent:<version>`. Public: a pull needs no login. No `latest` tag; a published version is never pushed again | The container registry |
 | A keyless signature on the manifest and on each architecture's image, by digest | With the image |
 | A CycloneDX SBOM per architecture, as a signed attestation | With the image, and attached to the release |
 | Build provenance for the manifest, each image and the bundle | Attestations, and attached to the release as files |
 | The air-gapped bundle: one image archive per architecture, `load.sh`, `verify.sh`, the Compose files, the Helm chart, example configurations, the operating documents, the SBOMs, `LICENSE` and `NOTICE`, with a SHA-256 for every file | Attached to the release as `scanent-<version>-airgap.tar` |
 | The bundle's SHA-256, its list of checksums, and the signature over that list | Attached to the release |
+| The report contract as an npm package, `@rodnapamet/scanent-contract@<version>`: compiled code, type declarations, `LICENSE` and `NOTICE`, with build provenance for the tarball. A published version is never published again | GitHub Packages. An install needs a token ([the contract page](../contract.md#install-it)) |
 
 Before anything is built, the workflow holds the tagged commit to what a
 commit on `main` is held to, and refuses a tag whose commit is not on `main`.
@@ -174,5 +175,8 @@ How a client checks each item is in [Verify a release](../verify-a-release.md).
 What the maintainers do before and after a tag is in
 `docs/release-checklist.md`.
 
-Whether the image is to be public is an open owner decision (issue 19); the
-first tag waits on it.
+The image is to be public (owner decision, 2026-11-12, issue 19). GitHub
+creates a container package private, so after the first release somebody sets
+the package's visibility to Public by hand, once; the release checklist has
+the step, and the release workflow reports whether the image answered without
+a login.

@@ -32,8 +32,8 @@ import { createHmac, randomBytes } from 'crypto';
 import { readFileSync, statSync } from 'fs';
 import { join } from 'path';
 
-import { HARNESS_CONTRACT_IDS } from '@scanent/contract/harness-contract-rules';
-import { LADDER_VERSION } from '@scanent/contract/harness-contract';
+import { HARNESS_CONTRACT_IDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
+import { LADDER_VERSION } from '@rodnapamet/scanent-contract/harness-contract';
 import { stableJson } from '@scanent/report/render/results-json';
 import { INVENTORY_SCHEMA_ID } from '@scanent/report/results/inventory';
 import { RESULTS_SCHEMA } from '@scanent/report/results/types';

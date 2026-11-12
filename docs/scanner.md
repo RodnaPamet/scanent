@@ -4,7 +4,7 @@
 **read-only**, builds an `inflect-agent-harness/3` report, signs it with an
 Ed25519 key, and either prints it (`scan --dry-run`) or posts it unchanged to
 an Inflect tenant's ingest. The report's schema, the ladder its verdicts are
-scored on and the signature rule are `@scanent/contract`
+scored on and the signature rule are `@rodnapamet/scanent-contract`
 (`packages/contract/src/harness-contract.ts` is the specification of record).
 The ingest accepts `/2` and `/3`; `/3` adds the `gcp-sa` source kind. `/1` is
 retired.
@@ -471,7 +471,7 @@ and what is never requested. The report itself is specified in
 
 Itself; Node's built-ins; `zod`; `typescript`, whose syntax-only parser the
 `code` source reads JavaScript and TypeScript with; `js-yaml`, which the `cicd`
-source reads workflow files with; and `@scanent/contract`: the wire contract
+source reads workflow files with; and `@rodnapamet/scanent-contract`: the wire contract
 (`harness-contract`, `harness-findings`, `harness-ladder`, `canonical-json`)
 and the pure CIDR parser (`cidr`), so a private-range allowlist parses exactly
 as the ingest's side does. Nothing else, and
@@ -1475,7 +1475,9 @@ time. A name that does not resolve is a 502.
 docker build -f deploy/Dockerfile -t scanent .
 ```
 
-The image is built and checked in CI and is not published anywhere. Its build
+The image is built and checked in CI. No release exists, so it is not
+published anywhere yet; a release publishes it, public, as
+`ghcr.io/rodnapamet/scanent:<version>` ([deployment.md](deployment.md#releases)). Its build
 stage compiles the packages with `tsc`; its runtime stage holds the
 compiled JavaScript, the package manifests and the production dependencies
 (`zod`, `js-yaml` with `argparse`, and `typescript`, whose parser the `code`
