@@ -9,7 +9,7 @@ reference), the tools it can call, the model endpoints it uses, and verdicts
 against a six-rung harness ladder (H0 to H5). The result is one signed JSON
 report.
 
-**Status: Phase 3, client deployment (in progress).** This repository is the
+**Status: Phase 4, hardening (in progress).** This repository is the
 scanner carved out of the Inflect Compliance repository (see
 [docs/EXTRACTION.md](docs/EXTRACTION.md) for what was moved and what was not).
 It works with no Inflect tenant at all: `scanent init` writes a configuration
@@ -18,6 +18,18 @@ and a signing key, `scanent doctor` checks that the estate can be read, and
 JSON and the signed report. See [Quick start](#quick-start-from-source) and
 [See your results locally](#see-your-results-locally). A container image is
 built and tested in CI; no image or package is published yet.
+
+**For a security team:** [docs/network-and-permissions.md](docs/network-and-permissions.md)
+lists every request the scanner can make and every grant it asks for,
+[docs/threat-model.md](docs/threat-model.md) what it defends against and what
+it does not, [docs/data-protection.md](docs/data-protection.md) the personal
+data it touches (with a DPIA template), and
+[docs/verify-a-release.md](docs/verify-a-release.md) how to check a release's
+signature, SBOM and provenance. Report a vulnerability as
+[SECURITY.md](SECURITY.md) says.
+
+**For whoever operates it:** [docs/operations.md](docs/operations.md) has the
+log's events and fields, the exit codes, and `scanent support-bundle`.
 
 **Running it at your own site:** [docs/quick-start.md](docs/quick-start.md),
 "Run it at your site in 15 minutes", needs a container runtime and nothing

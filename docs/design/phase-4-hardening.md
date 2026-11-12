@@ -763,3 +763,64 @@ Three points where one waits on the other:
    `support-bundle.test.ts`, not by editing Builder 1's file.
 3. The threat model cites tests Builder 1 writes. It names them as this note
    does; the cited-paths test is run after both have landed.
+
+## What was run: D, E, F and G
+
+Recorded after the second builder's half, on 2026-11-12, in the build sandbox
+(Docker 29.8, Node 22, amd64).
+
+**Run for real.**
+
+| What | Result |
+|---|---|
+| The image on the distroless base | Built. 257 MB on disk (61.6 MB compressed), from 285 MB (68.6 MB) on Alpine |
+| `deploy/smoke.sh`, all eleven steps, on that image | Passed, including step 11: an MCP server through `compose.yaml` with `compose.egress.yaml`, allowed and then refused, and no direct route from the scanner's network |
+| The same smoke test on the earlier Alpine image | Fails at step 1, naming `/bin/sh`, `/bin/busybox` and `/sbin/apk`: the check detects what it is for |
+| A scan as an arbitrary user (`--user 12345:23456`) into a `0700` directory | The run is `0750`, its files `0640`, all owned by that user |
+| Trivy, critical and high, fixed only, on the distroless image | No finding |
+| `scripts/check-licences.js` | 7 production packages, all allowed |
+| `scripts/check-reproducible-build.js` | 216 files, the same from two builds in two directories, two time zones and two clocks |
+| The air-gapped bundle from a real amd64 image and a real arm64 image (cross-built without emulation, never run), with a CycloneDX SBOM of each | Built; `verify.sh` passes; one changed byte, one added file and one emptied SBOM each fail; `load.sh` with no local image loads the amd64 archive, and the smoke test passes on what it loaded |
+| The chart, rendered by Helm 3.19 (the `alpine/helm` image): the test suite with `REQUIRE_HELM=1`, `helm lint --strict` with each value set, and the exact values `deploy/kind-test.sh` installs with | Passed |
+| Compatibility fixtures | Made by a build of `190f3fb` |
+
+**Not run.** Each is written, reviewed against the action's or the tool's own
+documented inputs, and held for shape by tests.
+
+- Keyless signing, the SBOM attestation, the provenance attestation and
+  `cosign verify`: they need GitHub's identity token. `verify.sh` was run
+  against a stand-in `cosign`, never a real one, so `cosign verify-blob
+  --offline` with a Sigstore bundle is unproved, on a connected machine and on
+  one with no network.
+- The SBOMs in the run above were made by Trivy, which was at hand. The release
+  makes them with Syft, through `anchore/sbom-action`. That step, and the Grype
+  gate, were not run.
+- `deploy/kind-test.sh` and the `chart-install` job: kind could not be
+  installed in the sandbox. Whether kind's own network plugin enforces the
+  default NetworkPolicy is the script's step 5, and is unproved until the job
+  runs. The script fails, and says why, if it does not.
+- The `image-podman` job: Podman is not installed. Step 7 was run with Docker's
+  `--user` only, and as root, which is the sandbox's user.
+- CodeQL, Scorecard, the `npm audit` gate and `long-tests.yml` as workflows.
+  `npm run test:long` itself was run by the first builder.
+- The arm64 image was built and bundled, never started.
+
+**Decisions.**
+
+- Distroless is adopted (#11). The three things that broke are closed: the
+  smoke test reads everything through the image's own `node`, `PATH` puts
+  `node` where the Compose overlay and the chart expect it, and the user is
+  `1000:1000` by number.
+- Pruning `typescript` to its parser was not attempted. It is at most 20 MB,
+  and it would make the image's dependency differ from the published package
+  the SBOM names.
+- `verify.sh` on a signed bundle with no `cosign` fails unless `--no-signature`
+  is given. On an unsigned bundle it passes and says so, and
+  `--require-signature` makes that a failure.
+- A support bundle leaves out the text of every doctor check unless
+  identifiers are included, because free text cannot be shown to be free of
+  names. A run records neither its exit code nor its duration, so the bundle
+  names both as not recorded.
+- A results file or an inventory of another schema is refused with the schema
+  it names and the one this version reads. Only an id of the same family is
+  repeated; any other text in that member is not.
