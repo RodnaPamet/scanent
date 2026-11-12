@@ -13,9 +13,9 @@
  *   7. Coverage says what this run could not have evidenced.
  *   8. The result is deterministic, carries nothing secret-shaped, and passes its own schema.
  */
-import { canonicalJson } from '@scanent/contract/canonical-json';
-import { LADDER_VERSION, type HarnessReportBody } from '@scanent/contract/harness-contract';
-import { firstSecretShapedMember, planHarnessScan, toolEvidenceSourcesOf, type PriorHarnessState } from '@scanent/contract/harness-findings';
+import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
+import { LADDER_VERSION, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
+import { firstSecretShapedMember, planHarnessScan, toolEvidenceSourcesOf, type PriorHarnessState } from '@rodnapamet/scanent-contract/harness-findings';
 import {
     ALL_HARNESS_CRITERIA,
     collapseVerdicts,
@@ -24,7 +24,7 @@ import {
     HARNESS_LEVELS,
     rungOf,
     scoreHarness,
-} from '@scanent/contract/harness-ladder';
+} from '@rodnapamet/scanent-contract/harness-ladder';
 
 import {
     GCP_SA_ID,

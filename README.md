@@ -96,7 +96,7 @@ against fakes of the product's API.
 
 | Package | What it is |
 |---|---|
-| `packages/contract` (`@scanent/contract`) | The report contract: strict schemas, the harness ladder, the findings planner, canonical JSON and signature verification |
+| `packages/contract` (`@rodnapamet/scanent-contract`) | The report contract: strict schemas, the harness ladder, the findings planner, canonical JSON and signature verification. The one package a release publishes, to GitHub Packages; [docs/contract.md](docs/contract.md#use-the-reference-implementation) says how a consumer installs it. Not published yet |
 | `packages/scanner` (`@scanent/scanner`) | The scanner and its command line |
 | `packages/report` (`@scanent/report`) | Local results: scores a signed scan against the ladder with no tenant, from the report and an optional operator inventory; renders `results.json`, the two CSV files and `summary.html`; compares two runs. Pure functions |
 

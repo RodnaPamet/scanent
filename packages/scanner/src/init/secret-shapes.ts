@@ -20,7 +20,7 @@
  * credential into `config.json` and, for the estate and the agent id, into
  * every report.
  */
-import { looksLikeSecret } from '@scanent/contract/harness-contract';
+import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract';
 
 const TOKEN_CHAR = 'A-Za-z0-9_-';
 

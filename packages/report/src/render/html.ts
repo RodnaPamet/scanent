@@ -21,8 +21,8 @@
  * NO CLOCK AND NO PATH. The page holds no generation time and no absolute
  * path, so the same results give the same bytes.
  */
-import { harnessBarFor } from '@scanent/contract/harness-findings';
-import { HARNESS_LEVEL_NAMES, HARNESS_LEVELS, levelAtLeast, type HarnessCriterionId, type HarnessLevel } from '@scanent/contract/harness-ladder';
+import { harnessBarFor } from '@rodnapamet/scanent-contract/harness-findings';
+import { HARNESS_LEVEL_NAMES, HARNESS_LEVELS, levelAtLeast, type HarnessCriterionId, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import type { LocalAgentResult, LocalCriterionCell, LocalFinding, LocalResults } from '../results/types';
 import { html, htmlText, type HtmlValue, type SafeHtml } from './escape';

@@ -158,5 +158,10 @@ describe('docs/release-checklist.md', () => {
         }
         const release = fs.readFileSync(path.join(REPO, '.github/workflows/release.yml'), 'utf8');
         for (const job of ['build', 'bundle', 'publish', 'release']) expect(release).toMatch(new RegExp(`^  ${job}:$`, 'm'));
+        // The two jobs of the contract package: named in the checklist as the workflow names them.
+        for (const job of ['contract-package', 'publish-contract']) {
+            expect(text).toContain(`\`${job}\``);
+            expect(release).toMatch(new RegExp(`^  ${job}:$`, 'm'));
+        }
     });
 });

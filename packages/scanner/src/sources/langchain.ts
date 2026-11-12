@@ -66,7 +66,7 @@ import type { CodeFs, CodeRoot, FileProblem } from './code/files';
 import { MAX_FILE_BYTES, readCodeFiles } from './code/files';
 import { JavaScriptReadError, readJavaScript } from './code/javascript';
 import { PythonReadError, readPython } from './code/python';
-import { agentSdkOptionVerdicts } from '@scanent/contract/harness-findings';
+import { agentSdkOptionVerdicts } from '@rodnapamet/scanent-contract/harness-findings';
 
 import { codeLocator, recognizeAgents, type DetectedAgent } from './code/recognize';
 

@@ -1,0 +1,53 @@
+scanent (Agent Estate Scanner)
+Copyright (c) Inflect Ltd.
+
+This product includes third-party material as noted below.
+
+------------------------------------------------------------------------
+Agent-action receipts — pipelock (Apache License 2.0 CORE)
+------------------------------------------------------------------------
+`packages/contract/src/receipt-verification.ts` verifies mediator-signed
+AI-agent "action receipts" in the format produced by pipelock
+(https://github.com/luckyPipewrench/pipelock), an "AI agent firewall for MCP
+security".
+
+It uses ONLY the pipelock Apache-2.0-licensed CORE receipt format (the
+`action_record` container with a top-level Ed25519 `signature` / `signer_key`
+and hash-chain fields). It does NOT use, link, bundle, or depend on any pipelock
+feature governed by the Elastic License 2.0 (the "fleet" features, including the
+`fleet-receipt` DSSE envelope format).
+
+No pipelock source code is vendored or redistributed here. This product does not
+depend on any pipelock npm package (there is no TypeScript verifier SDK); the
+Ed25519 signature is verified natively using Node's built-in `crypto` module
+against the CORE receipt canonicalization. Portions of pipelock governed by the
+Elastic License 2.0 are NOT used by this product.
+
+------------------------------------------------------------------------
+Run-time dependencies
+------------------------------------------------------------------------
+scanent's source does not vendor these packages. The container image built
+from `deploy/Dockerfile` installs them from the npm registry, unmodified, at
+the versions `package-lock.json` pins, and redistributes them. Each travels in
+the image with its own licence file, under `/app/node_modules/<name>/` or
+`/app/packages/scanner/node_modules/<name>/`.
+
+  zod          MIT License          Copyright (c) 2025 Colin McDonnell
+  js-yaml      MIT License          Copyright (C) 2011-2015 by Vitaly Puzrin
+  argparse     Python Software      A port of Python's argparse module;
+               Foundation License   see the package's LICENSE for the PSF
+               2.0 (PSF-2.0)        copyright notice and the summary of changes
+  typescript   Apache License 2.0   Copyright (c) Microsoft Corporation;
+                                    third-party notices are in the package's
+                                    ThirdPartyNoticeText.txt
+
+------------------------------------------------------------------------
+Apache License, Version 2.0
+------------------------------------------------------------------------
+You may obtain a copy of the Apache License, Version 2.0 at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.

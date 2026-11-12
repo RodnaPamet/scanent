@@ -6,14 +6,23 @@
  *   3. A secret-shaped value is refused before the schema runs.
  *   4. A matched row declares the four H1 criteria, and nothing else.
  *   5. A declared risk tier is fresh for 365 days up to the scan, and not after it.
+ *   6. The axes and the risk tiers are the ones Inflect's agent register holds.
+ *   7. A file of the schema before this one is refused, and told what changed.
  */
-import { MAX_AGENTS, MAX_ID_CHARS } from '@scanent/contract/harness-contract';
-import { ALL_HARNESS_CRITERIA } from '@scanent/contract/harness-ladder';
+import { MAX_AGENTS, MAX_ID_CHARS } from '@rodnapamet/scanent-contract/harness-contract';
+import { ALL_HARNESS_CRITERIA } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import {
     dayNumberOf,
     declaredVerdicts,
+    INVENTORY_AUTONOMY_LEVEL_MAX,
+    INVENTORY_AUTONOMY_LEVEL_MIN,
+    INVENTORY_AXES,
     INVENTORY_CRITERIA,
+    INVENTORY_DATA_ACCESS_SCOPES,
+    INVENTORY_PROVENANCES,
+    INVENTORY_REVERSIBILITIES,
+    INVENTORY_RISK_TIERS,
     INVENTORY_SCHEMA_ID,
     INVENTORY_TIER_MAX_AGE_DAYS,
     InventoryRefused,
@@ -22,6 +31,7 @@ import {
     isTierFresh,
     MAX_INVENTORY_ROWS,
     parseInventory,
+    RETIRED_INVENTORY_SCHEMAS,
 } from '../src/results/inventory';
 import { ALPHA, AS_OF, BRAVO, fullRow, INVENTORY_SHA, inventoryJson, inventoryOf } from './helpers/fixtures';
 
@@ -93,9 +103,10 @@ describe('2. a refusal names the row and the field', () => {
         ['a DEL in a purpose', [fullRow(ALPHA, { purpose: `${VALUE}\u007f` })], ['row 1: purpose: a control character']],
         ['a blank owner', [fullRow(ALPHA, { owner: '   ' })], ['row 1: owner: blank']],
         ['a name that is not text', [fullRow(ALPHA, { name: 7 as unknown as string })], ['row 1: name: invalid_type']],
-        ['half an axes', [fullRow(ALPHA, { axes: { autonomy: 'autonomous', reach: 'write' } })], ['row 1: axes.dataClass: invalid_value']],
-        ['an axis value off its list', [fullRow(ALPHA, { axes: { autonomy: VALUE, dataClass: 'public', reach: 'write' } })], ['row 1: axes.autonomy: invalid_value']],
-        ['an unknown axis', [fullRow(ALPHA, { axes: { autonomy: 'autonomous', dataClass: 'public', reach: 'write', [VALUE]: 1 } })], ['row 1: axes: 1 unknown field']],
+        ['half an axes', [fullRow(ALPHA, { axes: { autonomyLevel: 3, reversibility: 'TERMINAL' } })], ['row 1: axes.dataAccessScope: invalid_value', 'row 1: axes.provenance: invalid_value']],
+        ['axes without the autonomy level', [fullRow(ALPHA, { axes: { dataAccessScope: 'NONE', reversibility: 'REVERSIBLE', provenance: 'FIRST_PARTY' } })], ['row 1: axes.autonomyLevel: invalid_type']],
+        ['an axis value off its list', [fullRow(ALPHA, { axes: { autonomyLevel: 3, dataAccessScope: VALUE, reversibility: 'TERMINAL', provenance: 'THIRD_PARTY' } })], ['row 1: axes.dataAccessScope: invalid_value']],
+        ['an unknown axis', [fullRow(ALPHA, { axes: { autonomyLevel: 3, dataAccessScope: 'NONE', reversibility: 'TERMINAL', provenance: 'THIRD_PARTY', [VALUE]: 1 } })], ['row 1: axes: 1 unknown field']],
         ['a tier without its date', [fullRow(ALPHA, { riskAssessedOn: undefined })], ['row 1: riskAssessedOn: a risk tier and the date it was assessed come together or not at all']],
         ['a date without its tier', [fullRow(ALPHA, { riskTier: undefined })], ['row 1: riskTier: a risk tier and the date it was assessed come together or not at all']],
         ['a tier off its list', [fullRow(ALPHA, { riskTier: VALUE })], ['row 1: riskTier: invalid_value']],
@@ -118,10 +129,10 @@ describe('2. a refusal names the row and the field', () => {
         ['more rows than a report has agents', { inventory: INVENTORY_SCHEMA_ID, agents: Array.from({ length: MAX_INVENTORY_ROWS + 1 }, (_, i) => fullRow(`a:${i}`)) }, ['agents: too_big']],
         // Phase 4: the refusal names the schema the file gave and the one this version reads, where it
         // used to say only `inventory: invalid_value`. A file of another schema is still refused whole.
-        ['a wrong inventory id', { inventory: 'scanent-inventory/2', agents: [] }, ['inventory: the file names "scanent-inventory/2"; this version reads scanent-inventory/1']],
-        ['no inventory id', { agents: [] }, ['inventory: the file names no schema; this version reads scanent-inventory/1']],
-        ['an inventory id of another family, which is not repeated', { inventory: VALUE, agents: [] }, ['inventory: the file names a schema this version does not know; this version reads scanent-inventory/1']],
-        ['an inventory id that is not text', { inventory: 2, agents: [] }, ['inventory: the file names a schema this version does not know; this version reads scanent-inventory/1']],
+        ['a later inventory id', { inventory: 'scanent-inventory/3', agents: [] }, ['inventory: the file names "scanent-inventory/3"; this version reads scanent-inventory/2']],
+        ['no inventory id', { agents: [] }, ['inventory: the file names no schema; this version reads scanent-inventory/2']],
+        ['an inventory id of another family, which is not repeated', { inventory: VALUE, agents: [] }, ['inventory: the file names a schema this version does not know; this version reads scanent-inventory/2']],
+        ['an inventory id that is not text', { inventory: 2, agents: [] }, ['inventory: the file names a schema this version does not know; this version reads scanent-inventory/2']],
         ['no agents member', { inventory: INVENTORY_SCHEMA_ID }, ['agents: invalid_type']],
         ['an unknown key at the top', { inventory: INVENTORY_SCHEMA_ID, agents: [], [VALUE]: true }, ['(file): 1 unknown field']],
         ['a list where the file should be an object', [fullRow(ALPHA)], ['(file): invalid_type']],
@@ -148,7 +159,7 @@ describe('3. a secret-shaped value', () => {
         ['an owner', [fullRow(ALPHA, { owner: `team ${canary}` })], 'row 1: owner: a credential value in the inventory'],
         ['a purpose', [fullRow(ALPHA, { purpose: urlCanary })], 'row 1: purpose: a credential value in the inventory'],
         ['an id', [fullRow(canary)], 'row 1: discoveredId: a credential value in the inventory'],
-        ['an axis', [fullRow(ALPHA, { axes: { autonomy: canary } })], 'row 1: axes.autonomy: a credential value in the inventory'],
+        ['an axis', [fullRow(ALPHA, { axes: { dataAccessScope: canary } })], 'row 1: axes.dataAccessScope: a credential value in the inventory'],
         ['a member the schema does not know', [fullRow(ALPHA, { note: canary })], 'row 1: note: a credential value in the inventory'],
     ])('in %s is refused by path, before the schema', (_label, rows, expected) => {
         const issues = refusal(inventoryJson(rows as unknown[]));
@@ -259,5 +270,117 @@ describe('5. a declared risk tier is fresh for a year up to the scan', () => {
     it('is not fresh against a scan time or a date that cannot be read', () => {
         expect(isTierFresh('2026-11-03', 'not a time')).toBe(false);
         expect(isTierFresh('not a date', AS_OF)).toBe(false);
+    });
+});
+
+describe("6. the axes and the risk tiers are the ones Inflect's agent register holds", () => {
+    const AXES = { autonomyLevel: 2, dataAccessScope: 'WRITE_TENANT_DATA', reversibility: 'COMPENSABLE', provenance: 'FIRST_PARTY' };
+    const VALUE = 'zz-the-refused-value-zz';
+
+    it('names them as the register does, value for value and in its order', () => {
+        expect(INVENTORY_SCHEMA_ID).toBe('scanent-inventory/2');
+        expect(INVENTORY_AXES).toEqual(['autonomyLevel', 'dataAccessScope', 'reversibility', 'provenance']);
+        expect([INVENTORY_AUTONOMY_LEVEL_MIN, INVENTORY_AUTONOMY_LEVEL_MAX]).toEqual([0, 6]);
+        expect(INVENTORY_DATA_ACCESS_SCOPES).toEqual(['NONE', 'READ_METADATA', 'READ_TENANT_DATA', 'WRITE_TENANT_DATA', 'EXTERNAL_EGRESS']);
+        expect(INVENTORY_REVERSIBILITIES).toEqual(['REVERSIBLE', 'COMPENSABLE', 'TERMINAL']);
+        expect(INVENTORY_PROVENANCES).toEqual(['FIRST_PARTY', 'THIRD_PARTY']);
+        expect(INVENTORY_RISK_TIERS).toEqual(['LOW', 'MODERATE', 'HIGH', 'CRITICAL']);
+    });
+
+    it('takes every value of every axis and every tier, and declares the axes for each', () => {
+        const rows = [
+            ...[0, 1, 2, 3, 4, 5, 6].map((autonomyLevel) => ({ ...AXES, autonomyLevel })),
+            ...INVENTORY_DATA_ACCESS_SCOPES.map((dataAccessScope) => ({ ...AXES, dataAccessScope })),
+            ...INVENTORY_REVERSIBILITIES.map((reversibility) => ({ ...AXES, reversibility })),
+            ...INVENTORY_PROVENANCES.map((provenance) => ({ ...AXES, provenance })),
+        ].map((axes, i) => fullRow(`a:${i}`, { axes, riskTier: INVENTORY_RISK_TIERS[i % INVENTORY_RISK_TIERS.length] }));
+        const parsed = inventoryOf(rows);
+        expect(parsed.rows).toHaveLength(17);
+        expect(parsed.rows.map((r) => r.axes)).toEqual(rows.map((r) => r.axes));
+        expect(new Set(parsed.rows.map((r) => r.riskTier))).toEqual(new Set(INVENTORY_RISK_TIERS));
+        for (const [i, row] of parsed.rows.entries()) {
+            const verdicts = declaredVerdicts(row, i + 1, { sha256: INVENTORY_SHA }, AS_OF);
+            expect(verdicts.find((v) => v.criterion === 'H1.axes_declared')?.met).toBe(true);
+            expect(verdicts.find((v) => v.criterion === 'H1.tier_scored_fresh')?.met).toBe(true);
+        }
+    });
+
+    it.each([
+        ['an autonomy level below the ladder', { ...AXES, autonomyLevel: -1 }, ['row 1: axes.autonomyLevel: too_small']],
+        ['an autonomy level above the ladder', { ...AXES, autonomyLevel: 7 }, ['row 1: axes.autonomyLevel: too_big']],
+        ['an autonomy level between two rungs', { ...AXES, autonomyLevel: 2.5 }, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['an autonomy level written as text', { ...AXES, autonomyLevel: '2' }, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['an autonomy level that is a yes or a no', { ...AXES, autonomyLevel: true }, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['no autonomy level', { ...AXES, autonomyLevel: null }, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['a data access scope off its list', { ...AXES, dataAccessScope: VALUE }, ['row 1: axes.dataAccessScope: invalid_value']],
+        ['a data access scope in lower case', { ...AXES, dataAccessScope: 'none' }, ['row 1: axes.dataAccessScope: invalid_value']],
+        ['a reversibility off its list', { ...AXES, reversibility: VALUE }, ['row 1: axes.reversibility: invalid_value']],
+        ['a provenance off its list', { ...AXES, provenance: VALUE }, ['row 1: axes.provenance: invalid_value']],
+        ['no provenance', { autonomyLevel: 2, dataAccessScope: 'NONE', reversibility: 'REVERSIBLE' }, ['row 1: axes.provenance: invalid_value']],
+        ['no reversibility', { autonomyLevel: 2, dataAccessScope: 'NONE', provenance: 'FIRST_PARTY' }, ['row 1: axes.reversibility: invalid_value']],
+        ['an empty axes', {}, ['row 1: axes.autonomyLevel: invalid_type', 'row 1: axes.dataAccessScope: invalid_value', 'row 1: axes.reversibility: invalid_value', 'row 1: axes.provenance: invalid_value']],
+    ])('refuses %s', (_label, axes, expected) => {
+        const issues = refusal(inventoryJson([fullRow(ALPHA, { axes })]));
+        expect(issues).toEqual(expected);
+        expect(issues.join(' ')).not.toContain(VALUE);
+    });
+
+    it.each([
+        ['the axes of the schema before', { autonomy: 'human-approves', dataClass: 'confidential', reach: 'write' }],
+        ['one axis of the schema before among the four', { ...AXES, reach: 'write' }],
+    ])('refuses %s', (_label, axes) => {
+        const issues = refusal(inventoryJson([fullRow(ALPHA, { axes })]));
+        expect(issues.some((issue) => /^row 1: axes: \d unknown fields?$/.test(issue))).toBe(true);
+        expect(issues.join(' ')).not.toMatch(/human-approves|confidential/);
+    });
+
+    it.each(['MEDIUM', 'moderate', 'Moderate', 'MINIMAL', 'PROHIBITED', ''])('refuses the tier %j, which the register does not have', (riskTier) => {
+        expect(refusal(inventoryJson([fullRow(ALPHA, { riskTier })]))).toEqual(['row 1: riskTier: invalid_value']);
+    });
+});
+
+describe('7. a file of the schema before this one', () => {
+    const changed = RETIRED_INVENTORY_SCHEMAS['scanent-inventory/1'];
+    const before = {
+        inventory: 'scanent-inventory/1',
+        agents: [
+            {
+                discoveredId: ALPHA,
+                name: 'Invoice triage',
+                owner: 'finance-operations',
+                purpose: 'Sorts incoming invoices into queues',
+                axes: { autonomy: 'human-approves', dataClass: 'confidential', reach: 'write' },
+                riskTier: 'MEDIUM',
+                riskAssessedOn: '2026-09-30',
+            },
+        ],
+    };
+
+    it('is refused whole, with one issue that names both schemas and what changed', () => {
+        expect(refusal(before)).toEqual([`inventory: the file names "scanent-inventory/1"; this version reads scanent-inventory/2: ${changed}`]);
+    });
+
+    it('is refused even when its rows would pass this schema: the id decides, not the rows', () => {
+        const { axes: _axes, riskTier: _tier, riskAssessedOn: _date, ...required } = before.agents[0];
+        expect(refusal({ inventory: 'scanent-inventory/1', agents: [required] })).toEqual([
+            `inventory: the file names "scanent-inventory/1"; this version reads scanent-inventory/2: ${changed}`,
+        ]);
+        expect(refusal({ inventory: 'scanent-inventory/1', agents: [] })).toHaveLength(1);
+    });
+
+    it('names every member that changed, the old name and the new', () => {
+        for (const name of ['autonomyLevel', 'dataAccessScope', 'reversibility', 'provenance', 'autonomy', 'dataClass', 'reach', 'MEDIUM', 'MODERATE']) {
+            expect(changed.split(/[^A-Za-z]+/)).toContain(name);
+        }
+        expect(Object.keys(RETIRED_INVENTORY_SCHEMAS)).toEqual(['scanent-inventory/1']);
+        expect(Object.keys(RETIRED_INVENTORY_SCHEMAS)).not.toContain(INVENTORY_SCHEMA_ID);
+    });
+
+    it('says nothing of what changed to a file of any other schema', () => {
+        for (const decoded of [{ inventory: 'scanent-inventory/3', agents: [] }, { inventory: 'scanent-inventory/0', agents: [] }, { agents: [] }, { inventory: 'toString', agents: [] }]) {
+            const issues = refusal(decoded);
+            expect(issues).toHaveLength(1);
+            expect(issues[0]).toMatch(/; this version reads scanent-inventory\/2$/);
+        }
     });
 });

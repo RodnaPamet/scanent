@@ -7,7 +7,7 @@
  *      judged has no level in any cell.
  *   4. `results.json` is stable text that round-trips through the schema.
  */
-import { ALL_HARNESS_CRITERIA } from '@scanent/contract/harness-ladder';
+import { ALL_HARNESS_CRITERIA } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { AGENTS_CSV_LEADING_COLUMNS, CSV_BOM, csvCell, csvCriterionState, FINDINGS_CSV_COLUMNS, renderAgentsCsv, renderFindingsCsv } from '../src/render/csv';
 import { renderResultsJson, stableJson } from '../src/render/results-json';

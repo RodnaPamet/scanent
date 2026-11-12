@@ -15,7 +15,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { looksLikeSecret, type HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
+import { looksLikeSecret, type HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
 import { renderAgentsCsv, renderFindingsCsv } from '@scanent/report/render/csv';
 import { renderSummaryHtml } from '@scanent/report/render/html';
 import { renderResultsJson } from '@scanent/report/render/results-json';

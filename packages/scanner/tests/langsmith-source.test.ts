@@ -41,8 +41,8 @@ import {
     type Fakes,
     type LangSmithFixture,
 } from './helpers/agent-harness-source-fakes';
-import { MAX_TOOLS_PER_AGENT, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
-import { planHarnessScan } from '@scanent/contract/harness-findings';
+import { MAX_TOOLS_PER_AGENT, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { planHarnessScan } from '@rodnapamet/scanent-contract/harness-findings';
 import { ConfigError, credentialEnvNames, parseScannerConfig } from '../src/config';
 import {
     addressReachable,

@@ -15,7 +15,7 @@
  *   • every control character becomes a space, so one record is one line, and
  *     a bidirectional control becomes U+FFFD, so a cell reads as it is written.
  */
-import { ALL_HARNESS_CRITERIA } from '@scanent/contract/harness-ladder';
+import { ALL_HARNESS_CRITERIA } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { isBidiControl } from './escape';
 import type { LocalAgentResult, LocalCriterionCell, LocalResults } from '../results/types';

@@ -21,9 +21,9 @@
  *
  * Types and the schema id: nothing else runs from this module.
  */
-import type { HarnessFindingCode, HarnessSourceKind, IntakeConflict, StoredReach } from '@scanent/contract/harness-findings';
-import type { CriterionState, HarnessCriterionId, HarnessLevel } from '@scanent/contract/harness-ladder';
-import type { HarnessReportBody } from '@scanent/contract/harness-contract';
+import type { HarnessFindingCode, HarnessSourceKind, IntakeConflict, StoredReach } from '@rodnapamet/scanent-contract/harness-findings';
+import type { CriterionState, HarnessCriterionId, HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
+import type { HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 
 import type { ParsedInventory } from './inventory';
 

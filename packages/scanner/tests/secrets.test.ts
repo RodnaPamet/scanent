@@ -7,7 +7,7 @@ import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, w
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
-import { verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { main } from '../src/cli';
 import { parseScannerConfig } from '../src/config';
 import { rawPublicKeyHex } from '../src/report';

@@ -17,9 +17,9 @@
 import { createHash } from 'crypto';
 import { readFileSync, statSync } from 'fs';
 
-import { harnessKeyFingerprint, verifyAndParseHarnessReport, type HarnessReportBody } from '@scanent/contract/harness-contract';
-import { HARNESS_CONTRACT_IDS } from '@scanent/contract/harness-contract-rules';
-import { firstSecretShapedMember, type HarnessSourceKind } from '@scanent/contract/harness-findings';
+import { harnessKeyFingerprint, verifyAndParseHarnessReport, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
+import { HARNESS_CONTRACT_IDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
+import { firstSecretShapedMember, type HarnessSourceKind } from '@rodnapamet/scanent-contract/harness-findings';
 import { diffExitCode, DiffRefused, diffResults, type ResultsDiff } from '@scanent/report/diff/diff';
 import { renderDiffText } from '@scanent/report/render/diff-text';
 import { terminalJson } from '@scanent/report/render/escape';

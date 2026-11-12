@@ -25,7 +25,7 @@ in the signed `inflect-agent-harness/3` report.
 | D9 | `LADDER_VERSION` is a hash of the levels, the criteria table and the bar rule. It is exported from `harness-contract.ts` and carried in `results.json` and `summary.html`. It is not in the signed body. |
 | D10 | `packages/contract/src` stays the eight files the package-closure test pins. Scoring, the inventory rules, the diff and the renderers go in `@scanent/report`. This differs from the roadmap's "scoring in the contract"; section 6 says why. |
 | D11 | The existing usage line stays byte-for-byte. New commands and flags are described by a new `scanent help` and by the documents. |
-| D12 | No new third-party dependency. `@scanent/report` depends on `@scanent/contract` and `zod`, both already in the lockfile. CSV and HTML are written by hand. |
+| D12 | No new third-party dependency. `@scanent/report` depends on `@rodnapamet/scanent-contract` and `zod`, both already in the lockfile. CSV and HTML are written by hand. |
 
 ## 1. Local scoring (P2.1)
 
@@ -138,6 +138,10 @@ A judged agent in a scan with some other incomplete source keeps its level and
 gets `caveats: ['OTHER_SOURCE_INCOMPLETE:<kind>']`, shown beside the level.
 
 ### 1.5 The inventory file
+
+> The schema shown in this section, `scanent-inventory/1`, is retired and the
+> current reader refuses it. The addendum at the end of section 10 holds the
+> current one, `scanent-inventory/2`.
 
 Configured, never a flag:
 
@@ -823,8 +827,8 @@ not done here:
 
 | Package | Holds | May import |
 |---|---|---|
-| `@scanent/contract` | The eight existing files. Two edits: `LADDER_VERSION` in `harness-contract.ts`; the parameter type of `firstSecretShapedMember` widened to `unknown` | `zod`, Node built-ins (as now) |
-| `@scanent/report` | `results/score.ts` (`scoreReportLocally`), `results/types.ts` and `results/schema.ts` (`LocalResults`, `LocalResultsSchema`), `results/inventory.ts` (`InventorySchema`, `parseInventory`, declared verdicts), `results/judgement.ts` (`CROSS_AGENT_VERDICT_SOURCE`), `diff/diff.ts`, `render/escape.ts`, `render/csv.ts`, `render/html.ts`, `render/diff-text.ts`, `render/results-json.ts`. Every export is a pure function: data in, data or string out. No clock, no file, no network, no hashing | `@scanent/contract/*`, `zod`. No Node built-in at all |
+| `@rodnapamet/scanent-contract` | The eight existing files. Two edits: `LADDER_VERSION` in `harness-contract.ts`; the parameter type of `firstSecretShapedMember` widened to `unknown` | `zod`, Node built-ins (as now) |
+| `@scanent/report` | `results/score.ts` (`scoreReportLocally`), `results/types.ts` and `results/schema.ts` (`LocalResults`, `LocalResultsSchema`), `results/inventory.ts` (`InventorySchema`, `parseInventory`, declared verdicts), `results/judgement.ts` (`CROSS_AGENT_VERDICT_SOURCE`), `diff/diff.ts`, `render/escape.ts`, `render/csv.ts`, `render/html.ts`, `render/diff-text.ts`, `render/results-json.ts`. Every export is a pure function: data in, data or string out. No clock, no file, no network, no hashing | `@rodnapamet/scanent-contract/*`, `zod`. No Node built-in at all |
 | `@scanent/scanner` | `inventory-file.ts` (read, cap, hash, decode JSON or CSV), `criterion-readers.ts`, `outputs.ts` (resolve and deliver), `file-output.ts` (atomic writer, retention), `diff-command.ts` (read, verify, call the pure diff, print), and the changes to `cli.ts`, `config.ts`, `scan.ts`, `index.ts` | as now, plus `@scanent/report/*` |
 
 Why scoring is in `@scanent/report` and not in the contract, as the roadmap's
@@ -841,7 +845,7 @@ pull request; nothing else in this design depends on the choice.
 Wiring that follows from `@scanent/report` having code:
 
 - `packages/report/package.json`: `exports` and `typesVersions` like the
-  contract's, `dependencies: { "@scanent/contract": "0.0.0", "zod": "4.6.7" }`,
+  contract's, `dependencies: { "@rodnapamet/scanent-contract": "0.12.0", "zod": "4.6.7" }`,
   `sideEffects: false`; a `tsconfig.json` with a reference to the contract.
 - `packages/scanner/package.json`: add `"@scanent/report": "0.0.0"`;
   `packages/scanner/tsconfig.json`: add the reference.
@@ -874,7 +878,7 @@ ESLint (`eslint.config.mjs`):
   report package.
 
 `package-closure.test.ts` gains cases (added, none changed): the report
-package's closure escapes nowhere, imports only `@scanent/contract` and `zod`,
+package's closure escapes nowhere, imports only `@rodnapamet/scanent-contract` and `zod`,
 imports no built-in, declares exactly what it imports with exact versions.
 
 ## 7. Test plan
@@ -1109,6 +1113,7 @@ Each step ends with `npm run lint`, `npm run typecheck`, `npm run build` and
 ## 9. Open points for the owner
 
 1. The inventory's axis names and values, and the 365-day tier window (1.5).
+   Decided since: see "Open point 1 decided" at the end of section 10.
 2. Scoring in `@scanent/report` rather than the contract (section 6).
 3. Whether a later phase should let the inventory key on something other than
    `discoveredId`. This design says no: an exact id is the only match that
@@ -1289,3 +1294,65 @@ Each item is a rule the sections above stated more loosely, or not at all.
    argument to `scan`, `schedule` or `public-key` is exit code 2. `--out=<dir>`
    and `--config=<file>` are accepted, and `--help` after any of the three
    prints the commands. The one-line usage error is unchanged.
+
+### Open point 1 decided: the inventory matches Inflect's register
+
+The owner's decision on open point 1 (section 9) was "match Inflect's rules".
+Section 1.5 is left as it was written; where it and this record differ, this
+record and the code are right.
+
+What Inflect's rules are, read from the Inflect Compliance repository at the
+commit `docs/EXTRACTION.md` names:
+
+| Point | Inflect's rule |
+|---|---|
+| The axes | Four, on a registered agent: `autonomyLevel`, `dataAccessScope`, `reversibility`, `provenance`. The register reports an agent's axes as declared when all four are set |
+| `autonomyLevel` | A whole number from 0 to 6, never a yes or a no |
+| `dataAccessScope` | `NONE`, `READ_METADATA`, `READ_TENANT_DATA`, `WRITE_TENANT_DATA`, `EXTERNAL_EGRESS`, least exposing first |
+| `reversibility` | `REVERSIBLE`, `COMPENSABLE`, `TERMINAL` |
+| `provenance` | `FIRST_PARTY`, `THIRD_PARTY` |
+| The risk tier | `LOW`, `MODERATE`, `HIGH`, `CRITICAL`. It is scored by the register's own risk assessment, not declared, and is stored with the time it was scored |
+| "Scored fresh" | A tier is set, and the agent's newest completed risk assessment is not stale. An assessment is marked stale by comparison, not by age: when the agent's autonomy was raised, a tool was granted, its data scope widened, its reversibility worsened, its provenance became third-party, or its declared model changed, after the assessment. There is no age limit and no configurable window |
+
+What changed here:
+
+- The inventory schema is `scanent-inventory/2`. `axes` holds the four members
+  above with exactly those values, all four or none; `riskTier` takes the four
+  tiers above. The CSV columns are
+  `discoveredId,name,owner,purpose,autonomyLevel,dataAccessScope,reversibility,provenance,riskTier,riskAssessedOn`,
+  and `autonomyLevel` is read from a cell of digits.
+- `scanent-inventory/1` (`autonomy`, `dataClass`, `reach`; `MEDIUM`) is
+  refused, in JSON by its id and in CSV by a header holding one of its three
+  axis columns, with a message that names both schemas and what changed
+  (`RETIRED_INVENTORY_SCHEMAS`). No version was released with `/1`, so nothing
+  converts a file. The compatibility fixture of 0.12.0 keeps its `/1`
+  inventory, and the test holds the refusal against it.
+- The results file did not change: it never carried an axis or a tier, only
+  the verdicts and the declared name, owner and purpose.
+
+What did not change, because Inflect has no rule to match:
+
+- **The 365-day window stays, as scanent's own** (`INVENTORY_TIER_MAX_AGE_DAYS`).
+  Inflect judges freshness by what changed since an assessment, and an
+  inventory holds no assessment to compare an agent with. A date and a window
+  are what a file can state. The documents now say the window is scanent's
+  and that a tenant goes by change.
+- **The tier is still declared with `riskAssessedOn`, a date.** The register's
+  counterpart is a timestamp the register writes when it scores; an operator
+  writing a file has a date.
+- **`THIRD_PARTY` asks for no supplier.** The register refuses a third-party
+  agent with no vendor on record. The inventory has no vendor field: a
+  supplier's name is not needed for `H1.axes_declared`, which in the register
+  too reads only the four axes.
+
+### The contract package was renamed and made publishable
+
+Owner decision, 2026-11-12 (issue 7): the contract is published to GitHub
+Packages. Its npm registry takes the scope of a package to be the account
+that owns it, so the package is `@rodnapamet/scanent-contract`, and this note
+now uses that name throughout where it said `@scanent/contract`. It carries
+the scanner's version instead of `0.0.0`, and the two packages that depend on
+it name that version. `@scanent/report` and `@scanent/scanner` are unchanged
+and stay private. Nothing about scoring, the results or the boundaries of
+section 6 changed. `docs/contract.md` ("Use the reference implementation")
+describes the package.

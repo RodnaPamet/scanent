@@ -12,7 +12,7 @@
  */
 import { createHash } from 'crypto';
 
-import { harnessKeyFingerprint, type HarnessReportBody } from '@scanent/contract/harness-contract';
+import { harnessKeyFingerprint, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 import type { ParsedInventory } from '@scanent/report/results/inventory';
 import { scoreReportLocally } from '@scanent/report/results/score';
 import type { LocalResults } from '@scanent/report/results/types';

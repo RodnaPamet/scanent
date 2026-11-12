@@ -6,13 +6,25 @@
  *   3. Every refusal names the row and the field, and never the value or the path.
  *   4. A file that cannot be read whole is refused, never treated as empty.
  *   5. The configuration names the file; nothing else does.
+ *   6. The files the documents show are files this version reads, with the values it takes.
  */
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { INVENTORY_SCHEMA_ID, InventoryRefused } from '@scanent/report/results/inventory';
+import {
+    INVENTORY_AUTONOMY_LEVEL_MAX,
+    INVENTORY_AUTONOMY_LEVEL_MIN,
+    INVENTORY_AXES,
+    INVENTORY_DATA_ACCESS_SCOPES,
+    INVENTORY_PROVENANCES,
+    INVENTORY_REVERSIBILITIES,
+    INVENTORY_RISK_TIERS,
+    INVENTORY_SCHEMA_ID,
+    INVENTORY_TIER_MAX_AGE_DAYS,
+    InventoryRefused,
+} from '@scanent/report/results/inventory';
 
 import { ConfigError, parseScannerConfig } from '../src/config';
 import {
@@ -26,15 +38,15 @@ import {
 } from '../src/inventory-file';
 import { loadConfiguredInventory } from '../src/local-results';
 
-const HEADER = 'discoveredId,name,owner,purpose,autonomy,dataClass,reach,riskTier,riskAssessedOn';
-const ROW = 'entra:sp:alpha,Invoice triage,finance-operations,Sorts incoming invoices,human-approves,confidential,write,MEDIUM,2026-09-30';
+const HEADER = 'discoveredId,name,owner,purpose,autonomyLevel,dataAccessScope,reversibility,provenance,riskTier,riskAssessedOn';
+const ROW = 'entra:sp:alpha,Invoice triage,finance-operations,Sorts incoming invoices,2,WRITE_TENANT_DATA,COMPENSABLE,FIRST_PARTY,MODERATE,2026-09-30';
 const ALPHA = {
     discoveredId: 'entra:sp:alpha',
     name: 'Invoice triage',
     owner: 'finance-operations',
     purpose: 'Sorts incoming invoices',
-    axes: { autonomy: 'human-approves', dataClass: 'confidential', reach: 'write' },
-    riskTier: 'MEDIUM',
+    axes: { autonomyLevel: 2, dataAccessScope: 'WRITE_TENANT_DATA', reversibility: 'COMPENSABLE', provenance: 'FIRST_PARTY' },
+    riskTier: 'MODERATE',
     riskAssessedOn: '2026-09-30',
 };
 
@@ -110,8 +122,18 @@ describe('1. one inventory, two forms', () => {
     });
 
     it('reads an empty optional cell as absent', () => {
-        const parsed = loadInventoryFile(write('inventory.csv', `${HEADER}\nentra:sp:alpha,Triage,finance,Sorts invoices,,,,,\n`));
+        const parsed = loadInventoryFile(write('inventory.csv', `${HEADER}\nentra:sp:alpha,Triage,finance,Sorts invoices,,,,,,\n`));
         expect(parsed.rows).toEqual([{ discoveredId: 'entra:sp:alpha', name: 'Triage', owner: 'finance', purpose: 'Sorts invoices' }]);
+    });
+
+    it('reads the autonomy level, the one number, from its digits: every rung, and 0 as a level and not as nothing', () => {
+        const lines = [0, 1, 2, 3, 4, 5, 6].map((level) => `a:${level},n,o,p,${level},NONE,REVERSIBLE,THIRD_PARTY,,`);
+        const parsed = loadInventoryFile(write('inventory.csv', `${HEADER}\n${lines.join('\n')}\n`));
+        expect(parsed.rows.map((r) => r.axes?.autonomyLevel)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+        expect(parsed.rows.every((r) => r.axes?.provenance === 'THIRD_PARTY' && r.riskTier === undefined)).toBe(true);
+        // A quoted cell is the same cell.
+        const quoted = loadInventoryFile(write('quoted.csv', `${HEADER}\na,n,o,p,"4",NONE,REVERSIBLE,FIRST_PARTY,,\n`));
+        expect(quoted.rows[0].axes).toEqual({ autonomyLevel: 4, dataAccessScope: 'NONE', reversibility: 'REVERSIBLE', provenance: 'FIRST_PARTY' });
     });
 
     it('a header and no rows is an inventory that names nobody', () => {
@@ -185,10 +207,26 @@ describe('3. a refusal names the row and the field', () => {
         ['a row with too many fields', `discoveredId,name,owner,purpose\na,b,c,d,${VALUE}\n`, ['row 1: 5 fields where the header has 4']],
         ['an empty required cell', 'discoveredId,name,owner,purpose\na,,c,d\n', ['row 1: name: too_small', 'row 1: name: blank']],
         ['a duplicate id', 'discoveredId,name,owner,purpose\na,b,c,d\ne,f,g,h\na,b,c,d\n', ['row 3: discoveredId: a discoveredId appears once']],
-        ['one axis without the others', `discoveredId,name,owner,purpose,autonomy\na,b,c,d,autonomous\n`, ['row 1: axes.dataClass: invalid_value', 'row 1: axes.reach: invalid_value']],
-        ['an axis value off its list', `${HEADER}\na,b,c,d,${VALUE},public,write,,\n`, ['row 1: axes.autonomy: invalid_value']],
-        ['a tier without its date', `${HEADER}\na,b,c,d,,,,HIGH,\n`, ['row 1: riskAssessedOn: a risk tier and the date it was assessed come together or not at all']],
-        ['a date that is not one', `${HEADER}\na,b,c,d,,,,HIGH,2026-02-30\n`, ['row 1: riskAssessedOn: not a YYYY-MM-DD date']],
+        [
+            'one axis without the others',
+            `discoveredId,name,owner,purpose,autonomyLevel\na,b,c,d,3\n`,
+            ['row 1: axes.dataAccessScope: invalid_value', 'row 1: axes.reversibility: invalid_value', 'row 1: axes.provenance: invalid_value'],
+        ],
+        ['three axes without the autonomy level', `${HEADER}\na,b,c,d,,NONE,REVERSIBLE,FIRST_PARTY,,\n`, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['an axis value off its list', `${HEADER}\na,b,c,d,3,${VALUE},TERMINAL,THIRD_PARTY,,\n`, ['row 1: axes.dataAccessScope: invalid_value']],
+        ['an axis value in lower case', `${HEADER}\na,b,c,d,3,NONE,terminal,THIRD_PARTY,,\n`, ['row 1: axes.reversibility: invalid_value']],
+        ['an autonomy level above the ladder', `${HEADER}\na,b,c,d,7,NONE,TERMINAL,THIRD_PARTY,,\n`, ['row 1: axes.autonomyLevel: too_big']],
+        ['an autonomy level far above the ladder', `${HEADER}\na,b,c,d,999999999,NONE,TERMINAL,THIRD_PARTY,,\n`, ['row 1: axes.autonomyLevel: too_big']],
+        ['an autonomy level too long to be a number', `${HEADER}\na,b,c,d,1000000000,NONE,TERMINAL,THIRD_PARTY,,\n`, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['a negative autonomy level', `${HEADER}\na,b,c,d,-1,NONE,TERMINAL,THIRD_PARTY,,\n`, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['an autonomy level with a leading zero', `${HEADER}\na,b,c,d,03,NONE,TERMINAL,THIRD_PARTY,,\n`, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['an autonomy level with a fraction', `${HEADER}\na,b,c,d,3.0,NONE,TERMINAL,THIRD_PARTY,,\n`, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['an autonomy level with a space', `${HEADER}\na,b,c,d, 3,NONE,TERMINAL,THIRD_PARTY,,\n`, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['an autonomy level in words', `${HEADER}\na,b,c,d,${VALUE},NONE,TERMINAL,THIRD_PARTY,,\n`, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['an autonomy level in another notation', `${HEADER}\na,b,c,d,0x3,NONE,TERMINAL,THIRD_PARTY,,\n`, ['row 1: axes.autonomyLevel: invalid_type']],
+        ['a tier the register does not have', `${HEADER}\na,b,c,d,,,,,MEDIUM,2026-09-30\n`, ['row 1: riskTier: invalid_value']],
+        ['a tier without its date', `${HEADER}\na,b,c,d,,,,,HIGH,\n`, ['row 1: riskAssessedOn: a risk tier and the date it was assessed come together or not at all']],
+        ['a date that is not one', `${HEADER}\na,b,c,d,,,,,HIGH,2026-02-30\n`, ['row 1: riskAssessedOn: not a YYYY-MM-DD date']],
         ['a line break inside a quoted name', `discoveredId,name,owner,purpose\na,"${VALUE}\nsecond",c,d\n`, ['row 1: name: a control character']],
         ['a lone carriage return in a cell', `discoveredId,name,owner,purpose\na,b\rc,d,e\n`, ['row 1: name: a control character']],
     ])('%s', (_label, text, expected) => {
@@ -213,11 +251,40 @@ describe('3. a refusal names the row and the field', () => {
     });
 
     it('never repeats the path or the value in a refusal', () => {
-        const file = write('inventory.json', '{"inventory": "scanent-inventory/1", "agents": [{"discoveredId": "zz-refused-zz"}]}');
+        const file = write('inventory.json', `{"inventory": "${INVENTORY_SCHEMA_ID}", "agents": [{"discoveredId": "zz-refused-zz"}]}`);
         const issues = refusal(() => loadInventoryFile(file));
         expect(issues.join(' ')).not.toContain(dir);
         expect(issues.join(' ')).not.toContain(VALUE);
         expect(issues.length).toBeGreaterThan(0);
+    });
+});
+
+describe('3b. a file of the schema before this one is told what changed', () => {
+    const V1_HEADER = 'discoveredId,name,owner,purpose,autonomy,dataClass,reach,riskTier,riskAssessedOn';
+    const V1_ROW = 'entra:sp:alpha,Invoice triage,finance-operations,Sorts incoming invoices,human-approves,confidential,write,MEDIUM,2026-09-30';
+    const changed =
+        'the axes are now autonomyLevel (a whole number, 0 to 6), dataAccessScope, reversibility and provenance, '
+        + 'in place of autonomy, dataClass and reach, and the risk tier MEDIUM is now MODERATE';
+
+    it('as CSV, by its columns: a CSV file names no schema', () => {
+        const issues = csvRefusal(`${V1_HEADER}\n${V1_ROW}\n`);
+        expect(issues).toEqual(['header: 3 unknown columns', `header: columns of scanent-inventory/1; this version reads ${INVENTORY_SCHEMA_ID}: ${changed}`]);
+        expect(issues.join(' ')).not.toMatch(/human-approves|confidential|Invoice/);
+        // One old column among the new ones is enough.
+        expect(csvRefusal(`${HEADER},reach\n`)).toEqual(['header: 1 unknown column', `header: columns of scanent-inventory/1; this version reads ${INVENTORY_SCHEMA_ID}: ${changed}`]);
+    });
+
+    it('as JSON, by the id it names', () => {
+        const text = JSON.stringify({
+            inventory: 'scanent-inventory/1',
+            agents: [{ discoveredId: 'entra:sp:alpha', name: 'n', owner: 'o', purpose: 'p', axes: { autonomy: 'human-approves', dataClass: 'confidential', reach: 'write' }, riskTier: 'MEDIUM', riskAssessedOn: '2026-09-30' }],
+        });
+        expect(refusal(() => loadInventoryFile(write('inventory.json', text)))).toEqual([`inventory: the file names "scanent-inventory/1"; this version reads ${INVENTORY_SCHEMA_ID}: ${changed}`]);
+    });
+
+    it('says nothing of the schema before to a header that is only unknown', () => {
+        expect(csvRefusal('discoveredId,name,owner,purpose,notes\n')).toEqual(['header: 1 unknown column']);
+        expect(csvRefusal('discoveredId,name,owner,purpose,Autonomy\n')).toEqual(['header: 1 unknown column']);
     });
 });
 
@@ -354,3 +421,65 @@ describe('5. the configuration names the file', () => {
         expect(refusal(() => loadConfiguredInventory(parsed))).toEqual(['(file): could not be read (ENOENT)']);
     });
 });
+
+describe('6. the files the documents show', () => {
+    const REPO = path.resolve(__dirname, '..', '..', '..');
+    const doc = (rel: string): string => fs.readFileSync(path.join(REPO, rel), 'utf8');
+    /** The fenced blocks of a document, without their fences. */
+    const blocks = (text: string): string[] => [...text.matchAll(/^```[a-z]*\n([\s\S]*?)^```/gm)].map((m) => m[1]);
+    const load = (name: string, text: string) => loadInventoryFile(`/nowhere/${name}`, { readFile: () => Buffer.from(text) });
+    const VALUES = [...INVENTORY_DATA_ACCESS_SCOPES, ...INVENTORY_REVERSIBILITIES, ...INVENTORY_PROVENANCES, ...INVENTORY_RISK_TIERS];
+
+    it('docs/scanner.md: its JSON inventory is read whole, and declares the axes and a tier', () => {
+        const shown = blocks(doc('docs/scanner.md')).filter((b) => b.includes('"agents"') && b.includes('"inventory": "scanent-inventory/'));
+        expect(shown).toHaveLength(1);
+        const parsed = load('inventory.json', shown[0]);
+        expect(parsed.rows).toHaveLength(1);
+        expect(Object.keys(parsed.rows[0].axes ?? {})).toEqual([...INVENTORY_AXES]);
+        expect(INVENTORY_RISK_TIERS).toContain(parsed.rows[0].riskTier);
+    });
+
+    it('docs/guide/run-it.md: its CSV inventory is read whole, with every column this version takes', () => {
+        const shown = blocks(doc('docs/guide/run-it.md')).filter((b) => b.startsWith('discoveredId,'));
+        expect(shown).toHaveLength(1);
+        expect(shown[0].split('\n')[0]).toBe(HEADER);
+        const parsed = load('inventory.csv', shown[0]);
+        expect(parsed.rows).toHaveLength(1);
+        expect(Object.keys(parsed.rows[0].axes ?? {})).toEqual([...INVENTORY_AXES]);
+        expect(INVENTORY_RISK_TIERS).toContain(parsed.rows[0].riskTier);
+    });
+
+    it.each(['docs/scanner.md', 'docs/guide/run-it.md', 'docs/design/phase-2-standalone-results.md'])('%s names every axis, every value and every tier, and the ladder\'s two ends', (rel) => {
+        const text = doc(rel);
+        for (const name of [...INVENTORY_AXES, ...VALUES]) expect([name, text.includes(`\`${name}\``)]).toEqual([name, true]);
+        expect(text).toMatch(new RegExp(`from ${INVENTORY_AUTONOMY_LEVEL_MIN} to ${INVENTORY_AUTONOMY_LEVEL_MAX}\\b`));
+        expect(text).toContain(`${INVENTORY_TIER_MAX_AGE_DAYS} days`);
+    });
+
+    it('docs/scanner.md and the design note give the CSV columns as the code has them, and name the schema read and the one refused', () => {
+        const optional = INVENTORY_CSV_OPTIONAL_COLUMNS.join(',');
+        expect(doc('docs/scanner.md')).toContain(`\`${optional}\``);
+        expect(doc('docs/design/phase-2-standalone-results.md')).toContain(`\`${HEADER}\``);
+        for (const rel of ['docs/scanner.md', 'docs/design/phase-2-standalone-results.md', 'docs/security-pack/support-and-maintenance.md', 'packages/scanner/tests/fixtures/compat/README.md']) {
+            const text = doc(rel);
+            expect([rel, text.includes(`\`${INVENTORY_SCHEMA_ID}\``)]).toEqual([rel, true]);
+            expect([rel, /scanent-inventory\/1`|`\/1`/.test(text)]).toEqual([rel, true]);
+        }
+    });
+
+    it('no document outside the design notes and the fixtures still shows a value of the schema before', () => {
+        // `MEDIUM` alone is still a finding's severity; as a risk tier it is told by what stands beside it.
+        const retired = /human-approves|human-reviews|dataClass|"reach"|,reach,|`reach`: `read-only`|"riskTier": "MEDIUM"|,MEDIUM,\d{4}-|`riskTier`[^\n]*`MEDIUM`, `HIGH`|risk rating \(`LOW`, `MEDIUM`/;
+        const walk = (dir: string): string[] =>
+            fs.readdirSync(path.join(REPO, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : e.name.endsWith('.md') ? [path.join(dir, e.name)] : []));
+        const files = ['README.md', ...walk('docs').filter((f) => !f.startsWith(path.join('docs', 'design'))), ...walk('examples'), ...walk('deploy')];
+        expect(files.length).toBeGreaterThan(20);
+        const hits = files.filter((f) => {
+            const text = doc(f);
+            // The page that says what changed names the old columns once, as retired; nothing else may.
+            return retired.test(f === path.join('docs', 'scanner.md') ? text.replace(/`autonomy`,\s+`dataClass` and `reach`/g, '') : text);
+        });
+        expect(hits).toEqual([]);
+    });
+});
+

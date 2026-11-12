@@ -38,7 +38,7 @@ evidence.
 | Level | Name | In plain words | An example |
 |---|---|---|---|
 | H0 | Shadow | It exists. Nothing more is established | A service account found in Google Cloud that is on nobody's list. The scan can say it exists and which keys it holds. Nobody has said who owns it |
-| H1 | Registered | Your organisation knows it: it is on a list, has an owner, is described, and has a recent risk rating | Your inventory has a line for "Invoice triage". It names finance operations as the owner, says the agent needs a person's approval, handles confidential data and can write, and carries a risk rating dated two months ago |
+| H1 | Registered | Your organisation knows it: it is on a list, has an owner, is described, and has a recent risk rating | Your inventory has a line for "Invoice triage". It names finance operations as the owner, says that the agent drafts changes for a person to approve, that it can change your content, that what it does cannot be undone but can be made up for, and that it was written in-house, and carries a risk rating dated two months ago |
 | H2 | Bounded | What it can use is limited and known: its own credential, an explicit list of what it may touch | A GitHub Actions workflow that uses only the token GitHub gives each run, and states the permissions of every job explicitly, meets three of the five checks on this level: it has a credential of its own, the kind of credential is known, and what it may use is an explicit list. The other two can be checked only through an Inflect tenant |
 | H3 | Guarded | What it does is checked before it takes effect | An agent whose changes are put to a person as proposals, whose tool descriptions are locked so they cannot change unnoticed, and whose outgoing connections are held to a list. The opposite: an agent whose code tells it to approve all of its own actions fails this level |
 | H4 | Observed and stoppable | Going by the names of its checks: what it does is recorded, it has a spending limit, and stopping it has been practised | An agent with a record of every action, and a stop switch that was tried in a drill |
@@ -66,8 +66,8 @@ engagement team can get it for you.
 |---|---|
 | `H1.registered` | It is on a list of known agents |
 | `H1.owner` | It has a named owner |
-| `H1.axes_declared` | Three things are written down: how independent it is, how sensitive its data is, and what it can reach |
-| `H1.tier_scored_fresh` | It has a risk rating, and the rating is recent. For an inventory: dated within the 365 days before the scan |
+| `H1.axes_declared` | Four things are written down: how far it acts on its own, how far into your data it reaches, how hard it is to undo what it does, and who wrote it |
+| `H1.tier_scored_fresh` | It has a risk rating, and the rating is current. For an inventory: dated within the 365 days before the scan. An Inflect tenant goes by change, not by age: the rating stops counting when the agent has since changed in a way that raises its risk |
 | `H2.credential_bound` | It acts with a credential of its own. A token that acts as a person does not count; nor does a workflow that is handed a stored secret |
 | `H2.grant_kind_declared` | It is known which kind of credential it has: one that acts for the agent itself, or one that acts on behalf of a person |
 | `H2.tools_allowlisted` | What it may use (its tools, or for a workflow its permissions) is an explicit list. "Everything", or a wildcard (a `*` that means "all"), is not a list |
@@ -232,7 +232,7 @@ saw. The dot and the dash mean nobody looked.
 
 One exception, on the H1 checks only. When you give an inventory, an N on
 `H1.axes_declared` or `H1.tier_scored_fresh` can come from the inventory and
-not from a system: the line for that agent leaves out the three descriptions
+not from a system: the line for that agent leaves out the four descriptions
 or the risk rating, or its rating is not dated within the 365 days before
 the scan. The page's own pop-up text for an N cell says "a source saw it fail"
 in that case too. Read it as "your inventory does not say so".

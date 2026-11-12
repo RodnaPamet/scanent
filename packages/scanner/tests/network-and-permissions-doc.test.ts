@@ -16,7 +16,7 @@ import { resolve } from 'path';
 import { ACCESS_GUIDE, GUIDE_ORDER } from '../src/init/access-guide';
 import { isDeclaredRequest, SCANNER_SURFACE, scannerManifestHash, SCANNER_VERSION } from '../src/scanner-surface';
 import { NEVER_REQUESTED, renderNetworkAndPermissionsMarkdown, WHAT_IS_READ } from '../src/surface-doc';
-import { SOURCE_KINDS_V3 } from '@scanent/contract/harness-contract';
+import { SOURCE_KINDS_V3 } from '@rodnapamet/scanent-contract/harness-contract';
 
 const COMMITTED = resolve(__dirname, '..', '..', '..', 'docs', 'network-and-permissions.md');
 const rendered = renderNetworkAndPermissionsMarkdown();

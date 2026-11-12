@@ -34,6 +34,10 @@ The first line gives the image a name. The other steps use that name.
 If your network inspects encrypted traffic, the build needs your network's
 certificate: [../quick-start.md](../quick-start.md#0-get-the-image) says how.
 
+Once a release exists, you will download the finished scanner instead of
+building it. The download is public: it needs no account with us or with
+GitHub, and no password.
+
 ## 2. Make a short name for "run the scanner safely"
 
 Every step runs the scanner the same way. Type this once in the terminal you
@@ -204,19 +208,30 @@ Open `agents.csv` from the run in a spreadsheet. The first column,
 `scanent/inventory.csv`, with one line for each agent you recognise:
 
 ```
-discoveredId,name,owner,purpose,autonomy,dataClass,reach,riskTier,riskAssessedOn
-entra:sp:00000000-0000-0000-0000-000000000000,Invoice triage,finance-operations,Sorts incoming invoices into queues,human-approves,confidential,write,MEDIUM,2026-09-30
+discoveredId,name,owner,purpose,autonomyLevel,dataAccessScope,reversibility,provenance,riskTier,riskAssessedOn
+entra:sp:00000000-0000-0000-0000-000000000000,Invoice triage,finance-operations,Sorts incoming invoices into queues,2,WRITE_TENANT_DATA,COMPENSABLE,FIRST_PARTY,MODERATE,2026-09-30
 ```
 
 - `discoveredId` must be copied exactly.
 - `name`, `owner` and `purpose` are required. `owner` can be a team: you do
   not have to write a person's name.
-- The last five are optional, but an agent reaches level H1 only with all of
-  them. Without them it stays at level H0, even though it is on your list: how independent it is (`human-approves`, `human-reviews` or
-  `autonomous`), how sensitive its data is (`public`, `internal`,
-  `confidential` or `restricted`), what it can reach (`read-only`, `write` or
-  `external`), its risk rating (`LOW`, `MEDIUM`, `HIGH` or `CRITICAL`) and the
-  date of that rating, which must be within the 365 days before the scan.
+- The last six are optional, but an agent reaches level H1 only with all of
+  them. Without them it stays at level H0, even though it is on your list.
+  The first four describe the agent, and you give all four or none:
+
+  | Column | What to write |
+  |---|---|
+  | `autonomyLevel` | How far it acts on its own, as a whole number from 0 to 6. 0: it only suggests to a person. 1: it reads data by itself. 2: it drafts changes that a person approves. 3: it carries out several steps in a row with nobody watching. 4 to 6: more independent still, up to 6, which acts across several systems with nobody watching. Inflect's own register says a level above 3 changes nothing about what an agent can reach today, so 3 is enough unless your organisation uses the higher numbers |
+  | `dataAccessScope` | How far into your data it reaches. `NONE`: only what it is handed. `READ_METADATA`: names, counts and dates, not content. `READ_TENANT_DATA`: it reads your content. `WRITE_TENANT_DATA`: it changes your content. `EXTERNAL_EGRESS`: it sends your data outside your organisation |
+  | `reversibility` | How hard it is to undo what it does. `REVERSIBLE`: it can be put back as it was. `COMPENSABLE`: it cannot, but something can be done to make up for it. `TERMINAL`: neither, for example a message that has been sent |
+  | `provenance` | Who wrote it. `FIRST_PARTY`: your organisation. `THIRD_PARTY`: a supplier |
+
+  The last two are its risk rating (`LOW`, `MODERATE`, `HIGH` or `CRITICAL`)
+  and the date of that rating, written like `2026-09-30`, which must be
+  within the 365 days before the scan. You give both or neither.
+
+  These are the same descriptions, with the same words, that an Inflect
+  tenant keeps for an agent. Write the values exactly as shown, in capitals.
 
 Then open `scanent/config.json` in a text editor, and add this line directly
 after the first `{`:

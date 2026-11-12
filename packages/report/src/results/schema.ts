@@ -19,9 +19,9 @@
  */
 import { z } from 'zod';
 
-import { HARNESS_FINDING_CODES } from '@scanent/contract/harness-findings';
-import { SOURCE_KINDS } from '@scanent/contract/harness-contract-rules';
-import { ALL_HARNESS_CRITERIA, HARNESS_LEVELS, isHarnessCriterionId, type HarnessCriterionId } from '@scanent/contract/harness-ladder';
+import { HARNESS_FINDING_CODES } from '@rodnapamet/scanent-contract/harness-findings';
+import { SOURCE_KINDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
+import { ALL_HARNESS_CRITERIA, HARNESS_LEVELS, isHarnessCriterionId, type HarnessCriterionId } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { RESULTS_SCHEMA, type LocalResults } from './types';
 

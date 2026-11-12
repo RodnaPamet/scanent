@@ -31,7 +31,7 @@ import {
     literalCredentials,
     writeCodeEstate,
 } from './helpers/agent-harness-code-fixtures';
-import { HARNESS_CONTRACT_V3, looksLikeSecret, verifyAndParseHarnessReport } from '@scanent/contract/harness-contract';
+import { HARNESS_CONTRACT_V3, looksLikeSecret, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { parseScannerConfig } from '../src/config';
 import { jsonLineLog } from '../src/log';
 import { rawPublicKeyHex } from '../src/report';

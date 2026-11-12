@@ -45,7 +45,7 @@ function onlyDeclaredImports(allowed, message, { builtins: admitBuiltins = true 
 const SCANNER_IMPORT_PATTERNS = [
     onlyDeclaredImports(
         declaredDependencies('./packages/scanner/package.json'),
-        'The scanner runs in a client estate. It imports @scanent/contract, Node built-ins and the dependencies packages/scanner/package.json declares, and nothing else.',
+        'The scanner runs in a client estate. It imports @rodnapamet/scanent-contract, Node built-ins and the dependencies packages/scanner/package.json declares, and nothing else.',
     ),
 ];
 
@@ -59,7 +59,7 @@ const CONTRACT_IMPORT_PATTERNS = [
 const REPORT_IMPORT_PATTERNS = [
     onlyDeclaredImports(
         declaredDependencies('./packages/report/package.json'),
-        'Local results are pure functions: @scanent/contract and the dependencies packages/report/package.json declares, and no Node built-in.',
+        'Local results are pure functions: @rodnapamet/scanent-contract and the dependencies packages/report/package.json declares, and no Node built-in.',
         { builtins: false },
     ),
 ];

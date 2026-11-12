@@ -16,8 +16,10 @@ Nothing about behaviour. The complete difference between the copied source
 files and their originals is:
 
 1. Import specifiers. The original used an application path alias; here the
-   scanner imports `@scanent/contract/<module>` and the contract's own files
-   import each other relatively.
+   scanner imports `@rodnapamet/scanent-contract/<module>` and the contract's
+   own files import each other relatively. (The package was named
+   `@scanent/contract` until it was given the name it is published under; see
+   "What remains for the originating repository".)
 2. `packages/contract/src/harness-contract.ts` type-imported two view types
    (`StoredSource`, `HarnessAgentModels`) from an application read-model file.
    That import is replaced by local, structurally identical declarations (with
@@ -124,9 +126,9 @@ Every carried-over file had its import specifiers rewritten. Beyond that:
 These stay in the original repository, where the files they read are. The two
 `harness-contract.test.ts` cases are cross-checks between the contract and the
 application (a label per reason, a database CHECK per source kind). When the
-application takes the contract from `@scanent/contract`, they must stay there
-and be pointed at the package, or a new reason or source kind can ship without
-its label or CHECK. The deployment-template suite has no counterpart here until
+application takes the contract from `@rodnapamet/scanent-contract`, they must
+stay there and be pointed at the package, or a new reason or source kind can
+ship without its label or CHECK. The deployment-template suite has no counterpart here until
 this repository has deployment templates of its own.
 
 Tests in the original repository that touch one of the eight contract files
@@ -209,13 +211,86 @@ passes it unchanged.
   repository, and the Change Date is 2030-11-11. The Additional Use Grant, the
   licensing contact and the terms below the parameters are the originating
   repository's, unchanged.
-- The npm packages are private and unpublished. Before either is published,
-  `LICENSE` and `NOTICE` must be copied into it; the image already carries
-  both.
-- The base image is Alpine, so the image contains a shell even though nothing
-  uses one to start the scanner. A distroless base is a later step.
-- No image is published, signed or given an SBOM. The image is built for the
-  runner's architecture only.
-- Three drift checks against the Inflect application became recorded values
-  (the "Changed" table). Once Inflect consumes `@scanent/contract`, the checks
-  that compare the two sides belong in the application's repository.
+- Nothing has been released: no image, no bundle and no package has been
+  published or signed. `docs/roadmap.md` and `docs/release-checklist.md` say
+  what the first tag does.
+- The contract package is ready to publish and is not published. It carries
+  `LICENSE` and `NOTICE`, as the image does. The scanner and report packages
+  stay private. The next section says what the originating repository still
+  has to do.
+- Four drift checks against the Inflect application became recorded values
+  (the "Changed" table). They belong in the application's repository once it
+  consumes the package; the next section lists them.
+
+## What remains for the originating repository
+
+Owner decision, 2026-11-12 (issue 7): the contract is published to GitHub
+Packages, so that the Inflect application depends on it and stops carrying a
+copy. This repository's half is done and is described in
+[contract.md](contract.md#use-the-reference-implementation): the package is
+`@rodnapamet/scanent-contract`, the release workflow packs, checks, attests
+and publishes it at a version tag, and its version is the scanner's.
+
+**Nothing is published yet.** The first three steps below wait for the first
+release of this repository; none of them can be done before it.
+
+The name changed with that decision. GitHub Packages takes the scope of an npm
+package to be the account that owns it, so `@scanent/contract` could not be
+published from a repository of `RodnaPamet`. The package is
+`@rodnapamet/scanent-contract`, here and in every import.
+
+What the Inflect Compliance repository still has to do, in order:
+
+1. **Get access to the package.** GitHub creates a package private, and an
+   install needs a token whether the package is public or private. After the
+   first publish, in the package's settings on GitHub: under "Manage Actions
+   access", add the application's repository with the Read role, so its
+   workflows install with their own token. A person's machine, and any build
+   that runs outside GitHub Actions (an image build, a cloud development
+   session), needs a personal access token (classic) with `read:packages`.
+2. **Route the scope.** Add `@rodnapamet:registry=https://npm.pkg.github.com`
+   to the application's `.npmrc`, and give each workflow job that installs
+   `permissions: packages: read` and the token
+   ([contract.md](contract.md#install-it) has the lines). No token goes in
+   the repository.
+3. **Depend on it**, at an exact version, and check `zod`. The package pins
+   `zod` to one exact version (`packages/contract/package.json`). At the
+   origin commit the application asked for a compatible range; if its
+   lockfile resolves another version, npm installs a second copy for the
+   package, and a schema of one copy is not a schema of the other.
+4. **Replace the eight copies with imports.** Each row of the file mapping
+   above whose new path is under `packages/contract/src` is one module of the
+   package: `src/lib/agentic/harness-contract.ts` becomes
+   `@rodnapamet/scanent-contract/harness-contract`, and so on for
+   `harness-contract-rules`, `harness-findings`, `harness-ladder`,
+   `canonical-json`, `receipt-verification`, `audit-redact` and `cidr`. Then
+   delete the copies. Three things to hold while doing it:
+   - the package declares `StoredSource` and `HarnessAgentModels` itself
+     (point 2 of "What changed in the source"), where the application's copy
+     imports them from its read-model file. The two are the same shape, and
+     the application keeps its own;
+   - the package is compiled CommonJS that uses Node's `crypto`. It is for
+     the server; nothing a browser bundle reaches may import it;
+   - at the origin commit the application's own scanner package, the lint
+     rule over it and its image build reached contract files by path. Each of
+     those references moves to the package or goes.
+5. **Keep the two cross-checks, pointed at the package.** "every reason an
+   accepted id can carry has a label in each locale" and "the newest
+   migration's CHECK lists SOURCE_KINDS" ("Left behind", above) read the
+   application's translation files and migrations. They stay in the
+   application and import `INCOMPLETE_REASONS` and `SOURCE_KINDS` from the
+   package, or a new reason or source kind ships without its label or CHECK.
+6. **Restore the four live drift checks there.** The four rows of the
+   "Changed" table that became recorded values here compared the scanner
+   with the application live: the two LangSmith address tables
+   (`isPrivateAddress`, `isNeverAllowlistable`), the two RFC 8693 identifiers
+   of the token exchange, and the connect wizard's two snippets. This
+   repository cannot see the application, so the live comparison can only be
+   made there, against this repository's scanner at a named release.
+7. **Take a new version on purpose.** A release here that changes a contract
+   id, a limit or the ladder says so in its notes and changes
+   [contract.md](contract.md). The application moves to it by changing one
+   exact version, in a pull request that its own contract tests run on.
+
+Nothing in this repository checks that the application did any of this, and
+until it has, the two copies can differ (issue 7).

@@ -36,8 +36,8 @@
  */
 import { createHash } from 'crypto';
 
-import { looksLikeSecret } from '@scanent/contract/harness-contract';
-import type { AgentSdkOptionFacts } from '@scanent/contract/harness-findings';
+import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract';
+import type { AgentSdkOptionFacts } from '@rodnapamet/scanent-contract/harness-findings';
 
 import {
     isClaudeAgentSdkModule,

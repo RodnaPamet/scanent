@@ -7,8 +7,8 @@
  * credential or a finding is CLOSED only on positive evidence. A diff that
  * found nothing and could not compare everything is never "the same".
  */
-import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
-import { ALL_HARNESS_CRITERIA } from '@scanent/contract/harness-ladder';
+import type { HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
+import { ALL_HARNESS_CRITERIA } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { DIFF_SCHEMA, diffExitCode, DiffRefused, diffResults, TOOL_EVIDENCE_OLDER_RULE, type ResultsDiff } from '../src/diff/diff';
 import { renderDiffText } from '../src/render/diff-text';

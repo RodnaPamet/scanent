@@ -84,8 +84,10 @@ No tag has been pushed and no release exists. So:
 - Nobody can obtain a verified binary today. The only way to run scanent is
   to build it from source.
 
-The first tag waits on an owner decision about whether the image is public
-(issue 19).
+The image is to be public (owner decision, 2026-11-12, issue 19): once a
+release exists, pulling it will need no login. The contract package is to be
+published to GitHub Packages by the same workflow (issue 7). Neither has
+happened: no tag has been pushed.
 
 ### Repository settings that are not on
 
@@ -158,7 +160,9 @@ and the [threat model](../threat-model.md).
 - **Scale**, at 500 agents in every run.
 - **Compatibility.** Files written by an earlier commit of the code
   (`190f3fb`, the same unreleased version 0.12.0) are read by the current
-  code. No released version exists to compare with.
+  code, with one exception: its two inventory files are
+  `scanent-inventory/1`, which the current code refuses with a message
+  saying what changed. No released version exists to compare with.
 - **The deployment templates.** Compose, the chart, the air-gapped bundle's
   scripts (against stand-ins for the container runtime and `cosign`).
 - **The documents.** Several pages are generated from the code or checked

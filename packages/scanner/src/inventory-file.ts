@@ -17,7 +17,8 @@
  * a quote inside a quoted field doubled, CRLF or LF line ends, UTF-8, an
  * optional byte-order mark. The first record is the header, and it must be
  * the four required columns plus any of the optional ones, each once. An
- * empty optional cell is an absent value. The decoder is strict where a
+ * empty optional cell is an absent value, and `autonomyLevel`, the one number,
+ * is written as its digits. The decoder is strict where a
  * spreadsheet export is not ambiguous and refuses where it is: a quote in the
  * middle of an unquoted field, text after a closing quote, a record with a
  * different number of fields.
@@ -25,14 +26,21 @@
 import { createHash } from 'crypto';
 import { closeSync, fstatSync, openSync, readSync } from 'fs';
 
-import { INVENTORY_SCHEMA_ID, InventoryRefused, parseInventory, type ParsedInventory } from '@scanent/report/results/inventory';
+import { INVENTORY_AXES, INVENTORY_SCHEMA_ID, InventoryRefused, parseInventory, RETIRED_INVENTORY_SCHEMAS, type ParsedInventory } from '@scanent/report/results/inventory';
 
 /** The largest inventory file read. 5,000 rows of the longest fields fit several times over. */
 export const MAX_INVENTORY_BYTES = 5 * 1024 * 1024;
 
 export const INVENTORY_CSV_REQUIRED_COLUMNS = ['discoveredId', 'name', 'owner', 'purpose'] as const;
-export const INVENTORY_CSV_OPTIONAL_COLUMNS = ['autonomy', 'dataClass', 'reach', 'riskTier', 'riskAssessedOn'] as const;
-const AXIS_COLUMNS: readonly string[] = ['autonomy', 'dataClass', 'reach'];
+export const INVENTORY_CSV_OPTIONAL_COLUMNS = [...INVENTORY_AXES, 'riskTier', 'riskAssessedOn'] as const;
+const AXIS_COLUMNS: readonly string[] = INVENTORY_AXES;
+/** The one column whose value is a number. A cell of digits only is read as one; anything else is left for the schema to refuse. */
+const NUMBER_COLUMN = 'autonomyLevel';
+/**
+ * The axis columns of `scanent-inventory/1`, which a CSV file cannot name itself by. A header
+ * holding one is told what changed, in this module's own words: the names are these, not the file's.
+ */
+const RETIRED_V1_AXIS_COLUMNS: readonly string[] = ['autonomy', 'dataClass', 'reach'];
 const CSV_COLUMNS: readonly string[] = [...INVENTORY_CSV_REQUIRED_COLUMNS, ...INVENTORY_CSV_OPTIONAL_COLUMNS];
 
 /** The form a path names, by its extension; null when it is neither. */
@@ -114,7 +122,13 @@ export function decodeInventoryCsv(text: string): unknown {
     if (header === undefined) throw new InventoryRefused(['header: missing']);
 
     const unknown = header.filter((column) => !CSV_COLUMNS.includes(column)).length;
-    if (unknown > 0) throw new InventoryRefused([`header: ${unknown} unknown column${unknown === 1 ? '' : 's'}`]);
+    if (unknown > 0) {
+        const retired = header.some((column) => RETIRED_V1_AXIS_COLUMNS.includes(column));
+        throw new InventoryRefused([
+            `header: ${unknown} unknown column${unknown === 1 ? '' : 's'}`,
+            ...(retired ? [`header: columns of scanent-inventory/1; this version reads ${INVENTORY_SCHEMA_ID}: ${RETIRED_INVENTORY_SCHEMAS['scanent-inventory/1']}`] : []),
+        ]);
+    }
     if (new Set(header).size !== header.length) throw new InventoryRefused(['header: a column appears once']);
     const missing = INVENTORY_CSV_REQUIRED_COLUMNS.filter((column) => !header.includes(column));
     if (missing.length > 0) throw new InventoryRefused(missing.map((column) => `header: required column ${column} is missing`));
@@ -126,13 +140,15 @@ export function decodeInventoryCsv(text: string): unknown {
             return {};
         }
         const row: Record<string, unknown> = {};
-        const axes: Record<string, string> = {};
+        const axes: Record<string, unknown> = {};
         header.forEach((column, c) => {
             const value = cells[c];
             // A required cell is passed on even when empty, so the schema refuses it by name.
             const required = (INVENTORY_CSV_REQUIRED_COLUMNS as readonly string[]).includes(column);
             if (value === '' && !required) return;
-            if (AXIS_COLUMNS.includes(column)) axes[column] = value;
+            // `3` is the number three. `03`, ` 3`, `3.0` and `three` stay text, and the schema refuses text there.
+            if (column === NUMBER_COLUMN) axes[column] = /^(0|[1-9]\d{0,8})$/.test(value) ? Number(value) : value;
+            else if (AXIS_COLUMNS.includes(column)) axes[column] = value;
             else row[column] = value;
         });
         if (Object.keys(axes).length > 0) row.axes = axes;
