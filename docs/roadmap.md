@@ -121,16 +121,24 @@ to add sources that evidence H4 and H5 is an open product decision (issue 15).
 
 ## Hardening follow-ups
 
-From the internal hardening review (issue 20). The first two are documented
-residual risks in the [threat model](threat-model.md#residual-risks)
-(risks 14 and 12). The other two are recorded in issue 20 only:
+From the internal hardening review (issue 20). Four of its five follow-ups
+were acted on in 0.13.0. What is left of each:
 
-- The bundled egress proxy has no idle timeout and no connection limit.
-- A secret file is checked for the world-writable bit only.
-- The grant of each token exchange is declared beside the hashed request
-  surface, not inside it.
-- A model name written in code is reported as written when it has no known
-  secret shape.
+- **The egress proxy is bounded, not defended.** It closes a silent
+  connection after two minutes and holds at most 256. A peer that can reach
+  its port can still use them all
+  ([threat model](threat-model.md#residual-risks), risk 14).
+- **A secret file is checked by its own mode.** One that its group or every
+  user can write is refused. Its directory and its owner are not checked
+  (risk 12).
+- **A model name is held to the shape of one.** A literal that is not shaped
+  like a model name is reported as not known. A credential that happens to be
+  shaped like a short name, with separators, would still be reported.
+- The grant of each token exchange is inside the hashed request surface.
+  Nothing is left of that one.
+
+Still open: the provenance files of a release can be checked only on the
+first tag (issue 20, item 4).
 
 ## Assurance work
 

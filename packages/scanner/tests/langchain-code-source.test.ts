@@ -39,7 +39,7 @@ import { runScan } from '../src/scan';
 import { scannerManifestHash, SCANNER_SURFACE } from '../src/scanner-surface';
 import type { CodeFs } from '../src/sources/code/files';
 import { MAX_FILE_BYTES } from '../src/sources/code/files';
-import type { DetectedAgent } from '../src/sources/code/recognize';
+import { reportableModelName, type DetectedAgent } from '../src/sources/code/recognize';
 import { langchainCodeSource, scanLangChainCode } from '../src/sources/langchain';
 import type { SourceContext, SourceRead } from '../src/source';
 
@@ -473,6 +473,73 @@ local_agent = create_react_agent("house-model-7", [])
         const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
         expect(result.status).toBe('COMPLETE');
         expect(result.observations[0].models).toEqual([{ endpoint: 'code://acme/local/agent.py#L3', model: 'house-model-7' }]);
+    });
+
+    it('a model name is repeated only when it is shaped like one; anything else is reported as not known, with its entry kept', async () => {
+        // Real names, of every form the readers meet.
+        for (const name of [
+            'gpt-4o-mini',
+            'claude-3-5-sonnet-20241022',
+            'anthropic.claude-3-sonnet-20240229-v1:0',
+            'meta-llama/Llama-3-70b-chat-hf',
+            'models/gemini-1.5-pro',
+            'llama3.2:3b-instruct-q4_K_M',
+            'ft:gpt-4o-mini-2024-07-18:acme::9abcDEF',
+            'prod-gpt4@eastus',
+        ]) {
+            expect(reportableModelName(name)).toBe(name);
+        }
+        // Not names: a credential with no known shape pasted where the model goes, in hex and in base62;
+        // a sentence; a path with a space; something over the length; a leading separator; a known key shape.
+        const HEX_TOKEN = 'a3f1'.repeat(10);
+        const BASE62_TOKEN = 'Zx9Qm2Lk8Vb4Nc7Ht5Rj1Wp6Ys3Df0GaUeIoPqXz';
+        expect(looksLikeSecret(HEX_TOKEN)).toBe(false);
+        expect(looksLikeSecret(BASE62_TOKEN)).toBe(false);
+        for (const notAName of [HEX_TOKEN, BASE62_TOKEN, `prefix-${HEX_TOKEN}`, 'my model', 'a'.repeat(101), '-gpt-4', '', 'gpt 4o', 'model;drop', fakeOpenAiKey()]) {
+            expect(reportableModelName(notAName)).toBeNull();
+        }
+        // A 31-character run is still a name; the limit is 32.
+        expect(reportableModelName(`m-${'a'.repeat(31)}`)).toBe(`m-${'a'.repeat(31)}`);
+        expect(reportableModelName(`m-${'a'.repeat(32)}`)).toBeNull();
+
+        // Through the reader and into a signed report: the token is nowhere, and the model entry is still there.
+        const dir = estate({
+            'pasted/agent.py': `from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+llm = ChatOpenAI(model="${HEX_TOKEN}")
+pasted_agent = create_react_agent(llm, [])
+`,
+            'pasted/other.py': `from langgraph.prebuilt import create_react_agent
+
+string_agent = create_react_agent("${BASE62_TOKEN}", [])
+`,
+        });
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+        expect(result.status).toBe('COMPLETE');
+        const models = Object.fromEntries(result.observations.map((o) => [o.discoveredId, o.models]));
+        expect(models['code:acme/pasted/agent.py#pasted_agent']).toEqual([{ endpoint: 'https://api.openai.com/v1', model: null }]);
+        expect(models['code:acme/pasted/other.py#string_agent']).toEqual([{ endpoint: 'code://acme/pasted/other.py#L3', model: null }]);
+        expect(JSON.stringify(result)).not.toContain(HEX_TOKEN);
+        expect(JSON.stringify(result)).not.toContain(BASE62_TOKEN);
+
+        const { privateKey } = generateKeyPairSync('ed25519');
+        const { raw } = await runScan({
+            config: parseScannerConfig({
+                estate: 'acme-code',
+                scanner: { agentId: 'agt_scanner_code', signingKeyEnv: 'SCANNER_SIGNING_KEY' },
+                inflect: { baseUrl: 'https://inflect.example.com', tenantSlug: 'acme', apiKeyEnv: 'INFLECT_INGEST_KEY' },
+                schedule: { everyHours: 24 },
+                sources: [{ kind: 'code', product: 'langchain', roots: [{ label: 'acme', path: dir }] }],
+            }),
+            env: { SCANNER_SIGNING_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString() },
+            log: jsonLineLog(() => undefined),
+            fetchImpl: async () => {
+                throw new Error('the code source makes no request');
+            },
+        });
+        expect(raw).not.toContain(HEX_TOKEN);
+        expect(raw).not.toContain(BASE62_TOKEN);
     });
 
     it('the configuration takes no credential for the code source, and refuses a relative or escaping root', () => {

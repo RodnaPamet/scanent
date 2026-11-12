@@ -67,7 +67,10 @@ depends on the source:
   - MCP servers: each server's URL as you configured it and each tool's
     name. A server's label is not reported; it is written to the log.
   - Code: a file's path, the variable an agent is assigned to, tool names,
-    model names, and the host of a model or MCP endpoint written in code.
+    model names, and the host of a model or MCP endpoint written in code. A
+    model name is repeated only when it is shaped like one (letters, digits
+    and `. _ : / @ -`, at most 100 characters, no long unbroken run);
+    otherwise the model is reported as not known.
 
 If people's names appear in secret names, workflow file names, repository
 names, tool names or paths in your estate, they are in the report and in the

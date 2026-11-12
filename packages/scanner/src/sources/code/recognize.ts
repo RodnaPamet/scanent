@@ -133,6 +133,33 @@ function reportableName(value: string): string | null {
     return /^[\w.:\-/ ]{1,128}$/.test(value) && !looksLikeSecret(value) ? value : null;
 }
 
+/** What a model name is made of: letters, digits and `. _ : / @ -`, starting with a letter or digit, at most 100 characters. */
+const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,99}$/;
+
+/** A run of letters and digits this long with no separator is how a key is written, and no model name is. */
+const OPAQUE_RUN = /[A-Za-z0-9]{32,}/;
+
+/**
+ * A model's name as written in the code, when it has the shape of a model
+ * name; null otherwise.
+ *
+ * A model name is a literal in the place a credential is most easily pasted by
+ * mistake (`model=` beside `api_key=`), and `looksLikeSecret` knows only the
+ * shapes of keys that have one. So the name is held to what model names look
+ * like — `gpt-4o-mini`, `anthropic.claude-3-sonnet-20240229-v1:0`,
+ * `meta-llama/Llama-3-70b-chat-hf`, `llama3.2:3b-instruct-q4_K_M` — and a
+ * string of the right characters that is one long unbroken run (a hex or
+ * base62 token) is not one.
+ *
+ * A name that fails is reported as NOT KNOWN (`model: null`). The model entry
+ * itself stays in the report, with its provider and endpoint: the agent still
+ * uses a model, and the report says where. It is not a parse failure, so the
+ * source's completeness does not change.
+ */
+export function reportableModelName(value: string): string | null {
+    return MODEL_NAME.test(value) && !OPAQUE_RUN.test(value) && !looksLikeSecret(value) ? value : null;
+}
+
 // ─── What each known name is ────────────────────────────────────────────────
 
 interface Provider {
@@ -669,7 +696,7 @@ class Recognizer {
         const known = provider !== null ? PROVIDERS[provider] : undefined;
         r.models.push({
             provider: provider ?? 'unknown',
-            model: model !== null ? reportableName(model) : null,
+            model: model !== null ? reportableModelName(model) : null,
             endpoint: known?.endpoint ?? (known?.endpointEnv ? `env://${known.endpointEnv}` : null),
             endpointBasis: known?.endpoint ? 'provider-default' : known?.endpointEnv ? 'environment' : 'unknown',
             at,
@@ -700,7 +727,7 @@ class Recognizer {
         if (call.spread) this.fail(call.line);
         const known = PROVIDERS[provider];
         const nameExpr = this.option(call, MODEL_NAME_KEYS);
-        const model = nameExpr?.k === 'str' && !nameExpr.template ? reportableName(nameExpr.value) : null;
+        const model = nameExpr?.k === 'str' && !nameExpr.template ? reportableModelName(nameExpr.value) : null;
 
         let endpoint: string | null = null;
         let endpointBasis: DetectedModel['endpointBasis'] = 'unknown';
@@ -1075,7 +1102,7 @@ class Recognizer {
         let model: string | null = null;
         if (modelExpr !== undefined) {
             const v = this.deref(modelExpr);
-            if (v !== null && v.k === 'str' && !v.template) model = reportableName(v.value);
+            if (v !== null && v.k === 'str' && !v.template) model = reportableModelName(v.value);
             else this.fail(modelExpr.line);
         }
         const anthropic = PROVIDERS.anthropic;
