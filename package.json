@@ -21,7 +21,8 @@
     "test": "jest",
     "test:coverage": "jest --coverage",
     "docs:access": "node scripts/render-access.js",
-    "docs:examples": "node scripts/render-examples.js"
+    "docs:examples": "node scripts/render-examples.js",
+    "docs:network": "node scripts/render-network-and-permissions.js"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
