@@ -1173,6 +1173,24 @@ link to anywhere, and a Content-Security-Policy that makes the browser hold
 that. Every scanned string is escaped. It prints, and follows the reader's
 light or dark setting.
 
+The page is capped so that it opens on a large estate; the other files are
+never shortened. The matrix shows at most 500 agents, each list of shadow
+agents, orphan credentials and declared agents not found at most 500 rows, and
+the findings at most 2,500. A list over its cap says how many it shows, how
+many the run holds and which file holds the rest (`agents.csv`,
+`findings.csv` or `results.json`). Above its cap the matrix shows the agents
+that most need a reader: those not judged, then those below their bar, then
+the lowest levels. The counts at the top of the page are always over the whole
+run. A run under every cap is rendered exactly as before. Measured on a
+5,000-agent run, the page is 5.4 MiB.
+
+Each agent in `results.json` carries `toolEvidenceSources`: the sources that
+must have been read in full before the agent's report is evidence that it
+holds no unpinned write tool. It is `code` for a tool defined in code and
+`mcp` for a tool an MCP server serves, and it also names where a tool the
+report left out would have been. The member is optional, so a file written by
+an earlier version, which has none, still reads.
+
 `agents.csv` and `findings.csv` are UTF-8 with a byte-order mark, CRLF line
 ends and every field quoted. A cell that a spreadsheet would evaluate as a
 formula (it starts with `=`, `+`, `-`, `@`, a tab or a carriage return) is
@@ -1201,7 +1219,7 @@ Absence is evidence only on a full read:
 | agent `gone` | in the older run only, and every source it was found through was read in full by the newer run |
 | agent `not seen` | in the older run only, and one of those sources was incomplete or not listed, or the newer run found no agent at all. Nothing is concluded |
 | level up or down | only when both runs judged the agent |
-| orphan credential or finding `closed` | only on the evidence that would close it: its source read in full, the agent present and judged, the scan complete where the rule needs it. An unpinned write tool closes only when the source its tools were read from (`code`, or `mcp`) is listed and read in full. An empty newer run closes no orphan credential |
+| orphan credential or finding `closed` | only on the evidence that would close it: its source read in full, the agent present and judged, the scan complete where the rule needs it. An unpinned write tool closes only when every source in the agent's `toolEvidenceSources`, from both runs, is listed and read in full. A file with no such member (written by an earlier version) is decided from where the agent was found, and the diff carries the warning `TOOL_EVIDENCE_OLDER_RULE`. An empty newer run closes no orphan credential |
 | `no longer reported, not concluded` | everything else that is absent from the newer run |
 
 Refused, with exit code 2: a file that cannot be read or is neither kind, a

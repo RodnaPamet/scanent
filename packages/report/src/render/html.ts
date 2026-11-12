@@ -28,8 +28,64 @@ import type { LocalAgentResult, LocalCriterionCell, LocalFinding, LocalResults }
 import { html, htmlText, type HtmlValue, type SafeHtml } from './escape';
 import { RUN_FILE_NAMES } from './files';
 
-/** Above this many agents the matrix shows the first ones by id and says so. */
+/**
+ * Above this many agents the matrix shows the first ones and says so. A run at
+ * or below it shows every agent, in order of id.
+ */
 export const MATRIX_MAX_AGENTS = 500;
+
+/**
+ * The most rows any one list on the page shows: shadow agents, orphan
+ * credentials, findings, the inventory's unmatched ids. Without it the page
+ * grows with the estate (a 5,000-agent run measured 14 MiB and 15,000 table
+ * rows), and a page nobody can open shows nothing. A list over the cap says
+ * how many it shows, how many the run holds and which file holds the rest; the
+ * counts in the summary are always over the whole run, and no other file is
+ * shortened.
+ */
+export const SECTION_MAX_ROWS = MATRIX_MAX_AGENTS;
+
+/**
+ * The most findings the page lists. Five for each agent the matrix can show:
+ * an agent raises a few findings, so a run the matrix shows whole has its
+ * findings shown whole too, and a row here is small beside a matrix row.
+ */
+export const FINDINGS_MAX_ROWS = 5 * MATRIX_MAX_AGENTS;
+
+/** The first `max` of a list, and the notice to show when that is not all of it. */
+function capped<T>(
+    all: readonly T[],
+    max: number,
+    what: string,
+    order: string,
+    file: string,
+): { readonly shown: readonly T[]; readonly notice: SafeHtml | '' } {
+    if (all.length <= max) return { shown: all, notice: '' };
+    return {
+        shown: all.slice(0, max),
+        notice: html`<p class="callout">This list shows the first ${max} of ${all.length} ${what}, ${order}. The full list is in <code>${file}</code>.</p>`,
+    };
+}
+
+/**
+ * Which agents the matrix shows when the run holds more than it can: the ones
+ * that most need a reader. Not judged first, then below their bar, then the
+ * lowest level; within each, in order of id (the order the results list them in).
+ */
+function matrixSelection(agents: readonly LocalAgentResult[]): readonly LocalAgentResult[] {
+    if (agents.length <= MATRIX_MAX_AGENTS) return agents;
+    const rank = (a: LocalAgentResult): number => {
+        const j = a.judgement;
+        if (j.state !== 'JUDGED') return 0;
+        const rung = Math.max(0, HARNESS_LEVELS.indexOf(j.level));
+        return (j.shortfall ? 1 : 1 + HARNESS_LEVELS.length) + rung;
+    };
+    return agents
+        .map((agent, i): [LocalAgentResult, number, number] => [agent, rank(agent), i])
+        .sort(([, ra, ia], [, rb, ib]) => ra - rb || ia - ib)
+        .slice(0, MATRIX_MAX_AGENTS)
+        .map(([agent]) => agent);
+}
 
 // ── Fixed tables: every class and code on the page comes from one of these ──
 
@@ -313,11 +369,11 @@ ${order.map((criterion) => {
 function matrix(r: LocalResults): SafeHtml {
     const levels = r.ladder.levels.filter((level) => r.ladder.criteria[level].length > 0);
     const order = levels.flatMap((level) => r.ladder.criteria[level]);
-    const shown = r.agents.slice(0, MATRIX_MAX_AGENTS);
+    const shown = matrixSelection(r.agents);
     return html`<section id="matrix" aria-labelledby="matrix-h">
 <h2 id="matrix-h">Agents and criteria</h2>
 ${r.agents.length > MATRIX_MAX_AGENTS
-        ? html`<p class="callout">This table shows the first ${MATRIX_MAX_AGENTS} of ${r.agents.length} agents, in order of their id. The full list is in <code>${RUN_FILE_NAMES.agents}</code>.</p>`
+        ? html`<p class="callout">This table shows the first ${MATRIX_MAX_AGENTS} of ${r.agents.length} agents: those not judged, then those below their bar, then the lowest levels, in order of their id within each. The counts above are over all ${r.agents.length}. The full list is in <code>${RUN_FILE_NAMES.agents}</code>.</p>`
         : ''}
 <p>An agent reaches a level only when every criterion on it and below it is evidenced. A level is stated only for an agent every relevant source was read in full for.</p>
 <ul class="legend" aria-label="What each cell code means">
@@ -349,6 +405,7 @@ ${shown.map((agent) => matrixRow(agent, order))}
 
 function shadowAgents(r: LocalResults): SafeHtml {
     const byId = new Map(r.agents.map((a) => [a.discoveredId, a]));
+    const shadow = capped(r.estate.shadowAgents, SECTION_MAX_ROWS, 'shadow agents', 'in the order the results list them', RUN_FILE_NAMES.agents);
     const body =
         r.estate.registrationBasis === 'NONE'
             ? html`<p>With no inventory and no register read, every agent this scan found is unregistered, so the list would repeat the table above. Supply an inventory to see which agents the estate does not know.</p>`
@@ -356,11 +413,11 @@ function shadowAgents(r: LocalResults): SafeHtml {
                 ? r.scan.complete
                     ? html`<p>None: every agent this scan found is registered.</p>`
                     : html`<p>None raised. The scan is incomplete, so this is not a statement that none exist.</p>`
-                : html`<div class="scroll"><table>
+                : html`${shadow.notice}<div class="scroll"><table>
 <caption>Agents found by this scan that are not registered</caption>
 <thead><tr><th scope="col">Agent</th><th scope="col">Found through</th><th scope="col">Reach</th></tr></thead>
 <tbody>
-${r.estate.shadowAgents.map((id) => {
+${shadow.shown.map((id) => {
                     const agent = byId.get(id);
                     return html`<tr><th scope="row"><code class="id">${id}</code></th><td>${(agent?.discoveredVia ?? []).map((kind, i) => html`${i > 0 ? ', ' : ''}<code>${kind}</code>`)}</td><td>${fixed(REACH_TEXT, agent?.reach ?? 'UNKNOWN', 'Unknown')}</td></tr>`;
                 })}
@@ -374,26 +431,28 @@ ${body}
 
 function orphans(r: LocalResults): SafeHtml {
     const e = r.estate;
+    const concluded = capped(e.orphanCredentials, SECTION_MAX_ROWS, 'orphan credentials', 'in the order the results list them', RUN_FILE_NAMES.results);
+    const unbound = capped(e.unboundNotConcluded, SECTION_MAX_ROWS, 'credentials seen unbound', 'in the order the results list them', RUN_FILE_NAMES.results);
     return html`<section id="orphans" aria-labelledby="orphans-h">
 <h2 id="orphans-h">Orphan credentials</h2>
 ${e.orphanCredentials.length === 0
         ? html`<p>None concluded.${e.unboundNotConcluded.length > 0 || !r.scan.complete ? ' That is not a statement that none exist: see below and the completeness table.' : ''}</p>`
-        : html`<div class="scroll"><table>
+        : html`${concluded.notice}<div class="scroll"><table>
 <caption>Credentials a source, read in full, saw bound to no agent</caption>
 <thead><tr><th scope="col">Credential reference</th><th scope="col">Source</th></tr></thead>
 <tbody>
-${e.orphanCredentials.map((c) => html`<tr><th scope="row"><code class="id">${c.ref}</code></th><td><code>${c.sourceKind}</code></td></tr>`)}
+${concluded.shown.map((c) => html`<tr><th scope="row"><code class="id">${c.ref}</code></th><td><code>${c.sourceKind}</code></td></tr>`)}
 </tbody>
 </table></div>`}
 ${e.unboundNotConcluded.length === 0
         ? ''
         : html`<h3>Seen unbound, not concluded</h3>
 <p>These were seen bound to no agent, and this scan could not conclude that none uses them.</p>
-<div class="scroll"><table>
+${unbound.notice}<div class="scroll"><table>
 <caption>Credentials seen unbound that could not be concluded as orphans</caption>
 <thead><tr><th scope="col">Credential reference</th><th scope="col">Source</th><th scope="col">Why not concluded</th></tr></thead>
 <tbody>
-${e.unboundNotConcluded.map((c) => html`<tr><th scope="row"><code class="id">${c.ref}</code></th><td><code>${c.sourceKind}</code></td><td>${fixed(UNBOUND_TEXT, c.why, 'See the code')} <code>${c.why}</code></td></tr>`)}
+${unbound.shown.map((c) => html`<tr><th scope="row"><code class="id">${c.ref}</code></th><td><code>${c.sourceKind}</code></td><td>${fixed(UNBOUND_TEXT, c.why, 'See the code')} <code>${c.why}</code></td></tr>`)}
 </tbody>
 </table></div>`}
 </section>`;
@@ -404,15 +463,16 @@ function findings(r: LocalResults): SafeHtml {
         .map((f, i): [LocalFinding, number] => [f, i])
         .sort(([a, i], [b, k]) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9) || i - k)
         .map(([f]) => f);
+    const listed = capped(ordered, FINDINGS_MAX_ROWS, 'findings', 'most severe first', RUN_FILE_NAMES.findings);
     return html`<section id="findings" aria-labelledby="findings-h">
 <h2 id="findings-h">Findings</h2>
 ${ordered.length === 0
         ? html`<p>No finding was raised.${r.scan.complete ? '' : ' The scan is incomplete, so this is not a clean result.'}</p>`
-        : html`<div class="scroll"><table class="findings">
+        : html`${listed.notice}<div class="scroll"><table class="findings">
 <caption>${plural(ordered.length, 'finding', 'findings')}, most severe first</caption>
 <thead><tr><th scope="col">Severity</th><th scope="col">Code</th><th scope="col">Subject</th><th scope="col">Finding</th></tr></thead>
 <tbody>
-${ordered.map(
+${listed.shown.map(
             (f) => html`<tr>
 <td><span class="tag ${fixed(SEVERITY_CLASS, f.severity, 'sev-low')}">${f.severity}</span></td>
 <td><code>${f.code}</code></td>
@@ -428,6 +488,7 @@ ${ordered.map(
 function inventory(r: LocalResults): SafeHtml {
     const inv = r.inventory;
     if (inv === null) return html``;
+    const unmatched = capped(inv.unmatched, SECTION_MAX_ROWS, 'declared agents this scan did not find', 'in the order the results list them', RUN_FILE_NAMES.results);
     return html`<section id="inventory" aria-labelledby="inventory-h">
 <h2 id="inventory-h">Inventory</h2>
 <p>Everything in the inventory is <strong>declared by the operator</strong>. scanent did not observe it, and it is never sent anywhere.</p>
@@ -439,7 +500,7 @@ function inventory(r: LocalResults): SafeHtml {
 ${inv.unmatched.length === 0
         ? ''
         : html`<p>Declared by the operator and not found by this scan. This is not a statement that they are gone: the scan may not read where they live.</p>
-<ul class="ids">${inv.unmatched.map((id) => html`<li><code class="id">${id}</code></li>`)}</ul>`}
+${unmatched.notice}<ul class="ids">${unmatched.shown.map((id) => html`<li><code class="id">${id}</code></li>`)}</ul>`}
 </section>`;
 }
 

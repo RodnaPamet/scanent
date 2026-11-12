@@ -79,6 +79,8 @@ export interface ScoreInput {
     readonly meta: ScoreMeta;
 }
 
+/** Where an agent's tools are evidenced: a definition in code, or an MCP server's listing. */
+export type ToolEvidenceSourceKind = 'code' | 'mcp';
 export type RegistrationBasis = 'NONE' | 'DECLARED_INVENTORY' | 'OBSERVED_REGISTER';
 export type EstateRegistrationBasis = 'NONE' | 'INVENTORY' | 'INFLECT_REGISTER' | 'BOTH';
 export type VerdictBasis = 'OBSERVED' | 'DECLARED';
@@ -127,6 +129,17 @@ export type LocalJudgement =
 export interface LocalAgentResult {
     readonly discoveredId: string;
     readonly discoveredVia: readonly HarnessSourceKind[];
+    /**
+     * Every source that must have been read in full before this agent's report
+     * is evidence that it holds no unpinned write tool: each listed tool's own
+     * (`code` for a definition in code, `mcp` for a server), and where a tool
+     * the report left out would have been. Sorted, never empty.
+     *
+     * OPTIONAL, because a file written before the member existed has none. A
+     * reader that finds it absent falls back to `discoveredVia`, which cannot
+     * see a tool served over MCP to an agent found only in code.
+     */
+    readonly toolEvidenceSources?: readonly ToolEvidenceSourceKind[];
     /** What the operator's inventory says of this agent. `row` is its 1-based position in the file. */
     readonly declared: null | { readonly name: string; readonly owner: string; readonly purpose: string; readonly row: number };
     /** The owner a source read from the estate. */

@@ -27,6 +27,8 @@ const WARNING_TEXT: Readonly<Record<string, string>> = {
     ESTATE_DIFFERS: 'the two runs name different estates, so nothing absent from the new run is concluded',
     SIGNER_NOT_PINNED: 'the signed report was verified against the key it carries itself: integrity, not origin',
     REGISTER_CLAIMS_NOT_VERIFIED: 'the report’s register links are taken as stated, not read by the run that scored it',
+    TOOL_EVIDENCE_OLDER_RULE:
+        'one results file was written before agents carried their tool-evidence sources, so whether an unpinned write tool is closed was decided from where the agent was found',
 };
 
 const SOURCE_TEXT: Readonly<Record<string, string>> = {
