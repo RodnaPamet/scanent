@@ -19,7 +19,12 @@
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "test:long": "SCANENT_LONG=1 node --expose-gc node_modules/jest/bin/jest.js",
+    "soak": "node scripts/soak.js",
+    "docs:access": "node scripts/render-access.js",
+    "docs:examples": "node scripts/render-examples.js",
+    "docs:network": "node scripts/render-network-and-permissions.js"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

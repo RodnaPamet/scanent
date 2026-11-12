@@ -177,7 +177,17 @@ export function parseInventory(decoded: unknown, source: { readonly sha256: stri
         throw new InventoryRefused([`${describeSecretPath(secretAt)}: a credential value in the inventory`]);
     }
     const parsed = InventorySchema.safeParse(decoded);
-    if (!parsed.success) throw new InventoryRefused(parsed.error.issues.map(describeIssue));
+    if (!parsed.success) {
+        // A file of another schema, or of none, is told which one this version reads: the rest of
+        // its issues would be this schema's rules applied to something else. Only an id of this
+        // family is repeated; any other text is the file's own, and an issue never repeats that.
+        if (parsed.error.issues.some((i) => i.path.length === 1 && i.path[0] === 'inventory')) {
+            const found = (decoded as { inventory?: unknown }).inventory;
+            const named = typeof found === 'string' && /^scanent-inventory\/\d{1,4}$/.test(found) ? JSON.stringify(found) : found === undefined ? 'no schema' : 'a schema this version does not know';
+            throw new InventoryRefused([`inventory: the file names ${named}; this version reads ${INVENTORY_SCHEMA_ID}`]);
+        }
+        throw new InventoryRefused(parsed.error.issues.map(describeIssue));
+    }
     return { sha256: source.sha256, format: source.format, rows: parsed.data.agents };
 }
 

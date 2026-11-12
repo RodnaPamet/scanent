@@ -10,7 +10,7 @@
 import type { HarnessReportBodyV3 } from '@scanent/contract/harness-contract';
 import { ALL_HARNESS_CRITERIA } from '@scanent/contract/harness-ladder';
 
-import { DIFF_SCHEMA, diffExitCode, DiffRefused, diffResults, type ResultsDiff } from '../src/diff/diff';
+import { DIFF_SCHEMA, diffExitCode, DiffRefused, diffResults, TOOL_EVIDENCE_OLDER_RULE, type ResultsDiff } from '../src/diff/diff';
 import { renderDiffText } from '../src/render/diff-text';
 import { terminalJson, terminalLine } from '../src/render/escape';
 import { stableJson } from '../src/render/results-json';
@@ -418,6 +418,66 @@ describe('review: what a run could not have shown closes nothing', () => {
         // The agent was found through `entra-sp` before: where its tools were is `mcp`, in either run.
         const moved = diffResults(plainResults(), next((b) => noTools(viaCode(b))));
         expect(moved.findings.find((f) => f.code === 'UNPINNED_WRITE_TOOL')).toMatchObject({ change: 'NOT_CONCLUDED', why: 'SOURCE_ABSENT' });
+    });
+
+    describe('tool-evidence sources: an unpinned write tool is closed only on the sources its tools were read from', () => {
+        /** Found only in code, holding one tool served over MCP: the case `discoveredVia` cannot see. */
+        const codeAgentWithMcpTool = (b: HarnessReportBodyV3): HarnessReportBodyV3 => ({
+            ...b,
+            population: { sources: [{ kind: 'code', status: 'COMPLETE', rows: 2 }, { kind: 'mcp', status: 'COMPLETE', rows: 1 }] },
+            agents: b.agents.map((a) => ({ ...a, discoveredVia: ['code'] })),
+        });
+        const onlyCode = (b: HarnessReportBodyV3): HarnessReportBodyV3 => ({ ...b, population: { sources: [{ kind: 'code', status: 'COMPLETE', rows: 2 }] } });
+        const stripMember = (r: LocalResults): LocalResults => ({ ...r, agents: r.agents.map(({ toolEvidenceSources: _dropped, ...a }) => a) });
+        const unpinned = (d: ResultsDiff) => d.findings.find((f) => f.code === 'UNPINNED_WRITE_TOOL');
+
+        it('a code-found agent with an https tool, whose new run lists only code, is not closed', () => {
+            const before = score(codeAgentWithMcpTool(standaloneBody()));
+            expect(before.agents.find((a) => a.discoveredId === BRAVO)?.toolEvidenceSources).toEqual(['code', 'mcp']);
+            // The new run read `code` in full and reports no tool. It did not read `mcp`, where the tool was.
+            const after = next((b) => onlyCode(noTools(codeAgentWithMcpTool(b))));
+            expect(after.scan.complete).toBe(true);
+            expect(after.agents.find((a) => a.discoveredId === BRAVO)?.toolEvidenceSources).toEqual(['code']);
+            const diff = diffResults(before, after);
+            expect(unpinned(diff)).toMatchObject({ change: 'NOT_CONCLUDED', why: 'SOURCE_ABSENT' });
+            expect(diff.warnings).not.toContain(TOOL_EVIDENCE_OLDER_RULE);
+        });
+
+        it('with the member on both sides and every listed source read in full, it is closed, with no warning', () => {
+            const before = score(codeAgentWithMcpTool(standaloneBody()));
+            const diff = diffResults(before, next((b) => noTools(codeAgentWithMcpTool(b))));
+            expect(unpinned(diff)).toMatchObject({ change: 'CLOSED', why: null });
+            expect(diff.warnings).toEqual([]);
+        });
+
+        it('a listed tool-evidence source that was not read in full closes nothing', () => {
+            const before = score(codeAgentWithMcpTool(standaloneBody()));
+            const partial = next((b) => withSource(noTools(codeAgentWithMcpTool(b)), 'mcp', 'TIME_BOX'));
+            const dropped: LocalResults = { ...partial, findings: partial.findings.filter((f) => f.code !== 'UNPINNED_WRITE_TOOL') };
+            expect(unpinned(diffResults(before, dropped))).toMatchObject({ change: 'NOT_CONCLUDED', why: 'SCAN_INCOMPLETE' });
+        });
+
+        it('an older file on one side is decided on the older rule, and the diff says so', () => {
+            // The old file predates the member. What it records about the agent is `discoveredVia: [code]`,
+            // so the older rule asks for `code` alone; the new side still asks for what it lists.
+            const before = stripMember(score(codeAgentWithMcpTool(standaloneBody())));
+            const closedOnOlderRule = diffResults(before, next((b) => onlyCode(noTools(codeAgentWithMcpTool(b)))));
+            expect(unpinned(closedOnOlderRule)).toMatchObject({ change: 'CLOSED' });
+            expect(closedOnOlderRule.warnings).toEqual([TOOL_EVIDENCE_OLDER_RULE]);
+            expect(renderDiffText(closedOnOlderRule)).toContain(`${TOOL_EVIDENCE_OLDER_RULE}: one results file was written before agents carried their tool-evidence sources`);
+            // The newer side's own list is still held: a new run that lists an `mcp` tool source needs `mcp` read.
+            const newerStillHeld = diffResults(stripMember(plainResults()), next((b) => onlyEntra(noTools(b))));
+            expect(unpinned(newerStillHeld)).toMatchObject({ change: 'NOT_CONCLUDED', why: 'SOURCE_ABSENT' });
+            expect(newerStillHeld.warnings).toEqual([TOOL_EVIDENCE_OLDER_RULE]);
+        });
+
+        it('two older files decide exactly as before the member existed, once warned', () => {
+            const older = diffResults(stripMember(plainResults()), stripMember(next(noTools)));
+            expect(unpinned(older)).toMatchObject({ change: 'CLOSED' });
+            expect(older.warnings).toEqual([TOOL_EVIDENCE_OLDER_RULE]);
+            // No such finding to decide: nothing fell back, so nothing is warned.
+            expect(diffResults(stripMember(plainResults()), stripMember(next())).warnings).toEqual([]);
+        });
     });
 
     it('an empty new run shows no agent as gone and closes no orphan credential, whatever it says it read', () => {

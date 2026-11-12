@@ -11,8 +11,8 @@
 # (with argparse) and typescript. `typescript` is a run-time dependency on
 # purpose: the `code` source reads an estate's JavaScript and TypeScript with
 # its parser. There is no TypeScript source of scanent's, no compiler step at
-# start, no test tooling and no package manager. The base image's own files
-# stay, less the package managers and its entrypoint script.
+# start, no test tooling and no package manager. The runtime base is
+# distroless: it holds no shell and no package manager to begin with.
 #
 # The build context is limited to what the COPY lines below name by the
 # allowlist in `.dockerignore`. packages/scanner/tests/image.test.ts holds the
@@ -74,24 +74,17 @@ RUN --mount=type=secret,id=ca,required=false \
     && (cd packages/contract && node -e "require('zod')")
 
 # ─── Stage 2: the runtime ───
-FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS runtime
+# A distroless base: the Node binary, the C library it links, the CA bundle and
+# a time-zone database. No shell, no package manager, no coreutils, so there is
+# nothing to remove and nothing to start besides `node`. The same Node major as
+# the build stage; only compiled JavaScript crosses between the two, so the
+# C library of each stage is its own affair.
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9fc11f6ee65993285c0fe3c4c9bbc4fd275fd4470572f58834ce490df91056e3 AS runtime
 
-# No package manager at run time: the scanner installs nothing, and npm's own
-# bundled dependencies are the base image's largest source of Trivy findings.
-RUN rm -rf /usr/local/lib/node_modules/npm \
-           /usr/local/lib/node_modules/corepack \
-           /usr/local/bin/npm \
-           /usr/local/bin/npx \
-           /usr/local/bin/corepack \
-           /opt/yarn-* \
-           /usr/local/bin/yarn \
-           /usr/local/bin/yarnpkg \
-           /root/.npm \
-           /usr/local/bin/docker-entrypoint.sh \
-    && ! command -v npm \
-    && ! command -v npx \
-    && ! command -v corepack \
-    && ! command -v yarn
+# The base keeps `node` at /nodejs/bin, off the default path. The Compose
+# overlay and the chart start the egress proxy as `node <file>`, and so does
+# anyone who runs a script of the image's by hand.
+ENV PATH=/nodejs/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 LABEL org.opencontainers.image.title="scanent" \
       org.opencontainers.image.description="scanent, the Agent Estate Scanner" \
@@ -100,6 +93,11 @@ LABEL org.opencontainers.image.title="scanent" \
 
 WORKDIR /app
 ENV NODE_ENV=production
+# Node's own fetch honours HTTPS_PROXY and NO_PROXY only when told to. With no
+# proxy variable set this changes nothing; with one, the scanner's requests go
+# through it (`scanent doctor` reports which). A private certificate authority
+# is added with NODE_EXTRA_CA_CERTS, a mounted file; nothing turns verification off.
+ENV NODE_USE_ENV_PROXY=1
 
 COPY --from=build /src/LICENSE ./LICENSE
 COPY --from=build /src/NOTICE ./NOTICE
@@ -115,11 +113,12 @@ COPY --from=build /src/packages/scanner/package.json ./packages/scanner/package.
 COPY --from=build /src/packages/scanner/dist ./packages/scanner/dist
 COPY --from=build /src/packages/scanner/node_modules ./packages/scanner/node_modules
 
-# The image's `node` user (uid 1000), never root. Nothing under /app is
-# writable by it, and the scanner writes only under the file output's
-# directory (`--out`, or the configuration's `outputs`), which is a mounted
-# volume: it runs with a read-only root filesystem.
-USER node
+# Uid and gid 1000, by number: never root, and the uid the Compose file and the
+# chart default to. The base has no account of that number and needs none.
+# Nothing under /app is writable by it, and the scanner writes only under the
+# file output's directory (`--out`, or the configuration's `outputs`), which is
+# a mounted volume: it runs with a read-only root filesystem.
+USER 1000:1000
 
 # Exec form, one process: `node` is PID 1, so the signal `docker stop` sends
 # reaches the scanner itself. No shell is involved in starting it.

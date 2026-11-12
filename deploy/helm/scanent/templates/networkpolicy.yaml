@@ -1,0 +1,49 @@
+{{- if eq .Values.networkPolicy.flavor "kubernetes" }}
+# What this gives: nothing may connect in; nothing leaves but DNS and the rules
+# below. What it does not give: a NetworkPolicy matches addresses, not names,
+# so "TCP 443 to public addresses" is not "exactly the hosts the scanner
+# reads". For exact hosts use flavor cilium or the egress proxy. README.md.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "scanent.fullname" . }}
+  labels:
+    {{- include "scanent.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "scanent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scanner
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    {{- include "scanent.dnsEgress" . | nindent 4 }}
+    {{- if .Values.egressProxy.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "scanent.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: egress-proxy
+      ports:
+        - protocol: TCP
+          port: 3128
+    {{- else if .Values.networkPolicy.proxy.cidr }}
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.proxy.cidr }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.proxy.port }}
+    {{- else }}
+    {{- include "scanent.publicHttpsEgress" . | nindent 4 }}
+    {{- end }}
+    {{- range .Values.networkPolicy.extraEgress }}
+    - to:
+        - ipBlock:
+            cidr: {{ .cidr }}
+      ports:
+        - protocol: TCP
+          port: {{ .port }}
+    {{- end }}
+{{- end }}

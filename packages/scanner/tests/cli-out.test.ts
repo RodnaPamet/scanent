@@ -17,7 +17,7 @@ import { INVENTORY_SCHEMA_ID } from '@scanent/report/results/inventory';
 import { LocalResultsSchema } from '@scanent/report/results/schema';
 import type { LocalResults } from '@scanent/report/results/types';
 
-import { HELP, main } from '../src/cli';
+import { HELP, main, USAGE_HINT } from '../src/cli';
 import { parseScannerConfig } from '../src/config';
 import { jsonLineLog } from '../src/log';
 import { resolveOutputs, scanAndDeliver } from '../src/outputs';
@@ -375,6 +375,8 @@ describe('diff and help', () => {
 
     it('the usage error is what it always was, byte for byte', async () => {
         expect(await main(['scan'], {})).toBe(2);
-        expect(err.join('')).toBe('usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n');
+        // Its first line, byte for byte; a second line now points to `help` (Phase 3 review).
+        expect(err.join('').split('\n')[0]).toBe('usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]');
+        expect(err.join('')).toBe(`usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n${USAGE_HINT}`);
     });
 });

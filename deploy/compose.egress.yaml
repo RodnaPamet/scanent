@@ -1,0 +1,57 @@
+# An overlay for deploy/compose.yaml: the scanner's only way out is a proxy
+# that forwards to an exact list of hosts.
+#
+#   export EGRESS_ALLOW="$(docker run --rm -v "$PWD/scanent:/etc/scanent:ro" \
+#     ghcr.io/rodnapamet/scanent:<version> hosts --config /etc/scanent/config.json --format egress-allow)"
+#   export SCANENT_VERSION=<version>
+#   docker compose -f compose.yaml -f compose.egress.yaml up -d
+#
+# `scanent` is moved to a network with no route out (`internal: true`). The
+# proxy is on that network and on one that reaches the internet. It is the same
+# image as the scanner, runs the CONNECT-only proxy that ships in it, and
+# refuses any host that is not in EGRESS_ALLOW, any port but 443 and any plain
+# HTTP request. An empty EGRESS_ALLOW refuses everything.
+#
+# A host your configuration names (an MCP server, a self-hosted LangSmith) goes
+# in EGRESS_ALLOW like any other; `scanent hosts --format egress-allow` prints
+# it. The scanner has no resolver for an outside name on the internal network,
+# so here the proxy makes the address check the scanner otherwise makes itself
+# (EGRESS_PROXY_CHECKS_ADDRESSES=1 below): it resolves the name, refuses a
+# loopback, link-local or metadata address, refuses a private address that is
+# not in EGRESS_PRIVATE_CIDR_ALLOWLIST, and connects to the address it checked.
+# For a host on your own network, list its range:
+#
+#   export EGRESS_PRIVATE_CIDR_ALLOWLIST=10.20.0.0/16
+#
+# Set these variables once (export them, or put them in a `.env` beside the
+# Compose files): every later `docker compose` command reads the files again.
+services:
+  scanent:
+    environment:
+      HTTPS_PROXY: http://egress-proxy:3128
+      # The proxy below is scanent's own, and checks the address it dials. Never set this beside another proxy.
+      EGRESS_PROXY_CHECKS_ADDRESSES: "1"
+    networks: [scanent-internal]
+    depends_on: [egress-proxy]
+
+  egress-proxy:
+    image: ghcr.io/rodnapamet/scanent:${SCANENT_VERSION:?set SCANENT_VERSION to the image version}
+    entrypoint: ["node", "/app/packages/scanner/dist/egress-proxy.js"]
+    command: []
+    user: "${SCANENT_UID:-1000}:${SCANENT_GID:-1000}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    init: false
+    pids_limit: 256
+    mem_limit: 256m
+    environment:
+      EGRESS_ALLOW: ${EGRESS_ALLOW:?set EGRESS_ALLOW from scanent hosts --format egress-allow}
+      EGRESS_PRIVATE_CIDR_ALLOWLIST: ${EGRESS_PRIVATE_CIDR_ALLOWLIST:-}
+    networks: [scanent-internal, scanent-egress]
+
+networks:
+  scanent-internal:
+    internal: true
+  scanent-egress: {}

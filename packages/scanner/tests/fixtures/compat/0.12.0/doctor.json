@@ -1,0 +1,137 @@
+{
+  "doctor": "scanent-doctor/1",
+  "estate": "example-code",
+  "at": "2026-11-12T03:25:01.001Z",
+  "scanner": {
+    "version": "0.12.0",
+    "manifestHash": "sha256:a24a44586e1207d9490552806bf182e7074bd6e519054db7e143ed7f73a3bcea"
+  },
+  "ready": false,
+  "counts": {
+    "PASS": 8,
+    "WARN": 1,
+    "FAIL": 0,
+    "SKIPPED": 9
+  },
+  "exitCode": 3,
+  "checks": [
+    {
+      "scope": "local",
+      "id": "config.valid",
+      "status": "PASS",
+      "detail": "1 source"
+    },
+    {
+      "scope": "local",
+      "id": "config.mode",
+      "status": "PASS",
+      "detail": "not writable by group or others"
+    },
+    {
+      "scope": "local",
+      "id": "signing-key",
+      "status": "PASS",
+      "detail": "ed25519 62489584358ddc90bc6365eea6db5a9d0831821ccd0758812cf6008c167b2fd6"
+    },
+    {
+      "scope": "local",
+      "id": "secret-files",
+      "status": "SKIPPED",
+      "cause": "NOT_APPLICABLE",
+      "detail": "no credential is read from a file"
+    },
+    {
+      "scope": "local",
+      "id": "output.dir",
+      "status": "PASS",
+      "detail": "/srv/scanent/out is writable by uid 0 (by permission; nothing was written)"
+    },
+    {
+      "scope": "local",
+      "id": "inventory",
+      "status": "PASS",
+      "detail": "2 rows"
+    },
+    {
+      "scope": "local",
+      "id": "tls.verification",
+      "status": "PASS",
+      "detail": "certificate verification is on"
+    },
+    {
+      "scope": "local",
+      "id": "tls.extra-ca",
+      "status": "PASS",
+      "detail": "123 certificates added to the trusted authorities"
+    },
+    {
+      "scope": "local",
+      "id": "proxy",
+      "status": "SKIPPED",
+      "cause": "NOT_APPLICABLE",
+      "detail": "the configuration reaches no host, so no request would use a proxy"
+    },
+    {
+      "scope": "local",
+      "id": "proxy.customer-hosts",
+      "status": "SKIPPED",
+      "cause": "NOT_APPLICABLE",
+      "detail": "no proxy is in effect"
+    },
+    {
+      "scope": "local",
+      "id": "clock",
+      "status": "SKIPPED",
+      "cause": "NOT_OBSERVABLE",
+      "detail": "no response carried a Date header to compare with; check this machine is time-synchronised"
+    },
+    {
+      "scope": "local",
+      "id": "egress",
+      "status": "SKIPPED",
+      "cause": "NOT_APPLICABLE",
+      "detail": "the configuration has no egress block"
+    },
+    {
+      "scope": "code",
+      "id": "credential.present",
+      "status": "SKIPPED",
+      "cause": "NOT_APPLICABLE",
+      "detail": "the code source reads local files"
+    },
+    {
+      "scope": "code",
+      "id": "host.resolves",
+      "status": "SKIPPED",
+      "cause": "NOT_APPLICABLE",
+      "detail": "the code source reads local files"
+    },
+    {
+      "scope": "code",
+      "id": "reachable",
+      "status": "SKIPPED",
+      "cause": "NOT_APPLICABLE",
+      "detail": "the code source reads local files"
+    },
+    {
+      "scope": "code",
+      "id": "authenticated",
+      "status": "SKIPPED",
+      "cause": "NOT_APPLICABLE",
+      "detail": "the code source reads local files"
+    },
+    {
+      "scope": "code",
+      "id": "read.permitted",
+      "status": "PASS",
+      "detail": "1 root listed"
+    },
+    {
+      "scope": "code",
+      "id": "write.absent",
+      "status": "WARN",
+      "detail": "writable by the scanner: example",
+      "fix": "Mount each root read-only."
+    }
+  ]
+}

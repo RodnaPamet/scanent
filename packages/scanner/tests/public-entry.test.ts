@@ -34,6 +34,12 @@ describe('the public entry point', () => {
                 // Outputs and the diff (Phase 2): where a run is delivered, the file writer and its refusal, and the comparison.
                 'DIFF_USAGE', 'DiffInputError', 'NOWHERE_TO_DELIVER', 'OutputRefusedLocally', 'OutputsError', 'SCAN_ID_PATTERN', 'ingestTarget',
                 'postSignedReport', 'resolveOutputs', 'runDiff', 'scanAndDeliver', 'writeRun',
+                // Client deployment (Phase 3): exit codes, secret files, key generation, hosts, the proxy's description,
+                // the setup wizard (answers, planner, access guide, writer) and the preflight.
+                'ACCESS_GUIDE', 'DOCTOR_SCHEMA', 'EXIT', 'EXIT_CODE_TABLE', 'INIT_ANSWERS_SCHEMA', 'InitError', 'InitRefused', 'KeygenError',
+                'SecretFileError', 'accessTablesFor', 'describeProxy', 'generateSigningKey', 'hostsFor', 'isProxied', 'parseInitAnswers',
+                'planInit', 'readSecretFile', 'renderAccessMarkdown', 'renderDoctorJson', 'renderDoctorText', 'renderEnvTemplate',
+                'renderHosts', 'resolveSecretEnv', 'runDoctor', 'writeInit',
             ].sort(),
         );
     });

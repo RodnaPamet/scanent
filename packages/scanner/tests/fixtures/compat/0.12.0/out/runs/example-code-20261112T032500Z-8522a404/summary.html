@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scanent results: example-code, example-code-20261112T032500Z-8522a404</title>
+<style>
+:root{color-scheme:light dark;--bg:#ffffff;--panel:#f5f7f9;--text:#1a1f24;--muted:#4a5560;--line:#c9d1d9;--accent:#0b5cad;
+--ok:#1a6e3a;--ok-bg:#e6f4ea;--bad:#a4262c;--bad-bg:#fde7e9;--warn:#7a4b00;--warn-bg:#fff4d6;--decl:#5b3fa0;--decl-bg:#efe9fb}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1419;--panel:#171d24;--text:#e6edf3;--muted:#a9b4be;--line:#3a444f;--accent:#79b8ff;
+--ok:#7ee2a0;--ok-bg:#12301f;--bad:#ffa3a3;--bad-bg:#3a1518;--warn:#ffd479;--warn-bg:#33270a;--decl:#c9b6ff;--decl-bg:#261d40}}
+*{box-sizing:border-box}
+html{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:16px;line-height:1.5;background:var(--bg);color:var(--text)}
+body{margin:0 auto;max-width:78rem;padding:1.5rem 1.25rem 4rem}
+h1{font-size:1.9rem;line-height:1.2;margin:.1rem 0 1rem}
+h2{font-size:1.3rem;margin:0 0 .6rem;padding-top:.4rem}
+h3{font-size:1.05rem;margin:1.4rem 0 .4rem}
+p{margin:.5rem 0;max-width:62rem}
+section{margin-top:2.25rem;border-top:1px solid var(--line);padding-top:1rem}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86em;overflow-wrap:anywhere}
+a{color:var(--accent)}
+.skip{position:absolute;left:-999rem;top:0;background:var(--bg);color:var(--accent);padding:.5rem .75rem;border:2px solid var(--accent)}
+.skip:focus{left:.5rem;top:.5rem;z-index:10}
+.brand{margin:0;color:var(--muted);font-size:.9rem;letter-spacing:.02em}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:.5rem 1.5rem;margin:.5rem 0 1rem}
+.meta.wide{grid-template-columns:1fr}
+.meta dt,.stats dt{color:var(--muted);font-size:.82rem}
+.meta dd,.stats dd{margin:0}
+.status{padding:.6rem .8rem;border-left:.3rem solid;border-radius:.2rem;max-width:none}
+.status.ok{background:var(--ok-bg);border-color:var(--ok)}
+.status.bad{background:var(--bad-bg);border-color:var(--bad)}
+.callout{background:var(--panel);border-left:.3rem solid var(--muted);padding:.6rem .8rem;border-radius:.2rem}
+.callout.bad{background:var(--bad-bg);border-color:var(--bad)}
+div.callout p{margin:.3rem 0}
+nav.contents{margin:1rem 0 0}
+nav.contents ul{list-style:none;display:flex;flex-wrap:wrap;gap:.3rem 1.1rem;padding:0;margin:0;font-size:.92rem}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr));gap:.75rem;margin:.75rem 0 1rem}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:.4rem;padding:.6rem .8rem}
+.big{font-size:1.7rem;font-weight:650;line-height:1.1}
+.note{color:var(--muted);font-size:.82rem}
+.scroll{overflow-x:auto;max-width:100%}
+table{border-collapse:collapse;width:100%;font-size:.92rem;margin:.5rem 0}
+caption{text-align:left;color:var(--muted);font-size:.85rem;padding:.2rem 0 .4rem}
+th,td{border-bottom:1px solid var(--line);padding:.4rem .6rem;text-align:left;vertical-align:top}
+thead th{background:var(--panel);border-bottom:2px solid var(--line);font-weight:600}
+tbody th{font-weight:500}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;padding:0 .45rem;border-radius:.8rem;font-size:.8rem;font-weight:600;border:1px solid;white-space:nowrap}
+.tag.ok{color:var(--ok);background:var(--ok-bg)}
+.tag.bad,.tag.sev-high,.tag.sev-critical{color:var(--bad);background:var(--bad-bg)}
+.tag.warn,.tag.sev-medium{color:var(--warn);background:var(--warn-bg)}
+.tag.sev-low{color:var(--muted);background:var(--panel)}
+.tag.sev-critical{border-width:2px}
+.decl{color:var(--decl);font-size:.8rem}
+.name{font-weight:600}
+.reasons{margin:.3rem 0 0;padding-left:1.1rem;color:var(--muted);font-size:.8rem;font-weight:400}
+.levels{max-width:40rem}
+.barcell{width:50%}
+.bar{display:block;height:.8rem;background:var(--accent);border-radius:.15rem;min-width:1px}
+.w-0{width:0%}.w-1{width:5%}.w-2{width:10%}.w-3{width:15%}.w-4{width:20%}.w-5{width:25%}.w-6{width:30%}.w-7{width:35%}.w-8{width:40%}.w-9{width:45%}.w-10{width:50%}.w-11{width:55%}.w-12{width:60%}.w-13{width:65%}.w-14{width:70%}.w-15{width:75%}.w-16{width:80%}.w-17{width:85%}.w-18{width:90%}.w-19{width:95%}.w-20{width:100%}
+.legend{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(21rem,1fr));gap:.3rem 1.25rem;padding:0;margin:.75rem 0;font-size:.86rem}
+.cell{text-align:center;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.legend .cell{display:inline-block;width:1.6rem;border:1px solid var(--line);border-radius:.2rem;margin-right:.3rem}
+.c-e{color:var(--ok);background:var(--ok-bg)}
+.c-d{color:var(--decl);background:var(--decl-bg)}
+.c-m{color:var(--warn);background:var(--warn-bg)}
+.c-n{color:var(--bad);background:var(--bad-bg)}
+.c-u{color:var(--muted)}
+.c-x{color:var(--muted);background:var(--panel)}
+.matrix{border:1px solid var(--line);border-radius:.3rem}
+.matrix table{margin:0;width:auto;min-width:100%}
+.matrix th.agent{position:sticky;left:0;background:var(--bg);min-width:15rem;max-width:24rem;border-right:2px solid var(--line);z-index:1}
+.matrix thead th.agent{background:var(--panel);z-index:2}
+.matrix td,.matrix th{border-right:1px solid var(--line)}
+.matrix td.cell{padding:.4rem .3rem;min-width:1.9rem;vertical-align:middle}
+.matrix td.lvl{white-space:nowrap}
+.matrix td.lvl .decl{white-space:normal;display:inline-block;max-width:14rem}
+th.group{text-align:center;white-space:nowrap}
+th.crit{vertical-align:bottom;padding:.4rem .2rem;font-weight:500;font-size:.78rem}
+th.crit span{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;max-height:11rem}
+.id{font-size:.82em}
+.ids{columns:2 22rem;padding-left:1.1rem}
+details summary{cursor:pointer}
+.fold{margin:.75rem 0}
+.fold summary{font-weight:600}
+.ref{color:var(--muted);font-size:.82rem}
+.findings td:last-child{min-width:18rem}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+.print-footer{display:none}
+footer.end{margin-top:2.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--line);padding-top:.75rem}
+@media print{
+:root{--bg:#ffffff;--panel:#ffffff;--text:#000000;--muted:#333333;--line:#888888;--accent:#000000;--ok:#000000;--ok-bg:#ffffff;--bad:#000000;--bad-bg:#ffffff;--warn:#000000;--warn-bg:#ffffff;--decl:#000000;--decl-bg:#ffffff}
+html{font-size:10.5pt}
+body{max-width:none;padding:0 0 2.2em}
+.skip,nav.contents{display:none}
+section{break-before:auto;break-inside:auto}
+#matrix{break-before:page}
+h2,h3,caption{break-after:avoid}
+tr{break-inside:avoid}
+thead{display:table-header-group}
+.scroll{overflow:visible}
+.matrix{border:0}
+.matrix table{font-size:7pt}
+.matrix th.agent{position:static;min-width:0}
+details:not([open])>*:not(summary){display:block}
+details::details-content{content-visibility:visible;display:block}
+.bar{border:1px solid #000;background:#000;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.print-footer{display:block;position:fixed;bottom:0;left:0;right:0;font-size:8pt;color:#000;border-top:1px solid #888;padding-top:.2em;background:#fff}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the results</a>
+<header class="top">
+<p class="brand">scanent, the Agent Estate Scanner</p>
+<h1>Agent estate scan results</h1>
+<dl class="meta">
+<div><dt>Estate</dt><dd>example-code</dd></div>
+<div><dt>Scan</dt><dd><code>example-code-20261112T032500Z-8522a404</code></dd></div>
+<div><dt>As of (UTC)</dt><dd>2026-11-12T03:25:00.661Z</dd></div>
+</dl>
+<p class="status ok"><strong>Complete.</strong> Every listed source was read in full.</p>
+</header>
+<nav class="contents" aria-label="Contents">
+<ul>
+<li><a href="#completeness">Completeness</a></li><li><a href="#coverage">Not evidenced</a></li><li><a href="#summary">Summary</a></li><li><a href="#matrix">Agents and criteria</a></li><li><a href="#shadow">Shadow agents</a></li><li><a href="#orphans">Orphan credentials</a></li><li><a href="#findings">Findings</a></li><li><a href="#inventory">Inventory</a></li><li><a href="#provenance">Provenance</a></li>
+</ul>
+</nav>
+<main id="main">
+<section id="completeness" aria-labelledby="completeness-h">
+<h2 id="completeness-h">Completeness per source</h2>
+<p>Every source this scan lists was read in full, so each result below rests on a whole read.</p>
+<div class="scroll"><table>
+<caption>Each source this scan lists, and whether it was read in full</caption>
+<thead><tr><th scope="col">Source</th><th scope="col">Status</th><th scope="col">Reason</th><th scope="col" class="num">Rows read</th><th scope="col" class="num">Agents found</th></tr></thead>
+<tbody>
+<tr class="row-ok">
+<th scope="row"><code>code</code></th>
+<td><span class="tag ok">Complete</span></td>
+<td></td>
+<td class="num">1</td>
+<td class="num">1</td>
+</tr>
+</tbody>
+</table></div>
+</section><section id="coverage" aria-labelledby="coverage-h">
+<h2 id="coverage-h">What this scan could not evidence</h2>
+<p>The highest level this run could have stated for any agent is <strong>H1 Registered</strong>.
+A criterion nobody answered counts as not met, so no agent is shown above that level, whatever its real state.</p>
+<p>The bar is H2 for an agent that only reads and H3 for one that can write or reach outside the estate.
+<strong>This run could not have shown any agent at its bar</strong>, so every judged agent is reported below it. That is a limit of what was read, stated here so it is not mistaken for a failure a source observed.</p>
+
+<details class="fold">
+<summary>21 of 25 criteria had no configured reader. Show which, and what would read each</summary>
+<div class="scroll"><table>
+<caption>Criteria no configured reader could have reported met</caption>
+<thead><tr><th scope="col">Criterion</th><th scope="col">Why</th><th scope="col">Readers that would</th></tr></thead>
+<tbody>
+<tr>
+<th scope="row"><code>H2.credential_bound</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>entra-sp</code>, <code>gcp-sa</code>, <code>cicd</code>, <code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H2.grant_kind_declared</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>okta-app</code>, <code>gcp-sa</code>, <code>cicd</code>, <code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H2.tools_allowlisted</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>cicd</code>, <code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H2.audience_tokens</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H2.policy_card</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.manifests_pinned</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.payloads_guarded</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.propose_not_commit</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.prior_state_reads</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.skills_declared</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.delegation_narrows</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.egress_enforced</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H4.ledger_baseline</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H4.receipts</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H4.kill_switch_drilled</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H4.token_budget</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H5.asi_coverage</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H5.evidence_emitted</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H5.skills_evaluated</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H5.sample_audit</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H5.independent_audit</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr>
+</tbody>
+</table></div>
+</details>
+</section><section id="summary" aria-labelledby="summary-h">
+<h2 id="summary-h">Estate summary</h2>
+<dl class="stats">
+<div class="stat"><dt>Agents found</dt><dd><span class="big">1</span> <span class="note"></span></dd></div>
+<div class="stat"><dt>Judged</dt><dd><span class="big">1</span> <span class="note">have a level</span></dd></div>
+<div class="stat"><dt>Not judged</dt><dd><span class="big">0</span> <span class="note"></span></dd></div>
+<div class="stat"><dt>Below their bar</dt><dd><span class="big">1</span> <span class="note">of the judged agents</span></dd></div>
+<div class="stat"><dt>Shadow agents</dt><dd><span class="big">0</span> <span class="note">not registered</span></dd></div>
+<div class="stat"><dt>Orphan credentials</dt><dd><span class="big">0</span> <span class="note">bound to no agent</span></dd></div>
+</dl>
+<p>Registration is taken from: The operator’s inventory (declared by the operator, not observed).</p>
+<div class="scroll"><table class="levels">
+<caption>Judged agents per level</caption>
+<thead><tr><th scope="col">Level</th><th scope="col" class="num">Agents</th><th scope="col">Share</th></tr></thead>
+<tbody>
+<tr>
+<th scope="row">H0 Shadow</th>
+<td class="num">0</td>
+<td class="barcell"><span class="bar w-0"></span></td>
+</tr><tr>
+<th scope="row">H1 Registered</th>
+<td class="num">1</td>
+<td class="barcell"><span class="bar w-20"></span></td>
+</tr><tr>
+<th scope="row">H2 Bounded</th>
+<td class="num">0</td>
+<td class="barcell"><span class="bar w-0"></span></td>
+</tr><tr>
+<th scope="row">H3 Guarded</th>
+<td class="num">0</td>
+<td class="barcell"><span class="bar w-0"></span></td>
+</tr><tr>
+<th scope="row">H4 Observed and stoppable</th>
+<td class="num">0</td>
+<td class="barcell"><span class="bar w-0"></span></td>
+</tr><tr>
+<th scope="row">H5 Evidenced</th>
+<td class="num">0</td>
+<td class="barcell"><span class="bar w-0"></span></td>
+</tr>
+</tbody>
+</table></div>
+
+</section><section id="matrix" aria-labelledby="matrix-h">
+<h2 id="matrix-h">Agents and criteria</h2>
+
+<p>An agent reaches a level only when every criterion on it and below it is evidenced. A level is stated only for an agent every relevant source was read in full for.</p>
+<ul class="legend" aria-label="What each cell code means">
+<li><span class="cell c-e" aria-hidden="true">E</span> Evidenced: a source observed it</li><li><span class="cell c-d" aria-hidden="true">D</span> Evidenced on what the operator declared in the inventory, not observed</li><li><span class="cell c-m" aria-hidden="true">M</span> Reported met without evidence; counts as not met</li><li><span class="cell c-n" aria-hidden="true">N</span> Not met: a source saw it fail</li><li><span class="cell c-u" aria-hidden="true">·</span> Unanswered: a configured reader could have reported it and none did; counts as not met</li><li><span class="cell c-x" aria-hidden="true">–</span> Not readable: nothing this run was configured to read could have reported it; counts as not met</li>
+</ul>
+<div class="scroll matrix" tabindex="0" role="region" aria-labelledby="matrix-h">
+<table>
+<caption>One row per agent, one column per criterion, grouped by level</caption>
+<thead>
+<tr>
+<th scope="col" rowspan="2" class="agent">Agent</th>
+<th scope="col" rowspan="2">Registration</th>
+<th scope="col" rowspan="2">Reach</th>
+<th scope="col" rowspan="2">Level</th>
+<th scope="col" rowspan="2">Bar</th>
+<th scope="colgroup" colspan="4" class="group">H1 Registered</th><th scope="colgroup" colspan="5" class="group">H2 Bounded</th><th scope="colgroup" colspan="7" class="group">H3 Guarded</th><th scope="colgroup" colspan="4" class="group">H4 Observed and stoppable</th><th scope="colgroup" colspan="5" class="group">H5 Evidenced</th>
+</tr>
+<tr>
+<th scope="col" class="crit"><span title="H1.registered">registered</span></th><th scope="col" class="crit"><span title="H1.owner">owner</span></th><th scope="col" class="crit"><span title="H1.axes_declared">axes declared</span></th><th scope="col" class="crit"><span title="H1.tier_scored_fresh">tier scored fresh</span></th><th scope="col" class="crit"><span title="H2.credential_bound">credential bound</span></th><th scope="col" class="crit"><span title="H2.grant_kind_declared">grant kind declared</span></th><th scope="col" class="crit"><span title="H2.tools_allowlisted">tools allowlisted</span></th><th scope="col" class="crit"><span title="H2.audience_tokens">audience tokens</span></th><th scope="col" class="crit"><span title="H2.policy_card">policy card</span></th><th scope="col" class="crit"><span title="H3.manifests_pinned">manifests pinned</span></th><th scope="col" class="crit"><span title="H3.payloads_guarded">payloads guarded</span></th><th scope="col" class="crit"><span title="H3.propose_not_commit">propose not commit</span></th><th scope="col" class="crit"><span title="H3.prior_state_reads">prior state reads</span></th><th scope="col" class="crit"><span title="H3.skills_declared">skills declared</span></th><th scope="col" class="crit"><span title="H3.delegation_narrows">delegation narrows</span></th><th scope="col" class="crit"><span title="H3.egress_enforced">egress enforced</span></th><th scope="col" class="crit"><span title="H4.ledger_baseline">ledger baseline</span></th><th scope="col" class="crit"><span title="H4.receipts">receipts</span></th><th scope="col" class="crit"><span title="H4.kill_switch_drilled">kill switch drilled</span></th><th scope="col" class="crit"><span title="H4.token_budget">token budget</span></th><th scope="col" class="crit"><span title="H5.asi_coverage">asi coverage</span></th><th scope="col" class="crit"><span title="H5.evidence_emitted">evidence emitted</span></th><th scope="col" class="crit"><span title="H5.skills_evaluated">skills evaluated</span></th><th scope="col" class="crit"><span title="H5.sample_audit">sample audit</span></th><th scope="col" class="crit"><span title="H5.independent_audit">independent audit</span></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th scope="row" class="agent"><span class="name">Support order lookup</span> <span class="decl">(name declared by the operator)</span><br><code class="id">code:example/support/agent.py#support_executor</code></th>
+<td>Declared by the operator</td>
+<td>Write or external</td>
+<td class="lvl"><strong>H1</strong> Registered<br><span class="decl">H0 on observation alone; the rest is declared by the operator</span></td>
+<td class="lvl">H3 <span class="tag bad">Below bar</span></td>
+<td class="cell c-d" title="H1.registered: Evidenced on what the operator declared in the inventory, not observed"><span aria-hidden="true">D</span><span class="vh">Evidenced on what the operator declared in the inventory, not observed</span></td><td class="cell c-d" title="H1.owner: Evidenced on what the operator declared in the inventory, not observed"><span aria-hidden="true">D</span><span class="vh">Evidenced on what the operator declared in the inventory, not observed</span></td><td class="cell c-d" title="H1.axes_declared: Evidenced on what the operator declared in the inventory, not observed"><span aria-hidden="true">D</span><span class="vh">Evidenced on what the operator declared in the inventory, not observed</span></td><td class="cell c-d" title="H1.tier_scored_fresh: Evidenced on what the operator declared in the inventory, not observed"><span aria-hidden="true">D</span><span class="vh">Evidenced on what the operator declared in the inventory, not observed</span></td><td class="cell c-x" title="H2.credential_bound: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H2.grant_kind_declared: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H2.tools_allowlisted: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H2.audience_tokens: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H2.policy_card: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.manifests_pinned: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.payloads_guarded: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.propose_not_commit: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.prior_state_reads: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.skills_declared: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.delegation_narrows: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.egress_enforced: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H4.ledger_baseline: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H4.receipts: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H4.kill_switch_drilled: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H4.token_budget: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H5.asi_coverage: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H5.evidence_emitted: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H5.skills_evaluated: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H5.sample_audit: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H5.independent_audit: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section><section id="shadow" aria-labelledby="shadow-h">
+<h2 id="shadow-h">Shadow agents</h2>
+<p>None: every agent this scan found is registered.</p>
+</section><section id="orphans" aria-labelledby="orphans-h">
+<h2 id="orphans-h">Orphan credentials</h2>
+<p>None concluded.</p>
+
+</section><section id="findings" aria-labelledby="findings-h">
+<h2 id="findings-h">Findings</h2>
+<div class="scroll"><table class="findings">
+<caption>2 findings, most severe first</caption>
+<thead><tr><th scope="col">Severity</th><th scope="col">Code</th><th scope="col">Subject</th><th scope="col">Finding</th></tr></thead>
+<tbody>
+<tr>
+<td><span class="tag sev-high">HIGH</span></td>
+<td><code>UNPINNED_WRITE_TOOL</code></td>
+<td><code class="id">code:example/support/agent.py#support_executor</code></td>
+<td><details><summary>Unpinned write-capable tool on agent code:example/support/agent.py#support_executor</summary><p>A harness scan (scan example-code-20261112T032500Z-8522a404, scanner agt_example) found 1 write-capable tool(s) with no pinned definition on agent code:example/support/agent.py#support_executor: lookup_order on code://example/support/agent.py#L7. A tool the agent may call with a definition nobody reviewed can change under it without anyone noticing.</p><p class="ref">Reference <code class="id">UNPINNED_WRITE_TOOL:code:example/support/agent.py#support_executor</code></p></details></td>
+</tr><tr>
+<td><span class="tag sev-high">HIGH</span></td>
+<td><code>HARNESS_SHORTFALL</code></td>
+<td><code class="id">code:example/support/agent.py#support_executor</code></td>
+<td><details><summary>Agent code:example/support/agent.py#support_executor is below the harness bar (H1, bar H3)</summary><p>A harness scan (scan example-code-20261112T032500Z-8522a404, scanner agt_example) found agent code:example/support/agent.py#support_executor at H1, whose reach is WRITE_OR_EXTERNAL; the bar for that reach is H3. Criteria blocking the next rung: H2.credential_bound, H2.grant_kind_declared, H2.tools_allowlisted, H2.audience_tokens, H2.policy_card. This finding never blocks the agent: it closes when a later scan shows the agent at the bar, or with a time-limited acceptance by the agent’s owner. The level H1 rests in part on what the operator declared in the inventory; on what the sources observed alone it is H0.</p><p class="ref">Reference <code class="id">HARNESS_SHORTFALL:code:example/support/agent.py#support_executor</code></p></details></td>
+</tr>
+</tbody>
+</table></div>
+</section><section id="inventory" aria-labelledby="inventory-h">
+<h2 id="inventory-h">Inventory</h2>
+<p>Everything in the inventory is <strong>declared by the operator</strong>. scanent did not observe it, and it is never sent anywhere.</p>
+<dl class="meta">
+<div><dt>Rows</dt><dd>2</dd></div>
+<div><dt>Matched an agent this scan found</dt><dd>1</dd></div>
+<div><dt>Declared, not found by this scan</dt><dd>1</dd></div>
+</dl>
+<p>Declared by the operator and not found by this scan. This is not a statement that they are gone: the scan may not read where they live.</p>
+<ul class="ids"><li><code class="id">code:example/billing/agent.py#billing_executor</code></li></ul>
+</section><section id="provenance" aria-labelledby="provenance-h">
+<h2 id="provenance-h">Provenance</h2>
+<dl class="meta wide">
+<div><dt>Scanner</dt><dd><code>agt_example</code>, version 0.12.0</dd></div>
+<div><dt>Scanner manifest</dt><dd><code class="id">sha256:a24a44586e1207d9490552806bf182e7074bd6e519054db7e143ed7f73a3bcea</code></dd></div>
+<div><dt>Ladder version</dt><dd><code class="id">sha256:b3aa459c8e48dc7dc7528f117de754cf1be24e53f7ec47c8ac81c471ec28d7ae</code></dd></div>
+<div><dt>Report contract</dt><dd><code>inflect-agent-harness/3</code></dd></div>
+<div><dt>Signed report SHA-256</dt><dd><code class="id">a0317641fa0b97e3b7db7f58559760fad7b58f3e58f54af5968f9d52fb6f5a70</code></dd></div>
+<div><dt>Signer key fingerprint</dt><dd><code class="id">6235d988bd677678a0d9a5bb9bb706f861ff2781d5fdcd69f061bddb4d6414ef</code></dd></div>
+<div><dt>Signer</dt><dd>Pinned: verified against a key supplied apart from the report</dd></div>
+<div><dt>Register claims</dt><dd>Read by this run</dd></div>
+<div><dt>Inventory SHA-256</dt><dd><code class="id">30fe7cbf0bb3472f28c9dfde2f0624ec6a5a013b8f487321f89a8bac8c89d2a2</code> (json)</dd></div>
+<div><dt>Files of this run</dt><dd><code>report.signed.json</code>, <code>results.json</code>, <code>agents.csv</code>, <code>findings.csv</code>, <code>summary.html</code>, <code>manifest.json</code></dd></div>
+</dl>
+<p>The signed report is the record; this page and the other files are derived from it and from the inventory. The same inputs give the same files.</p>
+</section>
+</main>
+<footer class="end">Scan <code>example-code-20261112T032500Z-8522a404</code>, as of 2026-11-12T03:25:00.661Z UTC. Ladder <code>sha256:b3aa459c8e48dc7dc7528f117de754cf1be24e53f7ec47c8ac81c471ec28d7ae</code>.</footer>
+<p class="print-footer">Scan example-code-20261112T032500Z-8522a404, as of 2026-11-12T03:25:00.661Z UTC</p>
+</body>
+</html>

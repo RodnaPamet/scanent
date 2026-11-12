@@ -41,6 +41,7 @@ import {
     planHarnessScan,
     shadowRefOf,
     shortfallRefOf,
+    toolEvidenceSourcesOf,
     type HarnessSourceKind,
     type IntakeClaim,
     type PlannedAgent,
@@ -200,6 +201,9 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
         return {
             discoveredId: planned.discoveredId,
             discoveredVia: planned.discoveredVia as readonly HarnessSourceKind[],
+            // The planner's own rule, over the tools as the report lists them: a
+            // diff closes an unpinned-write-tool finding only on these.
+            toolEvidenceSources: [...toolEvidenceSourcesOf(observed)].sort(),
             declared: row === undefined ? null : { name: row.row.name, owner: row.row.owner, purpose: row.row.purpose, row: row.number },
             observedOwner: planned.ownerKind === null || planned.ownerRef === null ? null : { kind: planned.ownerKind, ref: planned.ownerRef },
             registration: {

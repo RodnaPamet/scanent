@@ -1,0 +1,15 @@
+apiVersion: v2
+name: scanent
+description: scanent, the Agent Estate Scanner, as a CronJob that reads an estate read-only and writes each run to a volume.
+type: application
+# The chart's version and the image tag it installs move together.
+version: 0.12.0
+appVersion: "0.12.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/RodnaPamet/scanent
+sources:
+  - https://github.com/RodnaPamet/scanent
+keywords:
+  - agents
+  - inventory
+  - governance

@@ -1,5 +1,5 @@
 /**
- * WHICH FILES THE CODE SOURCE READS, AND HOW FAR (#3737).
+ * WHICH FILES THE CODE SOURCE READS, AND HOW FAR.
  *
  * Every configured root is walked depth-first in sorted order, so two scans of
  * one tree read it identically. Each bound is a stated maximum, and reaching one
@@ -10,6 +10,8 @@
  *   • the scan's deadline → TIME_BOX;
  *   • a root or entry that is missing or not readable → UNREACHABLE, or
  *     AUTH_FAILED when the operating system refused the read;
+ *   • a source file that starts with a UTF-16 byte-order mark is not text this
+ *     reader decodes → UNPARSEABLE, never passed over as holding no agent;
  *   • a SYMBOLIC LINK is never followed — it could leave the root or loop — and
  *     is a location not read, so UNREACHABLE. Point a root at its target to
  *     read it.
@@ -52,7 +54,7 @@ export const SKIPPED_DIRECTORIES: readonly string[] = [
  * The text a file must contain to be parsed at all: a framework's module name,
  * which every import of it spells out. `claude-agent-sdk` and
  * `claude_agent_sdk` are the Claude Agent SDK's, in TypeScript and Python
- * (#4156).
+ *.
  */
 export const FRAMEWORK_MARKERS: readonly string[] = ['langchain', 'langgraph', 'claude-agent-sdk', 'claude_agent_sdk'];
 
@@ -76,6 +78,11 @@ function isSourceFile(name: string): boolean {
 function reasonOf(err: unknown): IncompleteReason {
     const code = (err as { code?: unknown } | null)?.code;
     return code === 'EACCES' || code === 'EPERM' ? 'AUTH_FAILED' : 'UNREACHABLE';
+}
+
+/** A UTF-16 (or UTF-32 little-endian) byte-order mark: `FF FE` or `FE FF`. */
+function startsWithWideByteOrderMark(buf: Buffer): boolean {
+    return buf.length >= 2 && ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff));
 }
 
 const join = (a: string, b: string) => (a.endsWith('/') ? `${a}${b}` : `${a}/${b}`);
@@ -169,6 +176,14 @@ export async function readCodeFiles(
                 continue;
             }
             bytes += buf.length;
+            // A UTF-16 or UTF-32 file decodes as UTF-8 into text that names no
+            // framework, so it would be passed over as if it held no agent.
+            // TypeScript's own compiler reads such a file; this reader does
+            // not, and says so rather than report a tree it read less of.
+            if (startsWithWideByteOrderMark(buf)) {
+                problem('UNPARSEABLE', at);
+                continue;
+            }
             const text = buf.toString('utf8');
             // Only a file that names a framework's module can define one of its agents.
             if (FRAMEWORK_MARKERS.some((m) => text.includes(m))) onFile({ label: root.label, path: childRel, text });

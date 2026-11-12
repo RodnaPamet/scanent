@@ -1,0 +1,133 @@
+{{- if .Values.egressProxy.enabled }}
+# The CONNECT-only proxy that ships in the scanner's image. It forwards a
+# tunnel to a host in EGRESS_ALLOW on port 443 and refuses everything else.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "scanent.proxyName" . }}
+  labels:
+    {{- include "scanent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: egress-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "scanent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: egress-proxy
+  template:
+    metadata:
+      labels:
+        {{- include "scanent.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: egress-proxy
+      annotations:
+        checksum/allow: {{ join "," .Values.egress.fqdns | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "scanent.fullname" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- include "scanent.podSecurityContext" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: egress-proxy
+          image: {{ include "scanent.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Exec form: node runs the proxy's file directly, with no shell.
+          command:
+            - node
+            - /app/packages/scanner/dist/egress-proxy.js
+          args: []
+          securityContext:
+            {{- include "scanent.containerSecurityContext" . | nindent 12 }}
+          env:
+            - name: EGRESS_ALLOW
+              value: {{ join "," .Values.egress.fqdns | quote }}
+            {{- if .Values.egressProxy.privateCidrs }}
+            # The proxy resolves each name itself and dials the address it checked. A private
+            # address is refused unless it is in one of these ranges; loopback, link-local and
+            # metadata are refused inside them too.
+            - name: EGRESS_PRIVATE_CIDR_ALLOWLIST
+              value: {{ join "," .Values.egressProxy.privateCidrs | quote }}
+            {{- end }}
+          ports:
+            - name: proxy
+              containerPort: 3128
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: proxy
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "scanent.proxyName" . }}
+  labels:
+    {{- include "scanent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: egress-proxy
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "scanent.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: egress-proxy
+  ports:
+    - name: proxy
+      port: 3128
+      targetPort: proxy
+      protocol: TCP
+{{- if eq .Values.networkPolicy.flavor "kubernetes" }}
+---
+# The proxy takes connections from the scanner only, and reaches DNS and TCP
+# 443 on public addresses. Which hosts it forwards to is its own allowlist.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "scanent.proxyName" . }}
+  labels:
+    {{- include "scanent.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "scanent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: egress-proxy
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "scanent.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: scanner
+      ports:
+        - protocol: TCP
+          port: 3128
+  egress:
+    {{- include "scanent.dnsEgress" . | nindent 4 }}
+    {{- include "scanent.publicHttpsEgress" . | nindent 4 }}
+    {{- range .Values.egressProxy.privateCidrs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . }}
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
+{{- end }}
+{{- end }}

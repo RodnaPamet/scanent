@@ -97,10 +97,10 @@ describe('1. SDK agents, their tools, model, credentials and option verdicts', (
         // `tools: []` turns every built-in off; the MCP servers and the names
         // `allowedTools` approves on them are what it can call.
         expect(toolsOf(support)).toEqual([
-            ['mcp', 'inflect:*', 'https://inflect.acme.example/api/mcp'],
+            ['mcp', 'inflect:*', 'https://inflect.acme.example'],
             ['mcp', 'notes:*', loc('support-bot/agent.ts', 20)],
-            ['mcp', 'list_risks', 'https://inflect.acme.example/api/mcp'],
-            ['mcp', 'list_controls', 'https://inflect.acme.example/api/mcp'],
+            ['mcp', 'list_risks', 'https://inflect.acme.example'],
+            ['mcp', 'list_controls', 'https://inflect.acme.example'],
             ['mcp', 'save_note', loc('support-bot/agent.ts', 20)],
         ]);
         expect(support.models.map((m) => [m.provider, m.model, m.endpoint, m.endpointBasis])).toEqual([
@@ -144,9 +144,9 @@ describe('1. SDK agents, their tools, model, credentials and option verdicts', (
             // The server it is configured with, then the names `allowedTools`
             // approves on it: Inflect's, and no other server's.
             expect(agent.tools.map((t) => [t.kind, t.name, t.server])).toEqual([
-                ['mcp', 'inflect:*', 'https://inflect.acme.example/api/mcp'],
-                ['mcp', 'list_risks', 'https://inflect.acme.example/api/mcp'],
-                ['mcp', 'propose_risks', 'https://inflect.acme.example/api/mcp'],
+                ['mcp', 'inflect:*', 'https://inflect.acme.example'],
+                ['mcp', 'list_risks', 'https://inflect.acme.example'],
+                ['mcp', 'propose_risks', 'https://inflect.acme.example'],
             ]);
             expect(agent.credentials.map((c) => c.ref)).toContain('env://INFLECT_API_KEY');
         }
@@ -218,10 +218,10 @@ describe('1. SDK agents, their tools, model, credentials and option verdicts', (
         const triage = byName.get('options')!;
         expect(triage).toMatchObject({ language: 'python', discoveredId: 'code:acme/triage/agent.py#options', subagents: 1 });
         expect(toolsOf(triage)).toEqual([
-            ['mcp', 'inflect:*', 'https://inflect.acme.example/api/mcp'],
+            ['mcp', 'inflect:*', 'https://inflect.acme.example'],
             ['builtin', 'Read', loc('triage/agent.py', 7)],
             ['builtin', 'Grep', loc('triage/agent.py', 7)],
-            ['mcp', 'list_findings', 'https://inflect.acme.example/api/mcp'],
+            ['mcp', 'list_findings', 'https://inflect.acme.example'],
         ]);
         expect(triage.models.map((m) => m.model)).toEqual(['claude-opus-5-5']);
         expect(verdictsOf(triage)).toEqual([['H3.payloads_guarded', false, loc('triage/agent.py', 24)]]);

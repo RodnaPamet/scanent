@@ -1,5 +1,5 @@
 /**
- * THE GITHUB ACTIONS SOURCE — `cicd` (#3784, owner decision 2026-10-19).
+ * THE GITHUB ACTIONS SOURCE — `cicd`.
  *
  * A CI/CD pipeline is an agent-shaped principal: it runs unattended, it holds
  * credentials, and the credentials it holds reach production. Decision 10 put
@@ -59,12 +59,15 @@ import { nextLinkFrom } from '../http';
 import {
     ageInDays,
     readPages,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
     type ObservedCredential,
+    type ProbeStep,
     type SourceContext,
+    type WriteObservation,
     type SourceRead,
 } from '../source';
 
@@ -369,6 +372,38 @@ function secretsListing(): {
     };
 }
 
+/** A classic token's scopes that can change a repository. A classic token cannot be read-only for private repositories. */
+const WRITING_SCOPE = /^(repo|public_repo|workflow|delete_repo|admin:.+|write:.+)$/;
+const SCOPE_NAME = /^[a-z][a-z_:]{0,63}$/;
+
+/**
+ * What GitHub's `X-OAuth-Scopes` response header says about write access. The
+ * header is sent for a classic token and lists its scopes; a fine-grained or
+ * installation token gets none, and nothing else in a declared read describes
+ * the token (a repository's `permissions` object describes its owner).
+ */
+export function githubWriteObservation(scopesHeader: string | null): WriteObservation {
+    if (scopesHeader === null) {
+        return {
+            state: 'NOT_OBSERVABLE',
+            verify: "the token is not a classic token, so GitHub does not list its permissions; confirm in the token's settings that it holds Contents: Read-only and Secrets: Read-only and nothing else",
+        };
+    }
+    const scopes = [...new Set(scopesHeader.split(',').map((s) => s.trim()).filter((s) => s !== ''))].sort();
+    if (!scopes.every((s) => SCOPE_NAME.test(s))) {
+        return { state: 'NOT_OBSERVABLE', verify: "GitHub's list of the token's scopes could not be read; confirm the token's permissions in its settings" };
+    }
+    const writing = scopes.filter((s) => WRITING_SCOPE.test(s));
+    if (writing.length > 0) {
+        return {
+            state: 'WRITE',
+            names: writing,
+            fix: 'Replace the classic token with a fine-grained token limited to the listed repositories, holding Contents: Read-only and Secrets: Read-only.',
+        };
+    }
+    return { state: 'READ_ONLY', detail: scopes.length === 0 ? 'a classic token with no scope' : `a classic token holding ${scopes.join(', ')}` };
+}
+
 export function githubActionsSource(opts: GitHubActionsSourceOptions): HarnessSource {
     const headers = {
         Authorization: `Bearer ${opts.token}`,
@@ -474,6 +509,40 @@ export function githubActionsSource(opts: GitHubActionsSourceOptions): HarnessSo
             } catch (err) {
                 return { ...sourceResult('cicd', rows, observations, err), unboundCredentials: unbound };
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            const hostname = new URL(origin).hostname;
+            await ProbeLog.run(async () => {
+                let scopes: string | null = null;
+                for (const repo of opts.repositories) {
+                    const base = `${origin}/repos/${repo}`;
+                    const meta = await log.listing(
+                        'the repository',
+                        hostname,
+                        async () => {
+                            if (!GITHUB_REPOSITORY.test(repo)) throw new SourceReadError('UNPARSEABLE', 'a repository that is not owner/repo');
+                            return ctx.http.getJson(base, { origin, headers });
+                        },
+                        (body) => isRecord(body) && typeof body.full_name === 'string',
+                    );
+                    scopes = scopes ?? meta.headers.get('x-oauth-scopes');
+                    await log.listing(
+                        'the workflow directory',
+                        hostname,
+                        () => ctx.http.getJson(`${base}/contents/.github/workflows`, { origin, headers, absentOk: true }),
+                        Array.isArray,
+                    );
+                    await log.listing(
+                        'secret names',
+                        hostname,
+                        () => ctx.http.getJson(`${base}/actions/secrets?per_page=1`, { origin, headers }),
+                        (body) => isRecord(body) && Array.isArray(body.secrets),
+                    );
+                }
+                log.write(githubWriteObservation(scopes));
+            });
+            return log.steps;
         },
     };
 }

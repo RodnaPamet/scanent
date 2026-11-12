@@ -1,5 +1,5 @@
 /**
- * THE OPENSHELL SOURCE — the `runtime` kind (#3936, owner decisions 2026-10-24).
+ * THE OPENSHELL SOURCE — the `runtime` kind.
  *
  * A client running agents under NVIDIA OpenShell has, in its gateway, the one
  * inventory that knows which agents RUN, under what network policy, with which
@@ -80,10 +80,12 @@ import { OPENSHELL_METHODS, OPENSHELL_PROFILE_SCOPE, OPENSHELL_READ_SCOPE, OPENS
 import {
     isPlainId,
     SourceReadError,
+    ProbeLog,
     sourceResult,
     type HarnessSource,
     type Observation,
     type ObservedCredential,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -384,6 +386,20 @@ export function openShellSource(opts: OpenShellOptions): HarnessSource {
             } catch (err) {
                 return sourceResult('runtime', rows, observations, err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            await ProbeLog.run(async () => {
+                let host = '';
+                try {
+                    host = new URL(opts.target.url).hostname;
+                } catch {
+                    // The read below fails on the same URL and says so.
+                }
+                await log.read('sandboxes', host, () => ctx.openshell.listSandboxes(opts.target, null));
+                log.write({ state: 'NOT_OBSERVABLE', verify: 'confirm at the gateway that the token holds sandbox:read and no write scope' });
+            });
+            return log.steps;
         },
     };
 }

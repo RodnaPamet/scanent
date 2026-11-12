@@ -1,0 +1,726 @@
+# The release of scanent's image and air-gapped bundle.
+#
+#   gates        what ci.yml's `checks` job holds a commit to, run again on the
+#                commit being released: the dependency gates (npm audit, the
+#                licence allowlist), lint, type-check, build, the tests under
+#                the coverage gate, and the reproducible-build check. On a
+#                pushed tag it first refuses a commit that is not on main.
+#                Nothing below starts unless it passes
+#   build        one image per architecture, each built and smoke-tested on a
+#                runner of that architecture, scanned (the Trivy and Grype
+#                gates), and described by a CycloneDX SBOM made from that image
+#   bundle       the air-gapped bundle from the two images and their SBOMs,
+#                unsigned, checked by loading it. It cannot ask for the signing
+#                identity
+#   sign-bundle  a pushed tag only: sign the bundle's SHA256SUMS, make the
+#                archive again with the signature inside, check that one as a
+#                site would, and attest its provenance
+#   publish      a pushed tag only, and only after the signed bundle's check
+#                passed: push both images and one manifest over them, sign the
+#                three by digest, attach each SBOM as an attestation, and
+#                attest the build's provenance for the manifest and for each
+#                image. A version already in the registry is never pushed again
+#   release      a pushed tag only: a GitHub release holding the bundle and its
+#                SHA-256, the SBOMs, the signed SHA256SUMS, and the provenance
+#                attestations
+#
+# A pushed tag `v<MAJOR>.<MINOR>.<PATCH>` publishes. A manual run
+# (workflow_dispatch) builds, tests and bundles, and pushes and signs nothing,
+# whatever ref it is started on; so does a re-run that finds the version
+# published.
+#
+# SIGNING IS KEYLESS. There is no signing key in this repository or its
+# secrets. `cosign` asks GitHub for a token that says "this is release.yml of
+# this repository, run for this tag", Sigstore's certificate authority issues
+# a ten-minute certificate for that identity, and the signature is recorded in
+# its public transparency log. Whoever verifies names that identity
+# (docs/verify-a-release.md). A signature is made for a DIGEST, never a tag.
+#
+# The images are built with --provenance=false and stay plain manifests: the
+# provenance attestation is made for the digest that was tested, by the job
+# that pushes it, and not by a second build. No `latest` tag is ever pushed.
+#
+# Every action is pinned to a full commit SHA, as in ci.yml. Registry login and
+# the manifest use the Docker CLI on the runner, not a third-party action.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Read the repository, and nothing else. `publish` alone may write packages,
+# `publish` and `sign-bundle` alone may ask for the signing identity and write
+# attestations, and both run for a pushed tag only; `release` alone may write
+# a release.
+permissions:
+  contents: read
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/rodnapamet/scanent
+  # The two tools a signature and an SBOM are made with, by version.
+  COSIGN_VERSION: v3.1.4
+  SYFT_VERSION: v1.57.1
+
+jobs:
+  # A tag can be pushed on any commit. What is signed below is signed with the
+  # identity docs/verify-a-release.md tells a client to trust, so the commit is
+  # held here to everything a commit on main is held to, whatever CI said about
+  # it or did not: the steps from `Install` to `Reproducible build` are
+  # ci.yml's, word for word (a test holds the two files to each other).
+  gates:
+    name: The commit passes what main is held to
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The whole history: the next step asks whether main holds this commit.
+          fetch-depth: 0
+
+      # A release is cut from main. A tag on a commit of some other branch, or
+      # of no branch, is refused before anything is installed.
+      - name: The tagged commit is on main
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || { echo "origin/main was not fetched; the check cannot be made, so the release stops" >&2; exit 1; }
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "the tagged commit $GITHUB_SHA is not on main; a release is cut from main" >&2
+            exit 1
+          fi
+          echo "on main: $GITHUB_SHA"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # The version the image runs, and the one ci.yml runs the coverage gate on.
+          node-version: 24
+          cache: npm
+
+      # Exactly the lockfile's tree, or a failure. No install script runs.
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # Production dependencies only: what runs in a client's estate. A registry
+      # that does not answer is retried; after the retries the gate fails
+      # closed, because an audit that could not run found nothing.
+      - name: "Gate: npm audit of the production dependencies (moderate and above)"
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            set +e
+            npm audit --omit=dev --audit-level=moderate --json > audit.json 2> audit.err
+            code=$?
+            set -e
+            # An answer is a report that holds the audit's own metadata. Anything else is the registry failing.
+            if node -e 'const a = JSON.parse(require("node:fs").readFileSync("audit.json", "utf8")); process.exit(a.metadata && a.metadata.vulnerabilities ? 0 : 1)' 2> /dev/null; then
+              node -e 'const v = JSON.parse(require("node:fs").readFileSync("audit.json", "utf8")).metadata.vulnerabilities; console.log(JSON.stringify(v))'
+              [ "$code" -eq 0 ] || { npm audit --omit=dev --audit-level=moderate || true; echo "npm audit found a vulnerability of moderate severity or above" >&2; exit 1; }
+              exit 0
+            fi
+            echo "npm audit gave no report (attempt $attempt); retrying" >&2
+            sleep $((attempt * 15))
+          done
+          echo "npm audit gave no report after four attempts; the gate fails closed" >&2
+          cat audit.err >&2 || true
+          exit 1
+
+      # Every production package's licence is on the allowlist, or the build stops.
+      - name: "Gate: licences of the production dependencies"
+        run: node scripts/check-licences.js
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test with coverage (gate)
+        run: npm run test:coverage
+
+      - name: Reproducible build
+        run: node scripts/check-reproducible-build.js
+
+  build:
+    name: Image (linux/${{ matrix.arch }})
+    needs: gates
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The version is the scanner's own. A tag that names another one fails
+      # here, before anything is built.
+      - name: Version
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="$(sed -n "s/^export const SCANNER_VERSION = '\([0-9]*\.[0-9]*\.[0-9]*\)';$/\1/p" packages/scanner/src/scanner-surface.ts)"
+          [ -n "$version" ] || { echo "SCANNER_VERSION was not found in scanner-surface.ts" >&2; exit 1; }
+          if [ "$REF_TYPE" = "tag" ] && [ "$REF_NAME" != "v$version" ]; then
+            echo "the tag $REF_NAME does not name the scanner's version, v$version" >&2
+            exit 1
+          fi
+          chart="$(sed -n 's/^appVersion: "\(.*\)"$/\1/p' deploy/helm/scanent/Chart.yaml)"
+          [ "$chart" = "$version" ] || { echo "the chart's appVersion is $chart, not $version" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build the image (no push)
+        env:
+          DOCKER_BUILDKIT: "1"
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          docker build --provenance=false --sbom=false -f deploy/Dockerfile -t "${IMAGE_REPOSITORY}:${VERSION}-${ARCH}" .
+          found="$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "${IMAGE_REPOSITORY}:${VERSION}-${ARCH}")"
+          [ "$found" = "linux/${ARCH}" ] || { echo "built $found, not linux/${ARCH}" >&2; exit 1; }
+
+      - name: Smoke-test the image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: deploy/smoke.sh "${IMAGE_REPOSITORY}:${VERSION}-${ARCH}"
+
+      # Blocking: CRITICAL and HIGH, fixed vulnerabilities only, no exemptions.
+      - name: "Gate: Trivy scan of the image (critical+high)"
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REPOSITORY }}:${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          timeout: "15m"
+
+      # A second scanner with its own database. Blocking, as in ci.yml.
+      - name: "Gate: Grype scan of the image (high and above)"
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: ${{ env.IMAGE_REPOSITORY }}:${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+          grype-version: v0.121.3
+
+      # The SBOM of the image that was just tested: its OS packages and the
+      # packages under node_modules. Syft reads the image from the local
+      # store. The action uploads and publishes nothing itself.
+      - name: SBOM of the image (CycloneDX)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ env.IMAGE_REPOSITORY }}:${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          format: cyclonedx-json
+          output-file: sbom/${{ matrix.arch }}.cdx.json
+          syft-version: ${{ env.SYFT_VERSION }}
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      # An SBOM that names no component is not one.
+      - name: The SBOM is a CycloneDX document that lists the scanner's dependencies
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          jq -e '.bomFormat == "CycloneDX" and ((.components // []) | length) > 0' "sbom/${ARCH}.cdx.json" > /dev/null
+          for name in zod js-yaml typescript; do
+            jq -e --arg n "$name" '[.components[] | select(.name == $n)] | length > 0' "sbom/${ARCH}.cdx.json" > /dev/null \
+              || { echo "the SBOM does not list $name" >&2; exit 1; }
+          done
+
+      - name: Upload the SBOM
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-${{ matrix.arch }}
+          path: sbom/${{ matrix.arch }}.cdx.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Save the image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: docker save -o "scanent-${VERSION}-linux-${ARCH}.tar" "${IMAGE_REPOSITORY}:${VERSION}-${ARCH}"
+
+      - name: Upload the image archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: scanent-*-linux-${{ matrix.arch }}.tar
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Push the images and the manifest
+    # A PUSHED tag: a manual run on a tag ref builds and bundles, and pushes nothing.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # `sign-bundle` verifies, loads and scans with what a site would receive; a version whose bundle fails is not published.
+    needs: [build, bundle, sign-bundle]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+      # The signing identity (keyless), and the provenance attestation.
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: image-*
+          merge-multiple: true
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sbom-*
+          merge-multiple: true
+          path: sboms
+
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      # The images pushed are the ones that were smoke-tested and scanned.
+      - name: Load both images
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            docker load -i "scanent-${VERSION}-linux-${arch}.tar"
+          done
+
+      - name: Log in to the registry
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io --username "$ACTOR" --password-stdin
+
+      # A version is immutable: a re-run of a tag's workflow must not replace
+      # published bytes with a rebuild. Asked after the login, so a private
+      # package answers. Only a positive answer refuses; a first release finds nothing.
+      - name: Refuse a version that is already published
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "${IMAGE_REPOSITORY}:${VERSION}" > /dev/null 2>&1; then
+            echo "${IMAGE_REPOSITORY}:${VERSION} is already published; a version is never pushed twice" >&2
+            exit 1
+          fi
+
+      - name: Push each architecture's image
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            docker push "${IMAGE_REPOSITORY}:${VERSION}-${arch}"
+          done
+
+      # One manifest over the two, under the version and under MAJOR.MINOR.
+      # Never `latest`: a client names a version.
+      - name: Create the manifest
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            -t "${IMAGE_REPOSITORY}:${VERSION}" \
+            -t "${IMAGE_REPOSITORY}:${VERSION%.*}" \
+            "${IMAGE_REPOSITORY}:${VERSION}-amd64" \
+            "${IMAGE_REPOSITORY}:${VERSION}-arm64"
+
+      - name: The manifest lists exactly linux/amd64 and linux/arm64
+        run: |
+          set -euo pipefail
+          platforms="$(docker buildx imagetools inspect --raw "${IMAGE_REPOSITORY}:${VERSION}" \
+            | jq -r '[.manifests[].platform | "\(.os)/\(.architecture)"] | sort | join(",")')"
+          echo "platforms: $platforms"
+          [ "$platforms" = "linux/amd64,linux/arm64" ] || { echo "the manifest is not exactly the two architectures" >&2; exit 1; }
+
+      # What was pushed, by digest: the manifest over the two, and each image.
+      # The manifest's digest is read two ways, and they must agree.
+      - name: Read the digests
+        id: digests
+        run: |
+          set -euo pipefail
+          is_digest() { [[ "$1" =~ ^sha256:[0-9a-f]{64}$ ]]; }
+          docker buildx imagetools inspect --raw "${IMAGE_REPOSITORY}:${VERSION}" > index.json
+          index="sha256:$(sha256sum index.json | cut -d' ' -f1)"
+          named="$(docker buildx imagetools inspect --format '{{json .Manifest}}' "${IMAGE_REPOSITORY}:${VERSION}" | jq -r '.digest')"
+          is_digest "$index" || { echo "the manifest's digest could not be read" >&2; exit 1; }
+          [ "$index" = "$named" ] || { echo "the manifest's digest read two ways differs: $index, $named" >&2; exit 1; }
+          echo "index=$index" >> "$GITHUB_OUTPUT"
+          for arch in amd64 arm64; do
+            digest="$(jq -r --arg a "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $a) | .digest' index.json)"
+            is_digest "$digest" || { echo "the $arch image's digest could not be read" >&2; exit 1; }
+            echo "$arch=$digest" >> "$GITHUB_OUTPUT"
+          done
+          cat "$GITHUB_OUTPUT"
+
+      # Keyless: the certificate names this workflow at this tag. By digest, so
+      # the signature is for these bytes and not for whatever a tag names later.
+      - name: Sign the manifest and both images
+        env:
+          INDEX: ${{ steps.digests.outputs.index }}
+          AMD64: ${{ steps.digests.outputs.amd64 }}
+          ARM64: ${{ steps.digests.outputs.arm64 }}
+        run: |
+          set -euo pipefail
+          for digest in "$INDEX" "$AMD64" "$ARM64"; do
+            cosign sign --yes "${IMAGE_REPOSITORY}@${digest}"
+          done
+
+      # Each image's SBOM, attached to that image as a signed attestation.
+      - name: Attest each image's SBOM
+        env:
+          AMD64: ${{ steps.digests.outputs.amd64 }}
+          ARM64: ${{ steps.digests.outputs.arm64 }}
+        run: |
+          set -euo pipefail
+          test -s sboms/amd64.cdx.json
+          test -s sboms/arm64.cdx.json
+          cosign attest --yes --type cyclonedx --predicate sboms/amd64.cdx.json "${IMAGE_REPOSITORY}@${AMD64}"
+          cosign attest --yes --type cyclonedx --predicate sboms/arm64.cdx.json "${IMAGE_REPOSITORY}@${ARM64}"
+
+      # Provenance for each digest that was tested and pushed: which workflow,
+      # at which commit, produced it. Stored with the repository's attestations
+      # and beside the image. One for the manifest, and one for each
+      # architecture's image: that is the digest a node runs, and the one a
+      # client is told to verify.
+      - name: Attest the build's provenance
+        id: provenance-index
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.digests.outputs.index }}
+          push-to-registry: true
+
+      - name: Attest the amd64 image's provenance
+        id: provenance-amd64
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.digests.outputs.amd64 }}
+          push-to-registry: true
+
+      - name: Attest the arm64 image's provenance
+        id: provenance-arm64
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.digests.outputs.arm64 }}
+          push-to-registry: true
+
+      # The attestations as files, for the release: a site with no network can
+      # then be handed them. An attestation that was not written stops here.
+      - name: Keep the provenance attestations
+        env:
+          INDEX_BUNDLE: ${{ steps.provenance-index.outputs.bundle-path }}
+          AMD64_BUNDLE: ${{ steps.provenance-amd64.outputs.bundle-path }}
+          ARM64_BUNDLE: ${{ steps.provenance-arm64.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          mkdir provenance
+          test -s "$INDEX_BUNDLE" && cp "$INDEX_BUNDLE" "provenance/scanent-${VERSION}-image.provenance.jsonl"
+          test -s "$AMD64_BUNDLE" && cp "$AMD64_BUNDLE" "provenance/scanent-${VERSION}-linux-amd64.provenance.jsonl"
+          test -s "$ARM64_BUNDLE" && cp "$ARM64_BUNDLE" "provenance/scanent-${VERSION}-linux-arm64.provenance.jsonl"
+          [ "$(find provenance -type f -size +0 | wc -l)" -eq 3 ]
+
+      - name: Upload the provenance attestations
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: provenance-images
+          path: provenance/
+          if-no-files-found: error
+          retention-days: 30
+
+      # What a client will run, run here first: the signature verifies for the
+      # identity docs/verify-a-release.md names, or the release stops.
+      - name: Verify the signatures the way a client does
+        env:
+          INDEX: ${{ steps.digests.outputs.index }}
+          AMD64: ${{ steps.digests.outputs.amd64 }}
+          ARM64: ${{ steps.digests.outputs.arm64 }}
+        run: |
+          set -euo pipefail
+          identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/v${VERSION}"
+          issuer="https://token.actions.githubusercontent.com"
+          for digest in "$INDEX" "$AMD64" "$ARM64"; do
+            cosign verify "${IMAGE_REPOSITORY}@${digest}" --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" > /dev/null
+          done
+          for digest in "$AMD64" "$ARM64"; do
+            cosign verify-attestation --type cyclonedx "${IMAGE_REPOSITORY}@${digest}" --certificate-identity "$identity" --certificate-oidc-issuer "$issuer" > /dev/null
+          done
+          echo "verified: the manifest, both images and both SBOM attestations, for $identity"
+
+      - name: Log out
+        if: always()
+        run: docker logout ghcr.io
+
+  bundle:
+    name: Air-gapped bundle
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # No identity token here, on any run: this job runs the repository's own
+    # scripts (build-bundle.sh, smoke.sh), on a manual run from any branch. The
+    # signature is made by `sign-bundle`, which runs for a pushed tag only.
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: image-*
+          merge-multiple: true
+          path: images-in
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sbom-*
+          merge-multiple: true
+          path: sboms
+
+      - name: Load both images
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            docker load -i "images-in/scanent-${VERSION}-linux-${arch}.tar"
+          done
+
+      # The SBOMs are the ones the build job made from these two images. No
+      # signing command is given: this job has no identity to sign with.
+      - name: Build the bundle
+        run: |
+          set -euo pipefail
+          export SCANENT_SBOM_DIR="$PWD/sboms"
+          deploy/airgap/build-bundle.sh "${VERSION}" \
+            "${IMAGE_REPOSITORY}:${VERSION}-amd64" "${IMAGE_REPOSITORY}:${VERSION}-arm64" bundle-out
+          test ! -e "bundle-out/scanent-${VERSION}-airgap/signatures"
+
+      # The bundle as a site receives it: unpack, verify, load with no image in
+      # the local store, then the smoke test of what was loaded. Every run of
+      # the smoke test has no network. This bundle is not signed, and is
+      # accepted only by saying so: with no flag verify.sh refuses it.
+      - name: Unpack, verify and load the bundle, and scan with what it loaded
+        run: |
+          set -euo pipefail
+          docker image rm "${IMAGE_REPOSITORY}:${VERSION}-amd64" "${IMAGE_REPOSITORY}:${VERSION}-arm64"
+          mkdir unpacked
+          tar -xf "bundle-out/scanent-${VERSION}-airgap.tar" -C unpacked
+          cd "unpacked/scanent-${VERSION}-airgap"
+          ./verify.sh --unsigned
+          ./load.sh --unsigned
+          cd "$GITHUB_WORKSPACE"
+          deploy/smoke.sh "${IMAGE_REPOSITORY}:${VERSION}"
+
+      # Named for what it is: a manual run's only bundle, and what `sign-bundle` signs on a tag.
+      - name: Upload the unsigned bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scanent-${{ needs.build.outputs.version }}-airgap-unsigned
+          path: bundle-out/scanent-*-airgap.tar
+          if-no-files-found: error
+          retention-days: 30
+
+  sign-bundle:
+    name: Sign the air-gapped bundle
+    # A PUSHED tag, as `publish`: the only two jobs that may ask for the signing identity.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [build, bundle]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # The signing identity for SHA256SUMS (keyless), and the bundle's provenance attestation.
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: scanent-${{ needs.build.outputs.version }}-airgap-unsigned
+          path: unsigned
+
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      # The list of checksums is signed, keyless, and the archive is made again
+      # with the signature inside it, so the signature travels with the bundle.
+      # sign-bundle.sh checks the tree against its own list before it signs.
+      - name: Sign the bundle
+        run: |
+          set -euo pipefail
+          export SCANENT_SIGN_CMD="cosign sign-blob --yes --bundle"
+          deploy/airgap/sign-bundle.sh "unsigned/scanent-${VERSION}-airgap.tar" bundle-out
+          test -s "bundle-out/scanent-${VERSION}-airgap/signatures/SHA256SUMS.sigstore.json"
+
+      # The signed bundle as a site receives it. A tag's bundle must carry a
+      # signature that verifies; cosign is on the path here.
+      - name: Unpack, verify and load the signed bundle, and scan with what it loaded
+        run: |
+          set -euo pipefail
+          mkdir unpacked
+          tar -xf "bundle-out/scanent-${VERSION}-airgap.tar" -C unpacked
+          cd "unpacked/scanent-${VERSION}-airgap"
+          ./verify.sh --require-signature
+          ./load.sh --require-signature
+          cd "$GITHUB_WORKSPACE"
+          deploy/smoke.sh "${IMAGE_REPOSITORY}:${VERSION}"
+
+      # Provenance for the archive a site downloads: which workflow, at which
+      # commit, produced these bytes.
+      - name: Attest the bundle's provenance
+        id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: bundle-out/scanent-${{ needs.build.outputs.version }}-airgap.tar
+
+      - name: Keep the provenance attestation
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          test -s "$BUNDLE"
+          mkdir provenance
+          cp "$BUNDLE" "provenance/scanent-${VERSION}-airgap.provenance.jsonl"
+
+      - name: Upload the bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scanent-${{ needs.build.outputs.version }}-airgap
+          path: bundle-out/scanent-*-airgap.tar
+          if-no-files-found: error
+          retention-days: 30
+
+      # The signed list and its signature, also beside the bundle: a site can
+      # check them before it unpacks anything.
+      - name: Upload the signed checksums
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bundle-signature
+          path: |
+            bundle-out/scanent-${{ needs.build.outputs.version }}-airgap/SHA256SUMS
+            bundle-out/scanent-${{ needs.build.outputs.version }}-airgap/signatures/SHA256SUMS.sigstore.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload the bundle's provenance attestation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: provenance-bundle
+          path: provenance/
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: GitHub release with the bundle, its checksum, the SBOMs, the signature and the provenance
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [build, bundle, sign-bundle, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: scanent-${{ needs.build.outputs.version }}-airgap
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: bundle-signature
+          path: signature
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: sbom-*
+          merge-multiple: true
+          path: sboms
+
+      # The four provenance attestations: the manifest, each image, the bundle.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: provenance-*
+          merge-multiple: true
+          path: provenance
+
+      - name: Every provenance attestation is here
+        run: |
+          set -euo pipefail
+          for name in image linux-amd64 linux-arm64 airgap; do
+            test -s "provenance/scanent-${VERSION}-${name}.provenance.jsonl"
+          done
+
+      # Under names that say which version each belongs to.
+      - name: Name the SBOMs and the signed checksums by version
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            test -s "sboms/${arch}.cdx.json"
+            cp "sboms/${arch}.cdx.json" "scanent-${VERSION}-linux-${arch}.cdx.json"
+          done
+          sums="$(find signature -type f -name SHA256SUMS)"
+          sig="$(find signature -type f -name SHA256SUMS.sigstore.json)"
+          test -s "$sums"
+          test -s "$sig"
+          cp "$sums" "scanent-${VERSION}-airgap.SHA256SUMS"
+          cp "$sig" "scanent-${VERSION}-airgap.SHA256SUMS.sigstore.json"
+
+      # The checksum a site compares the archive with, in `sha256sum -c` form.
+      - name: Write the bundle's SHA-256
+        run: |
+          set -euo pipefail
+          test -s "scanent-${VERSION}-airgap.tar"
+          sha256sum "scanent-${VERSION}-airgap.tar" > "scanent-${VERSION}-airgap.tar.sha256"
+          cat "scanent-${VERSION}-airgap.tar.sha256"
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "$REF_NAME" --verify-tag --title "scanent ${VERSION}" \
+            --notes "Image: ${IMAGE_REPOSITORY}:${VERSION} (linux/amd64, linux/arm64), signed by this repository's release workflow, with an SBOM and build provenance attached. The air-gapped bundle, its SHA-256, the SBOM of each image, the signed list of the bundle's checksums, and the build provenance of the manifest, of each image and of the bundle are attached. docs/verify-a-release.md has the commands that check each of them." \
+            "scanent-${VERSION}-airgap.tar" "scanent-${VERSION}-airgap.tar.sha256" \
+            "scanent-${VERSION}-linux-amd64.cdx.json" "scanent-${VERSION}-linux-arm64.cdx.json" \
+            "scanent-${VERSION}-airgap.SHA256SUMS" "scanent-${VERSION}-airgap.SHA256SUMS.sigstore.json" \
+            "provenance/scanent-${VERSION}-image.provenance.jsonl" \
+            "provenance/scanent-${VERSION}-linux-amd64.provenance.jsonl" "provenance/scanent-${VERSION}-linux-arm64.provenance.jsonl" \
+            "provenance/scanent-${VERSION}-airgap.provenance.jsonl"

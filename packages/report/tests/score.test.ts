@@ -15,7 +15,7 @@
  */
 import { canonicalJson } from '@scanent/contract/canonical-json';
 import { LADDER_VERSION, type HarnessReportBody } from '@scanent/contract/harness-contract';
-import { firstSecretShapedMember, planHarnessScan, type PriorHarnessState } from '@scanent/contract/harness-findings';
+import { firstSecretShapedMember, planHarnessScan, toolEvidenceSourcesOf, type PriorHarnessState } from '@scanent/contract/harness-findings';
 import {
     ALL_HARNESS_CRITERIA,
     collapseVerdicts,
@@ -722,6 +722,46 @@ describe('8. the result', () => {
         const before = JSON.stringify(body);
         scoreReportLocally(input(body, { inventory: inventoryOf([fullRow(SHADOW)]) }));
         expect(JSON.stringify(body)).toBe(before);
+    });
+
+    describe('tool-evidence sources', () => {
+        const sourcesOf = (results: LocalResults, id: string) => agentOf(results, id).toolEvidenceSources;
+
+        it('is the planner\'s own rule over the tools as reported: each tool\'s source, and where an unlisted one would be', () => {
+            const body = standaloneBody();
+            // Found through an identity source, tools on an MCP server.
+            expect(sourcesOf(scoreReportLocally(input(body)), BRAVO)).toEqual(['mcp']);
+            // Found through code, with a tool the code defines and one an MCP server serves.
+            const mixed = {
+                ...body,
+                population: { sources: [{ kind: 'code' as const, status: 'COMPLETE' as const, rows: 1 }, { kind: 'mcp' as const, status: 'COMPLETE' as const, rows: 1 }] },
+                agents: body.agents.map((a) => ({
+                    ...a,
+                    discoveredVia: ['code' as const],
+                    tools: [...a.tools, { server: 'code://example/agent.py#local_tool', name: 'local_tool', manifestHash: null, pinned: false, readOnlyHint: null }],
+                })),
+            };
+            expect(sourcesOf(scoreReportLocally(input(mixed)), BRAVO)).toEqual(['code', 'mcp']);
+            // Found through code with no tool listed: where one would have been is the code.
+            const bare = { ...mixed, agents: mixed.agents.map((a) => ({ ...a, tools: [] })) };
+            expect(sourcesOf(scoreReportLocally(input(bare)), BRAVO)).toEqual(['code']);
+            for (const agent of scoreReportLocally(input(mixed)).agents) {
+                const observed = mixed.agents.find((a) => a.discoveredId === agent.discoveredId)!;
+                expect(agent.toolEvidenceSources).toEqual([...toolEvidenceSourcesOf(observed)].sort());
+            }
+        });
+
+        it('the schema reads a file without the member, and refuses a value it does not know, an empty list and a repeat', () => {
+            const written = () => JSON.parse(JSON.stringify(scoreReportLocally(input(standaloneBody())))) as { agents: Record<string, unknown>[] };
+            const older = written();
+            for (const agent of older.agents) delete agent.toolEvidenceSources;
+            expect(LocalResultsSchema.safeParse(older).success).toBe(true);
+            for (const bad of [['runtime'], [], ['mcp', 'mcp'], 'mcp', null]) {
+                const results = written();
+                results.agents[0].toolEvidenceSources = bad;
+                expect(LocalResultsSchema.safeParse(results).success).toBe(false);
+            }
+        });
     });
 
     describe('read back, a results file is refused when', () => {

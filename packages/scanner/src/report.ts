@@ -2,7 +2,7 @@
  * FROM SOURCE READS TO A SIGNED `inflect-agent-harness/3` REPORT.
  *
  * The report is built against the contract's own schemas
- * (`src/lib/agentic/harness-contract.ts`) rather than a copy of them, and the
+ * (`@scanent/contract/harness-contract`) rather than a copy of them, and the
  * scanner checks its own output with them BEFORE it signs: a body the ingest
  * would refuse as SCHEMA, or as SECRET_IN_REPORT, is refused here and never
  * leaves the estate. The signed message is the contract's
@@ -20,8 +20,8 @@
  *     The owner is the first one found in source order — the identity source
  *     before the vault — and a disagreement is not resolved by inventing a
  *     third answer. A tool's call count stays with the source for now: `/2`
- *     has a member for it (`calls`, with `windowDays`), and filling it is a
- *     follow-up of #3738's.
+ *     has a member for it (`calls`, with `windowDays`), which the scanner
+ *     does not fill yet.
  *   • VERDICTS COLLAPSE TO THE LEAST FAVOURABLE per criterion, the ladder's
  *     own rule (`collapseVerdicts`), so the report never says more than the
  *     most cautious source did.
@@ -43,7 +43,7 @@
  *     time as one `<key>:*` entry at the server's URL. When the `mcp` source
  *     read that same server IN FULL, the placeholder becomes the server's
  *     actual tools, with their hashes, hints and pin, and the agent is
- *     `discoveredVia` `mcp` too (owner decision 2 on #3686). A server read in
+ *     `discoveredVia` `mcp` too. A server read in
  *     part replaces nothing: the placeholder, which counts as a write, stays.
  *   • AN UNBOUND CREDENTIAL IS ONE NO PRINCIPAL HOLDS, across every source.
  *     `unboundCredentials[]` is what each source saw bound to no principal,
@@ -61,6 +61,7 @@ import {
     MAX_AGENTS,
     MAX_CREDENTIALS_PER_AGENT,
     MAX_MODELS_PER_AGENT,
+    MAX_REPORT_BYTES,
     MAX_TOOLS_PER_AGENT,
     MAX_UNBOUND_CREDENTIALS,
     SOURCE_KINDS_V3,
@@ -101,7 +102,7 @@ interface MergedAgent {
     registeredAgentId: string | null;
     owner: ObservedOwner | null;
     credentials: Map<string, { credential: ObservedCredential; via: SourceKind }>;
-    tools: Map<string, { tool: ObservedTool; via: SourceKind }>;
+    tools: Map<string, { tool: ObservedTool; via: SourceKind; mcpEndpoint?: string }>;
     models: Map<string, { model: ObservedModel; via: SourceKind }>;
     verdicts: CriterionVerdict[];
 }
@@ -149,7 +150,9 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
             }
             if (agent.owner === null && o.owner !== null) agent.owner = o.owner;
             for (const c of o.credentials) if (!agent.credentials.has(c.ref)) agent.credentials.set(c.ref, { credential: c, via: read.kind });
-            for (const { tool } of o.tools ?? []) if (!agent.tools.has(toolKey(tool))) agent.tools.set(toolKey(tool), { tool, via: read.kind });
+            for (const { tool, mcpEndpoint } of o.tools ?? []) {
+                if (!agent.tools.has(toolKey(tool))) agent.tools.set(toolKey(tool), { tool, via: read.kind, mcpEndpoint });
+            }
             for (const m of o.models ?? []) if (!agent.models.has(modelKey(m))) agent.models.set(modelKey(m), { model: m, via: read.kind });
             agent.verdicts.push(...o.verdicts);
             merged.set(o.discoveredId, agent);
@@ -161,9 +164,11 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
     const served = new Map<string, McpServerRead>();
     for (const read of ordered) for (const s of read.mcpServers ?? []) served.set(endpointKey(s.url), s);
     for (const agent of merged.values()) {
-        for (const [key, { tool }] of [...agent.tools]) {
+        for (const [key, { tool, mcpEndpoint }] of [...agent.tools]) {
             if (!tool.name.endsWith(':*')) continue;
-            const server = served.get(endpointKey(tool.server));
+            // The whole endpoint when the source kept one for this comparison;
+            // only `tool.server` (an origin, from code) is ever reported.
+            const server = served.get(endpointKey(mcpEndpoint ?? tool.server));
             if (server === undefined) continue;
             agent.tools.delete(key);
             for (const t of server.tools) if (!agent.tools.has(toolKey(t))) agent.tools.set(toolKey(t), { tool: t, via: 'mcp' });
@@ -277,5 +282,17 @@ export function signReport(body: HarnessReportBodyV3, keys: { privateKey: KeyObj
         signerKey: rawPublicKeyHex(keys.publicKey),
         sig: sign(null, harnessSignedMessage(wireBody), keys.privateKey).toString('hex'),
     };
-    return JSON.stringify({ ...wireBody, signature });
+    const raw = JSON.stringify({ ...wireBody, signature });
+    // The size is the first thing the contract's verifier checks, and the one
+    // check that was not made here: a report over it was signed, written and
+    // posted, and then refused by every reader (the tenant, and `scanent diff`
+    // on the same file) as TOO_LARGE. The schema's caps on agents and members
+    // do not imply it: five thousand agents with a few tools each pass every
+    // count and are well over the byte cap. Nothing is cut to fit: a report
+    // made smaller by dropping agents would describe a slice as the estate.
+    const bytes = Buffer.byteLength(raw, 'utf8');
+    if (bytes > MAX_REPORT_BYTES) {
+        throw new ReportRefusedLocally([`(report): ${bytes} bytes, over the ${MAX_REPORT_BYTES} a report may be; scan the estate as several, each with its own configuration`]);
+    }
+    return raw;
 }

@@ -175,6 +175,32 @@ describe('3. which agent a server\'s tools belong to', () => {
         expect(agent.tools.some((t) => t.name.endsWith(':*'))).toBe(false);
     });
 
+    it('a placeholder from code names the server\'s origin, is matched by the whole endpoint it holds in memory, and that endpoint is never reported', async () => {
+        const mcpRead = await read(createSourceFakes(), [server(MCP_CRM, { agents: [] })]);
+        const origin = new URL(MCP_CRM).origin;
+        const placeholder = (name: string) => ({ server: origin, name, manifestHash: null, pinned: false, readOnlyHint: null });
+        const codeRead = (mcpEndpoint: string | undefined): SourceRead => ({
+            kind: 'code',
+            status: 'COMPLETE',
+            rows: 1,
+            observations: [{ discoveredId: 'code:a.py#x', owner: null, credentials: [], verdicts: [], tools: [{ tool: placeholder('crm:*'), ...(mcpEndpoint ? { mcpEndpoint } : {}) }] }],
+        });
+        const identity = { scanId: 'scan-3', asOf: ASOF, scannerAgentId: 'agt_scanner' };
+        // The same endpoint: the server's tools replace the placeholder.
+        const same = buildReportBody(identity, [codeRead(`${MCP_CRM}/`), mcpRead]);
+        expect(same.agents[0].tools.map((t) => t.name).sort()).toEqual(['list_pipelines', 'lookup_account', 'update_opportunity']);
+        expect(same.agents[0].discoveredVia).toEqual(['mcp', 'code']);
+        // Another endpoint on the same host, a path with a key in it: not that server, so the placeholder stays, at the origin.
+        const other = buildReportBody(identity, [codeRead(`${origin}/other/tok-9f8e7d6c5b4a39281706`), mcpRead]);
+        expect(other.agents[0].tools).toEqual([placeholder('crm:*')]);
+        // The origin alone is not the endpoint either.
+        expect(buildReportBody(identity, [codeRead(undefined), mcpRead]).agents[0].tools).toEqual([placeholder('crm:*')]);
+        for (const body of [same, other]) {
+            expect(JSON.stringify(body)).not.toContain('mcpEndpoint');
+            expect(JSON.stringify(body)).not.toContain('tok-9f8e7d6c5b4a39281706');
+        }
+    });
+
     it('a server read in part replaces nothing: the placeholder, which counts as a write, stays', async () => {
         const fakes = createSourceFakes();
         fakes.override = (r) => (r.rpc === 'tools/list' && r.body?.includes('"cursor"') ? { status: 503 } : undefined);
@@ -252,6 +278,46 @@ describe('5. a read that stops is INCOMPLETE, with its reason', () => {
         const twice = mcpFixtures();
         twice[MCP_CRM].tools = [[{ name: 'dup', inputSchema: {} }, { name: 'dup', inputSchema: { type: 'object' } }]];
         expect(await read(createSourceFakes({ mcp: twice }), [server(MCP_CRM)])).toMatchObject({ status: 'INCOMPLETE', reason: 'PAGINATION_TORN' });
+    });
+
+    it.each([
+        ['300 visible characters', 's'.repeat(300)],
+        ['one over the 256 allowed', 's'.repeat(257)],
+        ['a space in it', 'sess crm 0001'],
+        ['a tab in it', 'sess\tcrm'],
+        ['a character outside ASCII', 'sess-\u00e9-0001'],
+    ])('a session id of %s tears the session: PAGINATION_TORN, and no request ever carries it', async (_label, sessionId) => {
+        const fixtures: Record<string, McpServerFixture> = mcpFixtures();
+        fixtures[MCP_CRM].sessionId = sessionId;
+        const fakes = createSourceFakes({ mcp: fixtures });
+        const sent: (string | null)[] = [];
+        const inner = fakes.fetchImpl;
+        const watching = {
+            ...fakes,
+            fetchImpl: (async (url, init) => {
+                sent.push(new Headers(init.headers).get('mcp-session-id'));
+                return inner(url, init);
+            }) as typeof inner,
+        };
+        const result = await read(watching, [server(MCP_CRM, { agents: [] })]);
+        expect(result).toMatchObject({ kind: 'mcp', status: 'INCOMPLETE', reason: 'PAGINATION_TORN', rows: 0, mcpServers: [] });
+        // The one request made is `initialize`, which has no session yet; nothing follows it.
+        expect(sent).toEqual([null]);
+        expect(fakes.log.map((r) => r.rpc)).toEqual(['initialize']);
+    });
+
+    it('a session id at the bound is kept and sent back on every later request', async () => {
+        const fixtures: Record<string, McpServerFixture> = mcpFixtures();
+        const sessionId = `${'s'.repeat(255)}~`;
+        fixtures[MCP_CRM].sessionId = sessionId;
+        const fakes = createSourceFakes({ mcp: fixtures });
+        const sent: (string | null)[] = [];
+        const inner = fakes.fetchImpl;
+        const result = await read({ ...fakes, fetchImpl: (async (url, init) => (sent.push(new Headers(init.headers).get('mcp-session-id')), inner(url, init))) as typeof inner }, [server(MCP_CRM, { agents: [] })]);
+        expect(result).toMatchObject({ status: 'COMPLETE' });
+        expect(sent[0]).toBeNull();
+        expect(sent.length).toBeGreaterThan(2);
+        expect(sent.slice(1)).toEqual(sent.slice(1).map(() => sessionId));
     });
 
     it('a response past the byte cap is BYTE_CAP, and the time box is TIME_BOX', async () => {

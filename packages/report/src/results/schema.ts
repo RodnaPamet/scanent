@@ -74,6 +74,8 @@ const AgentSchema = z
     .object({
         discoveredId: id,
         discoveredVia: z.array(sourceKind).min(1).max(SOURCE_KINDS.length),
+        // Absent in a file written before the member existed; never empty when present.
+        toolEvidenceSources: z.array(z.enum(['code', 'mcp'])).min(1).max(2).optional(),
         declared: z.object({ name: id, owner: id, purpose: z.string().min(1).max(512), row: z.number().int().min(1) }).strict().nullable(),
         observedOwner: z.object({ kind: z.enum(['user', 'group']), ref: id }).strict().nullable(),
         registration: z.object({ basis: z.enum(['NONE', 'DECLARED_INVENTORY', 'OBSERVED_REGISTER']), ref: id.nullable() }).strict(),
@@ -94,6 +96,9 @@ const AgentSchema = z
     .superRefine((agent, ctx) => {
         if (agent.criteria.some((cell, i) => cell.criterion !== ALL_HARNESS_CRITERIA[i])) {
             ctx.addIssue({ code: 'custom', message: 'every criterion once, in ladder order', path: ['criteria'] });
+        }
+        if (agent.toolEvidenceSources !== undefined && new Set(agent.toolEvidenceSources).size !== agent.toolEvidenceSources.length) {
+            ctx.addIssue({ code: 'custom', message: 'a tool-evidence source appears once', path: ['toolEvidenceSources'] });
         }
         if ((agent.registration.basis === 'NONE') !== (agent.registration.ref === null)) {
             ctx.addIssue({ code: 'custom', message: 'a registration names what it rests on, or is none', path: ['registration'] });

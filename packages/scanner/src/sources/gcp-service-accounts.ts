@@ -1,5 +1,5 @@
 /**
- * THE GCP SERVICE-ACCOUNT SOURCE — `gcp-sa` (#3785, owner decision 2026-10-19).
+ * THE GCP SERVICE-ACCOUNT SOURCE — `gcp-sa`.
  *
  * A Google Cloud service account is a non-human principal that acts as itself:
  * a workload attached to it, or anyone holding one of its keys, calls Google's
@@ -24,7 +24,7 @@
  * the key it signs its token request with — the account Google authenticated
  * it as — and is not reported: it is the scanner, which the register already
  * holds as the agent that signs this report. Okta's source does the same for
- * its own token (owner decision, 2026-10-19).
+ * its own token.
  *
  * AUTHENTICATION is the OAuth 2.0 JWT-bearer grant (RFC 7523): the source
  * signs a short-lived assertion with the key named by the configuration's
@@ -48,11 +48,13 @@ import { MAX_AGENTS, MAX_CREDENTIALS_PER_AGENT } from '@scanent/contract/harness
 import {
     ageInDays,
     readPages,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
     type ObservedCredential,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -175,6 +177,11 @@ const KEY_ID = /^[0-9a-f]{8,64}$/;
 function googlePage(member: string, firstUrl: string) {
     return (body: unknown): { items: readonly unknown[]; next: string | null } | null => {
         if (!isRecord(body)) return null;
+        // An empty collection is an object with no member at all, so "any object"
+        // would read as "a listing of none": a sign-in page served as JSON, or a
+        // proxy's own answer, would be a project with no account and a COMPLETE
+        // read. A listing holds its collection and its page token and nothing else.
+        if (Object.keys(body).some((key) => key !== member && key !== 'nextPageToken')) return null;
         const items = body[member] === undefined ? [] : body[member];
         if (!Array.isArray(items)) return null;
         const token = body.nextPageToken;
@@ -280,6 +287,39 @@ export function gcpServiceAccountSource(opts: GcpServiceAccountSourceOptions): H
             } catch (err) {
                 return sourceResult('gcp-sa', rows, observations, err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            const iamHost = new URL(GCP_IAM_ORIGIN).hostname;
+            await ProbeLog.run(async () => {
+                // The key file parses and signs (local), then the exchange.
+                const token = await log.exchange('token', new URL(GOOGLE_OAUTH_ORIGIN).hostname, async () =>
+                    ctx.tokens.jwtBearer({
+                        tokenUrl: `${GOOGLE_OAUTH_ORIGIN}${GOOGLE_TOKEN_PATH}`,
+                        origin: GOOGLE_OAUTH_ORIGIN,
+                        assertion: signedAssertion(parseServiceAccountKey(opts.keyJson), ctx.now()),
+                    }),
+                );
+                const headers = { Authorization: `Bearer ${token}` };
+                for (const project of opts.projects) {
+                    await log.listing(
+                        'service accounts',
+                        iamHost,
+                        async () => {
+                            if (!GCP_PROJECT_ID.test(project)) throw new SourceReadError('UNPARSEABLE', 'a project that is not a project id');
+                            return ctx.http.getJson(`${GCP_IAM_ORIGIN}/v1/projects/${project}/serviceAccounts?pageSize=1`, { origin: GCP_IAM_ORIGIN, headers });
+                        },
+                        // The scan's own reading of the page: an empty collection is an object with no `accounts`.
+                        (body) => googlePage('accounts', GCP_IAM_ORIGIN)(body) !== null,
+                    );
+                }
+                // Google answers what an identity may do through testIamPermissions, a POST this scanner cannot send.
+                log.write({
+                    state: 'NOT_OBSERVABLE',
+                    verify: 'confirm in IAM that the service account holds roles/iam.serviceAccountViewer on each project and nothing else',
+                });
+            });
+            return log.steps;
         },
     };
 }

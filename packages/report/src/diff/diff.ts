@@ -22,6 +22,13 @@ import type { LocalAgentResult, LocalFinding, LocalResults, VerdictBasis } from 
 
 export const DIFF_SCHEMA = 'scanent-diff/1';
 
+/**
+ * The warning a diff carries when it decided whether an unpinned-write-tool
+ * finding is closed without `toolEvidenceSources` on one side: the file is
+ * older than the member, and the decision rests on where the agent was found.
+ */
+export const TOOL_EVIDENCE_OLDER_RULE = 'TOOL_EVIDENCE_OLDER_RULE';
+
 export type DiffRefusal = 'NOT_LATER' | 'LADDER_DIFFERS' | 'SCANNER_DIFFERS';
 
 const REFUSAL_TEXT: Readonly<Record<DiffRefusal, string>> = {
@@ -124,7 +131,7 @@ export interface ResultsDiff {
     readonly ladderVersion: string;
     readonly old: DiffSide;
     readonly new: DiffSide;
-    /** `INVENTORY_DIFFERS`, `SCANNER_DIFFERS`, `ESTATE_DIFFERS`, `SIGNER_NOT_PINNED:<side>`, `REGISTER_CLAIMS_NOT_VERIFIED:<side>`. */
+    /** `INVENTORY_DIFFERS`, `SCANNER_DIFFERS`, `ESTATE_DIFFERS`, `SIGNER_NOT_PINNED:<side>`, `REGISTER_CLAIMS_NOT_VERIFIED:<side>`, `TOOL_EVIDENCE_OLDER_RULE`. */
     readonly warnings: readonly string[];
     readonly sources: readonly SourceChange[];
     readonly agents: {
@@ -181,6 +188,8 @@ function findingStillOpenWhy(
     prevAgents: ReadonlyMap<string, LocalAgentResult>,
     nextAgents: ReadonlyMap<string, LocalAgentResult>,
     gone: ReadonlySet<string>,
+    /** Told when a decision fell back to `discoveredVia` because a side carries no `toolEvidenceSources`. */
+    onOlderRule: () => void,
 ): string | null {
     const complete = readInFull(next);
     if (finding.discoveredId !== null) {
@@ -195,15 +204,29 @@ function findingStillOpenWhy(
         }
         if (agent.judgement.state !== 'JUDGED') return 'AGENT_NOT_JUDGED';
         if (finding.code === 'UNPINNED_WRITE_TOOL') {
-            // A tool's absence closes nothing unless the source that would have
-            // reported it was read in full (the planner's `toolEvidenceSourcesOf`,
-            // over where the agent was found in either run): `code` for an agent
-            // found through `code`, `mcp` for one found through any other kind.
-            // A source the new run does not list was not read at all. Results
-            // carry no tool's server, so every listed source must be complete too.
-            const via = [...(prevAgents.get(finding.discoveredId)?.discoveredVia ?? []), ...agent.discoveredVia];
-            const evidence = [...new Set(via.map((kind) => (kind === 'code' ? 'code' : 'mcp')))];
-            if (evidence.some((kind) => !next.sources.some((s) => s.kind === kind))) return 'SOURCE_ABSENT';
+            // A tool's absence closes nothing unless every source that would
+            // have reported it was read in full: the planner's
+            // `toolEvidenceSourcesOf`, which each run records per agent as
+            // `toolEvidenceSources`, taken over BOTH runs. That list counts a
+            // listed tool's own server, so a tool served over MCP to an agent
+            // found only in code needs a complete `mcp` read too.
+            //
+            // A file written before the member existed has none. For that side
+            // the rule falls back to where the agent was found (`code` for
+            // `code`, `mcp` for any other kind), which cannot see such a tool,
+            // and the diff says it decided on the older rule.
+            const sides = [prevAgents.get(finding.discoveredId), agent].filter((a): a is LocalAgentResult => a !== undefined);
+            const evidence = new Set<string>();
+            for (const side of sides) {
+                if (side.toolEvidenceSources === undefined) {
+                    onOlderRule();
+                    for (const kind of side.discoveredVia) evidence.add(kind === 'code' ? 'code' : 'mcp');
+                } else {
+                    for (const kind of side.toolEvidenceSources) evidence.add(kind);
+                }
+            }
+            // A source the new run does not list was not read at all.
+            if ([...evidence].some((kind) => !next.sources.some((s) => s.kind === kind))) return 'SOURCE_ABSENT';
             // A listed source that was not read in full is an incomplete scan.
             if (!complete) return 'SCAN_INCOMPLETE';
         }
@@ -386,7 +409,9 @@ export function diffResults(prev: LocalResults, next: LocalResults, opts: { read
     for (const f of prev.findings) {
         if (f.code === 'ORPHAN_CREDENTIAL' || refsNow.has(f.sourceRef)) continue;
         // A different scanner or estate concludes nothing; an empty run still shows a source now read in full.
-        const why = otherPopulation ?? findingStillOpenWhy(f, next, prevAgents, nextAgents, goneSet);
+        const why = otherPopulation ?? findingStillOpenWhy(f, next, prevAgents, nextAgents, goneSet, () => {
+            if (!warnings.includes(TOOL_EVIDENCE_OLDER_RULE)) warnings.push(TOOL_EVIDENCE_OLDER_RULE);
+        });
         findings.push({ sourceRef: f.sourceRef, code: f.code, discoveredId: f.discoveredId, title: f.title, change: why === null ? 'CLOSED' : 'NOT_CONCLUDED', why });
         if (why !== null) notConcluded.push(`FINDING_NOT_CONCLUDED:${f.sourceRef}`);
     }

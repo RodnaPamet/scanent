@@ -1,5 +1,5 @@
 /**
- * THE LANGSMITH SOURCE — the `runtime` kind (#3738, owner decisions 2026-10-19).
+ * THE LANGSMITH SOURCE — the `runtime` kind.
  *
  * A customer that runs its agents under LangSmith has, in LangSmith, the one
  * inventory that knows which agents RAN and which tools they CALLED. This
@@ -7,7 +7,7 @@
  *
  *   • DEPLOYMENTS, WHEN THE ESTATE OPTS IN. `GET /v2/deployments` (the
  *     LangSmith Deployment control plane), paged by offset, and only with
- *     `readDeployments: true` (owner decision 2026-10-19: off by default,
+ *     `readDeployments: true` (off by default,
  *     because that listing carries each deployment's secrets). A deployment is
  *     an agent server by existence, so every one listed is reported, as
  *     `langsmith:deployment:<id>`, whether or not it ran in the window. Its
@@ -34,8 +34,8 @@
  * `manifestHash: null` and `pinned: false` (LangSmith records no definition,
  * so nothing the scanner saw pins one), and `readOnlyHint: null` (none is
  * declared; the contract counts that as a write). The call COUNT has a member
- * in `inflect-agent-harness/2` (`calls`, with `windowDays`) that a follow-up of
- * #3738 fills; until then the source holds it on the observation and the
+ * in `inflect-agent-harness/2` (`calls`, with `windowDays`) that the scanner
+ * does not fill yet; until then the source holds it on the observation and the
  * scanner's log reports the total. A tool name that is not a plain identifier
  * — a run name can be set at call time, and so can carry content — is
  * reported as a digest (`tool-sha256:<16 hex>`), never verbatim.
@@ -83,6 +83,7 @@ import { looksLikeSecret } from '@scanent/contract/harness-contract';
 
 import {
     assertResolvesReachable,
+    type CustomerHostCheck,
     parsePrivateCidrAllowlist,
     resolveWithDns,
     type PrivateCidrAllowlist,
@@ -90,18 +91,21 @@ import {
 } from '../customer-host';
 import type { ReadOnlyHttp } from '../http';
 import {
+    isJsonObject,
     isPlainId,
     readPages,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
     type ObservedToolUse,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
 
-/** LangSmith's cloud API hosts by data region (owner decision 2026-10-19: US and EU). */
+/** LangSmith's cloud API hosts by data region (US and EU). */
 export const LANGSMITH_CLOUD_ORIGINS = {
     us: 'https://api.smith.langchain.com',
     eu: 'https://eu.api.smith.langchain.com',
@@ -150,6 +154,8 @@ export interface LangSmithSourceOptions {
     readonly readDeployments: boolean;
     /** How a self-hosted host is re-resolved before each request. DNS unless a test passes its own. */
     readonly resolveHost?: ResolveHost;
+    /** The check made before each request to a self-hosted origin. Absent, `assertResolvesReachable`. */
+    readonly checkHost?: CustomerHostCheck;
 }
 
 const TOOL_NAME = /^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,127}$/;
@@ -212,7 +218,7 @@ export function toolUsageOf(project: Pick<LsProject, 'run_count' | 'run_facets'>
 }
 
 /** The query that asks for every non-experiment project with its tool-run stats since `since`. */
-function projectsQuery(since: string, offset: number): string {
+function projectsQuery(since: string, offset: number, limit: number = LANGSMITH_PAGE_SIZE): string {
     const params: [string, string][] = [
         ['reference_free', 'true'],
         ['include_stats', 'true'],
@@ -225,7 +231,7 @@ function projectsQuery(since: string, offset: number): string {
         // a place, and the repeat that causes is caught as a torn listing.
         ['sort_by', 'start_time'],
         ['sort_by_desc', 'true'],
-        ['limit', String(LANGSMITH_PAGE_SIZE)],
+        ['limit', String(limit)],
         ['offset', String(offset)],
     ];
     // `%20`, never the `+` of form encoding: the filter grammar has spaces.
@@ -233,10 +239,10 @@ function projectsQuery(since: string, offset: number): string {
 }
 
 /** A GET-only reader that re-resolves the host before every request it makes. */
-function guarded(http: ReadOnlyHttp, resolve: ResolveHost, allowlist: PrivateCidrAllowlist): ReadOnlyHttp {
+function guarded(http: ReadOnlyHttp, resolve: ResolveHost, allowlist: PrivateCidrAllowlist, check: CustomerHostCheck): ReadOnlyHttp {
     return {
         async getJson(url, o) {
-            await assertResolvesReachable(new URL(url).hostname, resolve, allowlist);
+            await check(new URL(url).hostname, resolve, allowlist);
             return http.getJson(url, o);
         },
     };
@@ -252,6 +258,7 @@ export function langSmithSource(opts: LangSmithSourceOptions): HarnessSource {
     const headers: Record<string, string> = { 'X-Api-Key': opts.apiKey };
     if (opts.workspaceId !== null) headers['X-Tenant-Id'] = opts.workspaceId;
     const resolve = opts.resolveHost ?? resolveWithDns;
+    const check: CustomerHostCheck = opts.checkHost ?? assertResolvesReachable;
     // An entry that does not parse admits nothing: the configuration refuses
     // one, and here it fails closed rather than widening anything.
     const allowlist: PrivateCidrAllowlist =
@@ -263,7 +270,7 @@ export function langSmithSource(opts: LangSmithSourceOptions): HarnessSource {
         kind: 'runtime',
         product: 'langsmith',
         async read(ctx: SourceContext): Promise<SourceRead> {
-            const http = selfHosted ? guarded(ctx.http, resolve, allowlist) : ctx.http;
+            const http = selfHosted ? guarded(ctx.http, resolve, allowlist, check) : ctx.http;
             const since = new Date(ctx.asOf.getTime() - opts.windowDays * DAY_MS).toISOString();
             const deployments: { id: string; projectId: string | null }[] = [];
             const usage = new Map<string, Map<string, number>>();
@@ -369,6 +376,26 @@ export function langSmithSource(opts: LangSmithSourceOptions): HarnessSource {
             } catch (err) {
                 return sourceResult('runtime', rows, observations(), err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            // The same guard as `read`: a self-hosted host is re-resolved before each request.
+            const http = selfHosted ? guarded(ctx.http, resolve, allowlist, check) : ctx.http;
+            const hostname = new URL(origin).hostname;
+            const since = new Date(ctx.asOf.getTime() - opts.windowDays * DAY_MS).toISOString();
+            await ProbeLog.run(async () => {
+                await log.listing('tracing projects', hostname, () => http.getJson(`${origin}${paths.projects}?${projectsQuery(since, 0, 1)}`, { origin, headers }), Array.isArray);
+                if (opts.readDeployments) {
+                    await log.listing(
+                        'deployments',
+                        hostname,
+                        () => http.getJson(`${origin}${paths.deployments}?limit=1&offset=0`, { origin, headers }),
+                        (body) => isJsonObject(body) && Array.isArray((body as { resources?: unknown }).resources),
+                    );
+                }
+                log.write({ state: 'NOT_OBSERVABLE', verify: "confirm in LangSmith's API keys settings that the key is a service key holding the workspace Viewer role" });
+            });
+            return log.steps;
         },
     };
 }

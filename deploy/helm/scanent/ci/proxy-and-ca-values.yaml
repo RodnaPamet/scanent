@@ -1,0 +1,18 @@
+# Behind a forward proxy that inspects TLS. Use with base-values.yaml.
+proxy:
+  httpsProxy: http://proxy.internal.example:3128
+  noProxy: mcp.internal.example
+extraCa:
+  existingConfigMap: corporate-ca
+  key: ca.pem
+networkPolicy:
+  proxy:
+    cidr: 10.0.0.15/32
+    port: 3128
+  extraEgress:
+    - cidr: 10.20.0.0/16
+      port: 443
+strict: true
+timeZone: Europe/Sofia
+image:
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000

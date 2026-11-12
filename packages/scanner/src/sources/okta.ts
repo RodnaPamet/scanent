@@ -1,5 +1,5 @@
 /**
- * THE OKTA SOURCE — `okta-app` (#3678, owner decision 2026-10-18 (c)).
+ * THE OKTA SOURCE — `okta-app`.
  *
  * Two kinds of non-human principal live in an Okta org, and this reads both,
  * with their owners:
@@ -15,8 +15,8 @@
  *     principal whose authority is a person's. `GET /api/v1/api-tokens`, paged.
  *     The owner is the token's `userId`, which Okta records itself. Every one
  *     is reported — and so raises SHADOW_AGENT at the ingest until it is
- *     registered or linked — EXCEPT the token this scanner reads with (owner
- *     decision, 2026-10-19). That one is identified POSITIVELY, by id, from
+ *     registered or linked — EXCEPT the token this scanner reads with.
+ *     That one is identified POSITIVELY, by id, from
  *     `GET /api/v1/api-tokens/current`, which returns the metadata of the token
  *     that made the request; never by its name, which any administrator can
  *     give any token. If the scanner cannot identify itself, the read stops
@@ -44,12 +44,15 @@ import { MAX_AGENTS } from '@scanent/contract/harness-contract';
 import { nextLinkFrom } from '../http';
 import {
     ageInDays,
+    isJsonObject,
     isPlainId,
     readPages,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -203,6 +206,33 @@ export function oktaSource(opts: OktaSourceOptions): HarnessSource {
             } catch (err) {
                 return sourceResult('okta-app', rows, observations, err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            const hostname = new URL(origin).hostname;
+            await ProbeLog.run(async () => {
+                await log.listing(
+                    'the current API token',
+                    hostname,
+                    () => ctx.http.getJson(`${origin}${OKTA_READ_PATHS[2]}`, { origin, headers }),
+                    (body) => isJsonObject(body) && typeof body.id === 'string',
+                );
+                await log.listing(
+                    'apps',
+                    hostname,
+                    () => ctx.http.getJson(`${origin}${OKTA_READ_PATHS[0]}?limit=1&filter=${encodeURIComponent('name eq "oidc_client"')}`, { origin, headers }),
+                    Array.isArray,
+                );
+                // The third read the scan makes. A token that may not list API tokens fails here, not at the first scan.
+                // What this cannot show is WHOSE tokens the listing holds: see the access guide's note on Okta.
+                await log.listing('API tokens', hostname, () => ctx.http.getJson(`${origin}${OKTA_READ_PATHS[1]}?limit=1`, { origin, headers }), Array.isArray);
+                // The token's administrator role is read from the user's roles, which this scanner does not declare.
+                log.write({
+                    state: 'NOT_OBSERVABLE',
+                    verify: "confirm in Security, Administrators that the token's user holds the Read-only Administrator role only",
+                });
+            });
+            return log.steps;
         },
     };
 }

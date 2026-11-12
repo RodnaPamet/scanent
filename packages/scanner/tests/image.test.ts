@@ -52,9 +52,17 @@ describe('deploy/Dockerfile', () => {
         expect([build.name, runtime.name]).toEqual(['build', 'runtime']);
     });
 
-    it('pins both stages to one base image by digest', () => {
+    it('pins each stage to its base image by digest, on one Node major', () => {
+        // Phase 4: the runtime base is distroless (no shell, no package manager). The build
+        // stage keeps the Node image, which has the npm the build needs. Only compiled
+        // JavaScript crosses, so the two share a Node major and nothing else.
         expect(build.from).toMatch(/^node:24-alpine@sha256:[0-9a-f]{64}$/);
-        expect(runtime.from).toBe(build.from);
+        expect(runtime.from).toMatch(/^gcr\.io\/distroless\/nodejs24-debian13:nonroot@sha256:[0-9a-f]{64}$/);
+        expect(/^node:(\d+)-/.exec(build.from)?.[1]).toBe(/nodejs(\d+)-/.exec(runtime.from)?.[1]);
+        // Every FROM in the file is one of the two, and each carries a digest.
+        const froms = instructions(dockerfile).filter((line) => line.startsWith('FROM '));
+        expect(froms).toHaveLength(2);
+        for (const line of froms) expect(line).toMatch(/@sha256:[0-9a-f]{64} AS \w+$/);
     });
 
     it('copies into the build stage exactly what the build context allowlist lets in', () => {
@@ -110,20 +118,39 @@ describe('deploy/Dockerfile', () => {
         expect(runtime.lines.some((line) => /\bnpm (ci|install|i)\b/.test(line))).toBe(false);
     });
 
-    it('removes the package managers from the runtime stage and asserts they are gone', () => {
-        const removal = runtime.lines.find((line) => line.startsWith('RUN rm -rf '));
-        expect(removal).toBeDefined();
-        for (const tool of ['npm', 'npx', 'corepack']) {
-            expect(removal).toContain(`/usr/local/bin/${tool}`);
-            expect(removal).toContain(`! command -v ${tool}`);
-        }
+    it('runs nothing in the runtime stage: the base has no package manager to remove and no shell to remove it with', () => {
+        // Until Phase 4 this stage removed npm, npx, corepack and yarn from a Node base image and
+        // asserted they were gone. The distroless base never held them; that they are absent from
+        // the built image, with any shell, is step 1 of deploy/smoke.sh.
+        expect(runtime.lines.filter((line) => line.startsWith('RUN '))).toEqual([]);
+        expect(runtime.lines.filter((line) => /^(ADD|SHELL|ONBUILD|VOLUME|EXPOSE) /.test(line))).toEqual([]);
+        const smoke = read('deploy/smoke.sh');
+        expect(smoke).toContain('const names = ["sh", "bash", "ash", "dash", "busybox", "npm", "npx", "corepack", "yarn", "yarnpkg", "apk", "apt", "apt-get", "dpkg"];');
+        expect(smoke).toContain('fail "the image carries a shell or a package manager"');
+        expect(smoke).toContain('fail "a shell started inside the image"');
     });
 
-    it('runs as the non-root node user, set after the last file is copied', () => {
+    it('sets exactly these environment variables: production, and Node\'s own proxy support', () => {
+        // NODE_USE_ENV_PROXY=1 is what makes HTTPS_PROXY and NO_PROXY take effect (Phase 3); it changes nothing without them.
+        // PATH is new with the distroless base, which keeps `node` in /nodejs/bin: the Compose overlay
+        // and the chart start the proxy as `node <file>`. It is the base's own path with that one directory first.
+        expect(runtime.lines.filter((line) => line.startsWith('ENV '))).toEqual([
+            'ENV PATH=/nodejs/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+            'ENV NODE_ENV=production',
+            'ENV NODE_USE_ENV_PROXY=1',
+        ]);
+        // Nothing in the image turns certificate verification off, or carries a proxy or a credential of its own.
+        expect(dockerfile).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED|ENV HTTPS?_PROXY/);
+    });
+
+    it('runs as the non-root uid 1000, set after the last file is copied', () => {
+        // The same uid as before, now by number: the distroless base has no account named `node`,
+        // and 1000 is what the Compose file and the chart default to.
         const user = runtime.lines.filter((line) => line.startsWith('USER '));
-        expect(user).toEqual(['USER node']);
+        expect(user).toEqual(['USER 1000:1000']);
         const lastCopy = runtime.lines.map((line) => line.startsWith('COPY ')).lastIndexOf(true);
-        expect(runtime.lines.indexOf('USER node')).toBeGreaterThan(lastCopy);
+        expect(runtime.lines.indexOf('USER 1000:1000')).toBeGreaterThan(lastCopy);
+        expect(read('deploy/compose.yaml')).toContain('user: "${SCANENT_UID:-1000}:${SCANENT_GID:-1000}"');
     });
 
     it('starts the compiled command line directly, in exec form, on the schedule by default', () => {

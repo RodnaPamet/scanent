@@ -1,5 +1,5 @@
 /**
- * The ONE canonical-JSON form in this repo.
+ * The ONE canonical-JSON form in this repository.
  *
  * Recursively sorts object keys and emits no whitespace; arrays keep their order
  * because order is semantic. `undefined` collapses to `null`, which does NOT make
@@ -10,9 +10,11 @@
  * make the form total over the values JSON can hold.
  *
  * Two callers depend on it and they must agree byte-for-byte:
- *   • `mcp/receipt-verification.ts` — the message an Ed25519 receipt signature is
+ *   • `harness-contract.ts` — the message a report's signature is made and
+ *     verified over, `SHA-256(canonical JSON of the body)`, and the ladder's
+ *     version;
+ *   • `receipt-verification.ts` — the message an Ed25519 receipt signature is
  *     verified against, `SHA-256(canonical JSON of action_record)`.
- *   • `mcp/tool-manifest.ts` — the schema half of a pinned tool manifest.
  *
  * They agree because there is one function, not two that look alike. A second
  * copy would drift on the first edit and the drift would present as a signature
