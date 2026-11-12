@@ -3,6 +3,8 @@
 #   checks  install, lint, type-check, build, test (with the coverage gate on
 #           one Node version)
 #   image   build deploy/Dockerfile, smoke-test the image, Trivy gate
+#   chart   lint and render the Helm chart with each value set, and run the
+#           deployment-template tests with Helm required
 #
 # Nothing is published or deployed from here. Every action is pinned to a full
 # commit SHA; the version it was resolved from is in the trailing comment, and
@@ -109,3 +111,41 @@ jobs:
           ignore-unfixed: true
           vuln-type: "os,library"
           timeout: "15m"
+
+  chart:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # Helm is part of the runner image. Without it this job fails here rather
+      # than passing with the chart unrendered.
+      - name: Helm version
+        run: helm version --short
+
+      - name: Lint the chart with each value set
+        run: |
+          set -euo pipefail
+          chart=deploy/helm/scanent
+          helm lint --strict "$chart" -f "$chart/ci/base-values.yaml"
+          for set in cilium egress-proxy proxy-and-ca; do
+            helm lint --strict "$chart" -f "$chart/ci/base-values.yaml" -f "$chart/ci/$set-values.yaml"
+          done
+
+      # The rendered documents are asserted on, one by one, in the Jest suite.
+      # REQUIRE_HELM makes the rendered cases fail, not skip, without Helm.
+      - name: Render the chart and check what it renders
+        env:
+          REQUIRE_HELM: "1"
+        run: npx jest packages/scanner/tests/deploy-templates.test.ts
