@@ -7,7 +7,7 @@
 #                  steps, the Compose egress overlay among them), then the
 #                  Trivy and Grype gates
 #   image-podman   the smoke test again under rootless Podman, as the invoking
-#                  user (`--userns=keep-id`)
+#                  user (`--userns=keep-id` with `--user`)
 #   chart          lint and render the Helm chart with each value set, and run
 #                  the deployment-template tests with Helm required
 #   chart-install  install the chart into a kind cluster, run one scan as a
@@ -175,7 +175,7 @@ jobs:
           grype-version: v0.121.3
 
   # The quick start's Podman form: the scanner as the invoking user, through
-  # `--userns=keep-id`, into a directory only that user can enter. Docker's
+  # `--userns=keep-id` with `--user`, into a directory only that user can enter. Docker's
   # `--user` form is step 7 of the `image` job. Step 11 is left out here, and
   # the smoke test says so: it is the Compose overlay, which `image` runs.
   image-podman:

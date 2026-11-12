@@ -71,6 +71,26 @@ describe('1. what the Okta source finds', () => {
         expect(JSON.stringify(result)).not.toContain('agt_claimed');
         expect(result.observations.every((o) => !('registeredAgentId' in o))).toBe(true);
     });
+
+    /**
+     * The apps listing is asked for whole, with no field selection. Okta's
+     * published Application object shows `credentials.oauthClient.client_secret`
+     * on an OIDC app. Whether a Read-only Administrator is sent it has not
+     * been confirmed against a live organisation, so this holds the other
+     * half: if the listing carries one, it is dropped with the page.
+     */
+    it('drops a client secret the apps listing itself carries', async () => {
+        const fixture = oktaFixture();
+        const planted = 'fake-okta-listing-client-secret-never-kept-7c';
+        for (const app of fixture.apps.flat() as Record<string, unknown>[]) {
+            app.credentials = { oauthClient: { client_id: app.id, client_secret: planted, token_endpoint_auth_method: 'client_secret_basic' } };
+        }
+        const result = await read(createSourceFakes({ okta: fixture }));
+        expect(result).toMatchObject({ status: 'COMPLETE', rows: 6 });
+        expect(result.observations.filter((o) => o.discoveredId.startsWith('okta:app:')).length).toBe(2);
+        expect(JSON.stringify(result)).not.toContain(planted);
+        expect(JSON.stringify(result)).not.toContain('client_secret');
+    });
 });
 
 describe('2. read-only, by the request log', () => {

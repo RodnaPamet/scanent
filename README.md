@@ -19,6 +19,12 @@ JSON and the signed report. See [Quick start](#quick-start-from-source) and
 [See your results locally](#see-your-results-locally). A container image is
 built and tested in CI; no image or package is published yet.
 
+**For the organisation being scanned:** [docs/guide/README.md](docs/guide/README.md)
+is a guide in plain language for an IT or security lead who is not a
+developer: what the scanner is and is not, what it reads and the access to
+grant, how to run a first scan, how to read the report, what to do about each
+finding, and the questions a security team asks.
+
 **For a security team:** [docs/network-and-permissions.md](docs/network-and-permissions.md)
 lists every request the scanner can make and every grant it asks for,
 [docs/threat-model.md](docs/threat-model.md) what it defends against and what
@@ -27,6 +33,18 @@ data it touches (with a DPIA template), and
 [docs/verify-a-release.md](docs/verify-a-release.md) how to check a release's
 signature, SBOM and provenance. Report a vulnerability as
 [SECURITY.md](SECURITY.md) says.
+
+The [security intake pack](docs/security-pack/README.md) is the index for a
+reviewer: architecture, a table of each control with the code that enforces it
+and the test that proves it, and a blunt page on what has and has not been
+done to test the scanner. No pilot on a real estate, no external penetration
+test and no signed release exist yet.
+
+**For whoever arranges a scan:** the [engagement kit](docs/engagement/README.md)
+has a scoping checklist, a ready-to-send read-only access request for each
+source, a data-handling statement, a run-book and how to make a sample report
+from made-up data. [docs/roadmap.md](docs/roadmap.md) lists what is not in this
+version.
 
 **For whoever operates it:** [docs/operations.md](docs/operations.md) has the
 log's events and fields, the exit codes, and `scanent support-bundle`.
@@ -206,7 +224,7 @@ Without `--user` the image runs as uid 1000, and the run's directories (`0750`)
 and files (`0640`) are readable by uid 1000 and root only: give it a directory
 owned by uid 1000 (`chown 1000`), never one that every user can write. Rootless
 Docker and Podman map users differently; there, run it as the user that maps to
-you (Podman: `--userns=keep-id`).
+you (Podman: `--userns=keep-id --user "$(id -u):$(id -g)"`).
 
 Each run is one new directory, written whole or not at all, and nothing that
 exists is ever overwritten except the `latest.json` pointer:
