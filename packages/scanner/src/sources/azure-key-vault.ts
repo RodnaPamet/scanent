@@ -1,6 +1,6 @@
 /**
- * THE AZURE KEY VAULT SOURCE — the `vault` kind (#3678, owner decision
- * 2026-10-18 (b): Azure Key Vault, and no other vault product for now).
+ * THE AZURE KEY VAULT SOURCE — the `vault` kind (Azure Key Vault, and no
+ * other vault product for now).
  *
  * A vault holds the credentials agents run with. This lists them — secrets and
  * certificates, by name and metadata — and reports each one that is TAGGED
@@ -18,7 +18,7 @@
  * vault's secrets belong to agents is the estate's own statement, and the
  * scanner does not guess it from names.
  *
- * READ-ONLY, and METADATA-ONLY (DPIA condition 3). The two LIST endpoints,
+ * READ-ONLY, and METADATA-ONLY. The two LIST endpoints,
  * `GET {vault}/secrets` and `GET {vault}/certificates`, return identifiers,
  * attributes and tags and never a value. `GET {vault}/secrets/{name}` returns
  * the value, so it is never called: `scanner-surface.ts` declares the two list

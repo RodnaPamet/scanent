@@ -1,5 +1,5 @@
 /**
- * THE JAVASCRIPT AND TYPESCRIPT READER (#3737) — text in, `FileFacts` out.
+ * THE JAVASCRIPT AND TYPESCRIPT READER — text in, `FileFacts` out.
  *
  * TypeScript's own parser (`ts.createSourceFile`), which the repository already
  * depends on, builds a SYNTAX tree: no program, no type checker, no module

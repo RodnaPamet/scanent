@@ -1,5 +1,5 @@
 /**
- * A BOUNDED LEXICAL READER FOR PYTHON (#3737) — text in, `FileFacts` out.
+ * A BOUNDED LEXICAL READER FOR PYTHON — text in, `FileFacts` out.
  *
  * Why not a real Python parser: the scanner is TypeScript, and the options were
  * a WebAssembly grammar (a new dependency and its supply chain), a Python
@@ -705,7 +705,7 @@ export function readPython(src: string): FileFacts {
         if ((first.t === 'name' && first.v === 'for') || (isAsync && head?.t === 'name' && head.v === 'for')) {
             // `for target in iterable:` runs the iterable, which is often a call:
             // `async for message in query(...)` is how the Agent SDK is driven
-            // (#4156). The expression reader treats `in` as an operator whose
+            //. The expression reader treats `in` as an operator whose
             // operands it does not keep, so the iterable is read on its own.
             let depth = 0;
             let inAt = -1;

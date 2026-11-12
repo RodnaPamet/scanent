@@ -32,21 +32,21 @@ import { LANGSMITH_READ_PATHS } from './sources/langsmith';
 export const SCANNER_NAME = 'inflect-agent-harness-scanner';
 /**
  * Raised with any change to what the scanner reads or reports. 0.2.0: the
- * LangSmith source (#3738). 0.3.0: reports under `inflect-agent-harness/2`
- * (#3754). 0.4.0: the `code` source, LangChain and LangGraph (#3737). 0.5.0:
- * the Entra source (#3686). 0.6.0: the MCP source (#3686). 0.7.0: the register
- * source (#3686). 0.8.0: the GitHub Actions source (#3784). 0.9.0: reports
- * under `inflect-agent-harness/3`, and the GCP service-account source (#3785).
- * 0.10.0: the OpenShell source (#3936) — a gRPC gateway read, declared below as
+ * LangSmith source. 0.3.0: reports under `inflect-agent-harness/2`. 0.4.0: the
+ * `code` source, LangChain and LangGraph. 0.5.0: the Entra source. 0.6.0: the
+ * MCP source. 0.7.0: the register source. 0.8.0: the GitHub Actions source.
+ * 0.9.0: reports under `inflect-agent-harness/3`, and the GCP service-account
+ * source.
+ * 0.10.0: the OpenShell source — a gRPC gateway read, declared below as
  * its own surface because it is neither a GET nor JSON-RPC over HTTP.
  * 0.11.0: the register read exchanges the ingest key for a token naming the
  * register tool alone, and the register source reports the gate's enforcement
- * as H2 and H3 verdicts (#5004). 0.12.0: the egress proof, and the proxy it
- * runs behind (#5004 part C).
+ * as H2 and H3 verdicts. 0.12.0: the egress proof, and the proxy it
+ * runs behind.
  */
 export const SCANNER_VERSION = '0.12.0';
 
-/** The ingest route, as `docs/agent-harness-contract.md` (Transport) names it. */
+/** The ingest route, as `docs/contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
 
 export const SCANNER_SURFACE = {
@@ -97,12 +97,12 @@ export const SCANNER_SURFACE = {
         },
     ],
     // An MCP server is the estate's own host, named in its configuration. To
-    // it the scanner POSTs these JSON-RPC messages and no other (DPIA
-    // condition 1, owner decision 5 on #3686): never `tools/call`.
+    // it the scanner POSTs these JSON-RPC messages and no other: never
+    // `tools/call`. No tool of an estate's server is ever called.
     lists: [{ source: 'mcp', method: 'POST', host: 'configured', jsonRpc: [...MCP_MESSAGES] }],
     // The scanner's own tenant's register: the handshake, then ONE tool call,
-    // of ONE named read tool (DPIA condition 2, owner decision 7 on #3686),
-    // on a token exchanged for that one tool (#5004). The key goes to the
+    // of ONE named read tool, and of no other tool on any endpoint,
+    // on a token exchanged for that one tool. The key goes to the
     // exchange; the MCP endpoint sees only the token.
     readsRegister: [
         {
@@ -139,7 +139,7 @@ export const SCANNER_SURFACE = {
         },
     ],
     sends: [{ method: 'POST', path: INGEST_PATH_TEMPLATE }],
-    // The egress proof (#5004 part C), only when the configuration names a
+    // The egress proof, only when the configuration names a
     // proxy: two CONNECTs to it — the Inflect host, which it must admit, and
     // the configured canary, which it must refuse — and one direct TCP dial to
     // the Inflect host, which must fail. Each is opened and closed; nothing is

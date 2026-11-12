@@ -9,22 +9,21 @@
  * (`TokenExchange`), and it changes nothing in the estate — it asks the
  * source's identity provider for a token to READ with. It has two grants and
  * no grant parameter: the client-credentials grant, and the JWT-bearer grant
- * (RFC 7523) Google's service accounts use (#3785).
+ * (RFC 7523) Google's service accounts use.
  *
  * MCP is JSON-RPC over POST, so an MCP server is the one place a source sends a
  * body. `McpListingWire` has two functions and no method parameter: `open`
  * sends `initialize` and then the one-way `notifications/initialized` the
  * protocol requires, and `listTools` sends `tools/list`. There is no way to
- * spell `tools/call` with it (DPIA conditions 1 and 2, owner decisions 5 and 6
- * on #3686, 2026-10-19).
+ * spell `tools/call` with it: no tool of an estate's server is ever called.
  *
  * `RegisterReadWire` is the one place a `tools/call` is sent, and it names its
  * tool itself: `read` calls `get_harness_register` with no arguments on the
- * Inflect endpoint the caller hands it, and can call nothing else (DPIA
- * condition 2 as amended by owner decision 7: one named tool, the scanner's own
- * tenant). Before it, it exchanges the ingest key at the same tenant's
+ * Inflect endpoint the caller hands it, and can call nothing else (one named
+ * tool, on the scanner's own tenant). Before it, it exchanges the ingest key at
+ * the same tenant's
  * `/api/mcp/token` for a short-lived token whose audience is that one tool
- * (RFC 8693, #5004), and only that token reaches `/api/mcp`: the key itself is
+ * (RFC 8693), and only that token reaches `/api/mcp`: the key itself is
  * sent to the exchange and nowhere else on that origin but the ingest.
  *
  * Every request is held to four rules, each of which ends the source's read
@@ -130,9 +129,7 @@ export const HARNESS_REGISTER_TOOL = 'get_harness_register';
 
 /**
  * RFC 8693's grant and token type, as Inflect's `/api/mcp/token` takes them.
- * Spelled here because the scanner may not import the server's module;
- * `tests/unit/agent-harness-scanner/inflect-register-source.test.ts` holds them
- * equal to it.
+ * Spelled here because the scanner holds no code of the server's.
  */
 export const TOKEN_EXCHANGE_GRANT = 'urn:ietf:params:oauth:grant-type:token-exchange';
 export const ACCESS_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:access_token';
@@ -162,7 +159,7 @@ export interface OpenShellTarget {
  * pinned release declares 84 RPCs on `openshell.v1.OpenShell` and carries ZERO
  * `google.api.http` annotations, so there is no REST transcoding for `getJson`
  * to reach. Widening `ReadOnlyHttp` with a second verb was considered and
- * refused (owner ruling 2026-10-24): its one-method shape is what makes a
+ * refused: its one-method shape is what makes a
  * source unable to write BY CONSTRUCTION, and a second method would turn that
  * into a property maintained by review. `McpListingWire` and `RegisterReadWire`
  * are the precedent — a narrow wire per protocol, each with its own declared
@@ -664,7 +661,7 @@ export function createSourceWire(
         none.
 
         The source itself is complete and fully tested against a fake wire
-        (`tests/unit/agent-harness-scanner/openshell-source.test.ts`): the
+        (`tests/openshell-source.test.ts`): the
         policy-to-verdict mapping is pure and needs no transport. Only the
         bytes are missing.
     */
@@ -688,7 +685,7 @@ export function createSourceWire(
 
     /**
      * The key, exchanged for a token whose audience is the register tool alone
-     * (#5004). JSON, as Inflect's exchange takes it. Any refusal is a credential
+     *. JSON, as Inflect's exchange takes it. Any refusal is a credential
      * the source could not use; an answer that is not an exchanged token is
      * refused rather than forwarded, so nothing but such a token reaches the
      * MCP endpoint.

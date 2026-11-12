@@ -1,6 +1,6 @@
 /**
  * LANGCHAIN, LANGGRAPH AND CLAUDE AGENT SDK AGENT DEFINITIONS, READ OUT OF ONE
- * FILE'S FACTS (#3737, #4156).
+ * FILE'S FACTS.
  *
  * One recogniser for both languages: `python.ts` and `javascript.ts` lower a
  * file to the same IR, and this module reads agents out of it by what each
@@ -254,7 +254,7 @@ export function isCredentialKey(key: string): boolean {
     );
 }
 
-// ─── The Claude Agent SDK's options (#4156) ──────────────────────────────────
+// ─── The Claude Agent SDK's options ──────────────────────────────────
 
 /** Each option's name in TypeScript's `Options`. */
 const SDK_OPTIONS_JS = {
@@ -286,7 +286,7 @@ const SDK_OPTIONS_PY: Readonly<Record<keyof typeof SDK_OPTIONS_JS, string>> = {
 
 /**
  * The built-in tools the SDK turns on when the code leaves `tools` out, as
- * `docs/claude-agent-sdk-design.md` records them (documented 2026-10-24).
+ * the SDK's own documentation lists them.
  */
 const SDK_DEFAULT_BUILTINS: readonly string[] = ['Bash', 'Read', 'Edit', 'Write', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Agent', 'Skill'];
 
@@ -834,7 +834,7 @@ class Recognizer {
         return clean.length <= 400 && !looksLikeSecret(clean) ? clean : null;
     }
 
-    // ── the Claude Agent SDK (#4156) ──────────────────────────────────────
+    // ── the Claude Agent SDK ──────────────────────────────────────
 
     /** The name an SDK member was imported as, or null for anything not the SDK's. */
     private sdkKnown(e: Expr): string | null {

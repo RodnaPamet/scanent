@@ -1,16 +1,13 @@
 /**
  * A HOST THE CUSTOMER NAMES — checked when the configuration is read, and
- * re-resolved before every request (#3738, owner decisions 2026-10-19).
+ * re-resolved before every request.
  *
  * Every other host the scanner reaches is fixed by its kind: Okta's domains,
  * the public cloud's vaults, LangSmith's two cloud API hosts. A self-hosted
  * LangSmith is the first host nobody can enumerate, because it is the
- * customer's own. The owner's ruling is that such a host is validated like any
- * customer-named host in the application: the `publicOrigin` rule kind
- * (`src/app-layer/integrations/config-schema.ts`), which requires https and runs
- * `checkWebhookUrl` at save time, with `safeFetch` re-resolving at use time.
- * The scanner may not import either (`eslint.config.mjs` holds it to the wire
- * contract), so the same two halves live here:
+ * customer's own. Such a host is validated the way any host a customer names
+ * should be: once when it is written down, and again each time it is used.
+ * The two halves live here:
  *
  *   • AT CONFIGURATION. `customerOriginProblem` refuses anything but a bare
  *     https origin, a literal private, loopback, link-local or metadata
@@ -22,39 +19,38 @@
  *     169.254.169.254 tonight is caught tonight, and the request carrying the
  *     API key is never started.
  *
- * THE PRIVATE-RANGE ALLOWLIST (owner decision 2026-10-19). A self-hosted
+ * THE PRIVATE-RANGE ALLOWLIST. A self-hosted
  * LangSmith usually sits on the customer's own network, at a private address.
- * The application's answer to the same problem is its self-hosted egress
- * allowlist (#3328, `src/lib/security/egress-allowlist.ts`,
- * `EGRESS_PRIVATE_CIDR_ALLOWLIST`), and this mirrors it, named
- * `egressPrivateCidrAllowlist` on the self-hosted endpoint:
+ * The answer is an allowlist of private ranges, named
+ * `egressPrivateCidrAllowlist` on the self-hosted endpoint (and
+ * `EGRESS_PRIVATE_CIDR_ALLOWLIST` on the egress proxy, which applies the
+ * same rule):
  *
  *   • NOT TENANT-CONFIGURABLE. The ranges come from the estate's own scanner
  *     configuration file, which only whoever operates the scanner in that
  *     estate can write. No tenant column, form or route reaches it.
  *   • METADATA, LOOPBACK AND LINK-LOCAL STAY REFUSED INSIDE IT.
- *     `NEVER_ALLOWLISTABLE` is the application's list, checked BEFORE the
+ *     `NEVER_ALLOWLISTABLE` is checked BEFORE the
  *     allowlist, so `0.0.0.0/0` still cannot reach 169.254.169.254 or
  *     127.0.0.1. The blocked names stay refused too.
  *   • IT WIDENS WHICH ADDRESSES ARE ACCEPTABLE AND REMOVES NO OTHER CHECK.
  *     https only, redirects refused, the origin pinned, and the host resolved
  *     again before every request with EVERY address checked: a name that
  *     resolves outside the listed ranges is refused however it resolved when
- *     the file was written. As in the application, an allowlist relaxes only
+ *     the file was written. An allowlist relaxes only
  *     the `.local` / `.internal` NAME rule, because with one configured the
  *     question becomes the address rather than the name.
  *
- * The CIDR parser is the application's own (`@/lib/security/cidr`, pure and
- * strict), imported rather than copied. `isPrivateAddress` and
- * `NEVER_ALLOWLISTABLE` are copies — their modules read the environment — and
- * `tests/unit/agent-harness-scanner/langsmith-source.test.ts` holds each copy
- * to the application's answer on every address in its tables.
+ * The CIDR parser is the contract package's (`@scanent/contract/cidr`, pure
+ * and strict). `isPrivateAddress` and `NEVER_ALLOWLISTABLE` are held to tables
+ * of addresses in `tests/langsmith-source.test.ts` and `tests/ssrf.test.ts`.
  *
- * What this does not do, and the application's `safeFetch` does: PIN the
- * connection to the address it checked. That takes an undici dispatcher, which
- * is not a Node built-in. The check therefore runs immediately before each
- * request and the request resolves again, so a resolver that answers
- * differently inside that gap is a residual, recorded in the DPIA (R16).
+ * What this does not do: PIN the connection to the address it checked. That
+ * takes an undici dispatcher, which is not a Node built-in. The check
+ * therefore runs immediately before each request and the request resolves
+ * again, so a resolver that answers differently inside that gap is a residual
+ * risk. Behind scanent's own egress proxy the gap does not exist: the proxy
+ * resolves once and dials the address it checked.
  */
 import { promises as dns } from 'dns';
 
@@ -86,8 +82,7 @@ export function isPrivateAddress(host: string): boolean {
 const BLOCKED_HOSTNAMES = new Set(['localhost', 'metadata', 'metadata.google.internal']);
 
 /**
- * Ranges no allowlist may admit, whatever it says: the application's list
- * (`NEVER_ALLOWLISTABLE` in `src/lib/security/egress-allowlist.ts`), copied.
+ * Ranges no allowlist may admit, whatever it says.
  *
  *   127/8, ::1   loopback — the scanner host's own services
  *   0/8, ::      "this host", an alias for loopback

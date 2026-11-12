@@ -1,24 +1,21 @@
 /**
- * The rules of the harness report contract that need no hashing (#3726): the
+ * The rules of the harness report contract that need no hashing: the
  * contract ids, whether a value has the shape of a secret, and whether a scan
  * was complete.
  *
  * They live apart from `harness-contract.ts` because the findings planner
- * (`harness-findings.ts`) needs them, and a client component reaches the
- * planner through `harness-acceptance-rules.ts`. The contract verifies
- * signatures with `crypto`, so importing these from it shipped the
- * crypto-browserify polyfill to the agents reports page. `harness-contract.ts`
- * re-exports all of them, and the ingest, the scanner and the tests may import
- * them from either module.
+ * (`harness-findings.ts`) needs them, and the planner is something a browser
+ * may run. The contract verifies signatures with `crypto`, so importing these
+ * from it would pull a Node built-in into whatever bundles the planner.
+ * `harness-contract.ts` re-exports all of them, and a verifier, the scanner
+ * and the tests may import them from either module.
  *
- * Keep this module free of Node built-ins: a client reaches it.
- * `tests/guards/client-reachable-modules-import-no-node-builtins.test.ts`
- * fails if it, or anything it imports, gains one.
+ * Keep this module free of Node built-ins, for that reason.
  */
 
 /**
- * The first contract (#3660), RETIRED at the scanner container's release
- * (#3686, owner decision 2026-10-19): the verifier refuses a report that names
+ * The first contract, RETIRED at the scanner container's release
+ *: the verifier refuses a report that names
  * it (`SCHEMA`) and writes nothing. No scanner but the reference one ever spoke
  * it, and that one speaks `/2`. Kept only so the refusal can say why.
  */
@@ -26,14 +23,14 @@ export const HARNESS_CONTRACT_V1 = 'inflect-agent-harness/1';
 
 /**
  * `/1` plus the `code` source kind, the `UNPARSEABLE` reason and the
- * `unboundCredentials[]` member (#3754, owner decision 2026-10-19). Accepted
+ * `unboundCredentials[]` member. Accepted
  * beside `/3`.
  */
 export const HARNESS_CONTRACT_V2 = 'inflect-agent-harness/2';
 
 /**
  * `/2` plus the `gcp-sa` source kind, a Google Cloud project's service
- * accounts (#3785, owner decision 2026-10-19), and nothing else. A new id
+ * accounts, and nothing else. A new id
  * rather than a widened `/2`, because the source kinds are a closed list on the
  * wire: a `/2` verifier refuses a report naming `gcp-sa`, and a `/2` report
  * that names it is still refused here. What the reference scanner speaks.
@@ -46,8 +43,8 @@ export type HarnessContractId = (typeof HARNESS_CONTRACT_IDS)[number];
 
 /**
  * Where a scanner looks. Stable ids: the report and the matrix carry them. The
- * last, `code` (agent definitions read from source code and configuration,
- * #3737), is the one `/2` added; the rest were `/1`'s.
+ * last, `code` (agent definitions read from source code and configuration),
+ * is the one `/2` added; the rest were `/1`'s.
  */
 export const SOURCE_KINDS_V2 = [
     'entra-sp',
@@ -60,7 +57,7 @@ export const SOURCE_KINDS_V2 = [
     'code',
 ] as const;
 
-/** `/3`'s kinds: `/2`'s, and `gcp-sa`, a Google Cloud project's service accounts (#3785). */
+/** `/3`'s kinds: `/2`'s, and `gcp-sa`, a Google Cloud project's service accounts. */
 export const SOURCE_KINDS_V3 = [...SOURCE_KINDS_V2, 'gcp-sa'] as const;
 
 /**
@@ -68,7 +65,7 @@ export const SOURCE_KINDS_V3 = [...SOURCE_KINDS_V2, 'gcp-sa'] as const;
  * every kind a stored scan can hold, `/1` and `/2` scans included. Stored scans
  * are re-read against it, and an estate may declare exactly these (the
  * database CHECKs the same list). Here rather than in the contract so the
- * estate form, a client component, can offer the same list (#3807).
+ * estate form, a client component, can offer the same list.
  */
 export const SOURCE_KINDS = SOURCE_KINDS_V3;
 
@@ -85,7 +82,7 @@ const SECRET_SHAPES: readonly RegExp[] = [
     /xox[abpors]-[A-Za-z0-9-]{10,}/,
     /sk-[A-Za-z0-9]{20,}/,
     // Anthropic's keys, which the line above misses at the hyphen after `sk-ant`
-    // (#4156): the credential an Agent SDK agent is most likely to carry.
+    //: the credential an Agent SDK agent is most likely to carry.
     /sk-ant-[A-Za-z0-9_-]{20,}/,
     /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
     /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./,

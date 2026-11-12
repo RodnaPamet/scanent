@@ -1,5 +1,5 @@
 /**
- * THE GITHUB ACTIONS SOURCE — `cicd` (#3784, owner decision 2026-10-19).
+ * THE GITHUB ACTIONS SOURCE — `cicd`.
  *
  * A CI/CD pipeline is an agent-shaped principal: it runs unattended, it holds
  * credentials, and the credentials it holds reach production. Decision 10 put

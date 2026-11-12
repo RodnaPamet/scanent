@@ -1,5 +1,5 @@
 /**
- * THE SMALL EXPRESSION LANGUAGE BOTH PARSERS LOWER TO (#3737).
+ * THE SMALL EXPRESSION LANGUAGE BOTH PARSERS LOWER TO.
  *
  * The Python reader (`python.ts`) and the JavaScript/TypeScript reader
  * (`javascript.ts`) each turn one file into `FileFacts`: what it imports, what
@@ -101,7 +101,7 @@ export function isLangChainModule(module: string): boolean {
 
 /**
  * The Claude Agent SDK's modules: `@anthropic-ai/claude-agent-sdk` in
- * JavaScript and TypeScript, `claude_agent_sdk` in Python (#4156).
+ * JavaScript and TypeScript, `claude_agent_sdk` in Python.
  */
 export function isClaudeAgentSdkModule(module: string): boolean {
     return (

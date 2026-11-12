@@ -1,5 +1,5 @@
 /**
- * THE OKTA SOURCE — `okta-app` (#3678, owner decision 2026-10-18 (c)).
+ * THE OKTA SOURCE — `okta-app`.
  *
  * Two kinds of non-human principal live in an Okta org, and this reads both,
  * with their owners:
@@ -15,8 +15,8 @@
  *     principal whose authority is a person's. `GET /api/v1/api-tokens`, paged.
  *     The owner is the token's `userId`, which Okta records itself. Every one
  *     is reported — and so raises SHADOW_AGENT at the ingest until it is
- *     registered or linked — EXCEPT the token this scanner reads with (owner
- *     decision, 2026-10-19). That one is identified POSITIVELY, by id, from
+ *     registered or linked — EXCEPT the token this scanner reads with.
+ *     That one is identified POSITIVELY, by id, from
  *     `GET /api/v1/api-tokens/current`, which returns the metadata of the token
  *     that made the request; never by its name, which any administrator can
  *     give any token. If the scanner cannot identify itself, the read stops

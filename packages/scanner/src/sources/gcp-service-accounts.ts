@@ -1,5 +1,5 @@
 /**
- * THE GCP SERVICE-ACCOUNT SOURCE — `gcp-sa` (#3785, owner decision 2026-10-19).
+ * THE GCP SERVICE-ACCOUNT SOURCE — `gcp-sa`.
  *
  * A Google Cloud service account is a non-human principal that acts as itself:
  * a workload attached to it, or anyone holding one of its keys, calls Google's
@@ -24,7 +24,7 @@
  * the key it signs its token request with — the account Google authenticated
  * it as — and is not reported: it is the scanner, which the register already
  * holds as the agent that signs this report. Okta's source does the same for
- * its own token (owner decision, 2026-10-19).
+ * its own token.
  *
  * AUTHENTICATION is the OAuth 2.0 JWT-bearer grant (RFC 7523): the source
  * signs a short-lived assertion with the key named by the configuration's

@@ -1,5 +1,5 @@
 /**
- * WHICH FILES THE CODE SOURCE READS, AND HOW FAR (#3737).
+ * WHICH FILES THE CODE SOURCE READS, AND HOW FAR.
  *
  * Every configured root is walked depth-first in sorted order, so two scans of
  * one tree read it identically. Each bound is a stated maximum, and reaching one
@@ -54,7 +54,7 @@ export const SKIPPED_DIRECTORIES: readonly string[] = [
  * The text a file must contain to be parsed at all: a framework's module name,
  * which every import of it spells out. `claude-agent-sdk` and
  * `claude_agent_sdk` are the Claude Agent SDK's, in TypeScript and Python
- * (#4156).
+ *.
  */
 export const FRAMEWORK_MARKERS: readonly string[] = ['langchain', 'langgraph', 'claude-agent-sdk', 'claude_agent_sdk'];
 

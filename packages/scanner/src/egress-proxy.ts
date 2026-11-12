@@ -1,6 +1,5 @@
 /**
- * THE SCANNER'S EGRESS PROXY — the only way out of its network (#5004 part C;
- * owner decision 4 of 2026-11-08).
+ * THE SCANNER'S EGRESS PROXY — the only way out of its network.
  *
  * In the VM overlay the scanner sits on an INTERNAL Docker network with no
  * route out. This proxy is the one container on both that network and one that
@@ -37,7 +36,7 @@
  * check to this proxy (`EGRESS_PROXY_CHECKS_ADDRESSES`).
  *
  * It ships in the scanner's own image and runs from the same pinned digest
- * (`deploy/docker-compose.harness-scanner.yml`), so the proxy is the reviewed
+ * (`deploy/compose.egress.yaml`), so the proxy is the reviewed
  * code beside the scanner, not a third-party image with its own supply chain.
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';

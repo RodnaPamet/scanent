@@ -1,5 +1,5 @@
 /**
- * THE OPENSHELL SOURCE — the `runtime` kind (#3936, owner decisions 2026-10-24).
+ * THE OPENSHELL SOURCE — the `runtime` kind.
  *
  * A client running agents under NVIDIA OpenShell has, in its gateway, the one
  * inventory that knows which agents RUN, under what network policy, with which

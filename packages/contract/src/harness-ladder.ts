@@ -1,13 +1,13 @@
 /**
- * THE HARNESS LADDER — how well governed one agent is, H0 to H5 (#3660).
+ * THE HARNESS LADDER — how well governed one agent is, H0 to H5.
  *
  * An agent is a model plus a loop. The HARNESS is everything around that loop
  * that decides what it may call, what it was taught, with which credential,
  * under whose accountability, how it is observed and how it is stopped. The
- * scanner (UC1) scores every agent it finds on this ladder, and the auditor
- * agent (UC4) audits against the same one. See docs/agentic-iam-roadmap.md.
+ * scanner scores every agent it finds on this ladder, and whoever audits the
+ * estate audits against the same one. See `docs/contract.md`, The ladder.
  *
- * ## The shape is copied from `src/lib/identity/write-ladder.ts`, deliberately
+ * ## Three properties of its shape, each deliberate
  *
  *   • ORDER LIVES IN ONE PLACE. `HARNESS_LEVELS` is a const tuple and its index
  *     is the ordering. Nothing compares two levels by any other route.
@@ -27,7 +27,7 @@
  * agent register already refuses one level up (an unscored risk tier means
  * deny, never LOW).
  *
- * ## The ladder is REPORT-ONLY (owner decision, 2026-10-17)
+ * ## The ladder is REPORT-ONLY
  *
  * A level never gates activation or a tool call. It feeds findings: an agent
  * holding a write-capable or external tool below H3, or a read-only agent below
@@ -88,7 +88,7 @@ export const HARNESS_CRITERIA = {
         'H3.delegation_narrows',
         /*
             `H3.egress_enforced` — the agent's outbound network access is
-            enforced against an allow-list, with evidence (#3947).
+            enforced against an allow-list, with evidence.
 
             WORDED FOR THE PROPERTY, NOT THE PRODUCT. A kernel sandbox is one
             source of this evidence; so is a Kubernetes NetworkPolicy, a cloud
@@ -239,7 +239,7 @@ export function scoreHarness(verdicts: readonly CriterionVerdict[]): HarnessScor
 export type HarnessReach = 'read-only' | 'write-or-external';
 
 /**
- * The report-only bar (owner decision, 2026-10-17): H3 for an agent holding any
+ * The report-only bar: H3 for an agent holding any
  * write-capable or external tool, H2 for a read-only agent. An agent below its
  * bar is a HARNESS_SHORTFALL finding. It is never a refusal.
  *

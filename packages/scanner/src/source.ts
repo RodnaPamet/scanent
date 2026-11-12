@@ -46,7 +46,7 @@ export type ObservedModel = NonNullable<HarnessReportAgent['models']>[number];
  * One tool a source saw a principal use, and — for a source that counts calls —
  * how many calls it counted in the source's window. The report carries the
  * tool. `inflect-agent-harness/2` has a member for the count (`calls`, with
- * `windowDays`); until a follow-up of #3738 fills it, the count reaches the
+ * `windowDays`); the scanner does not fill it yet, so the count reaches the
  * scanner's log as a per-source total and goes no further. A source that reads
  * definitions rather than calls — the `code` source — counts none and leaves
  * `calls` out.

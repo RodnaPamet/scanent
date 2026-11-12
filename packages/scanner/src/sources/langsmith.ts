@@ -1,5 +1,5 @@
 /**
- * THE LANGSMITH SOURCE — the `runtime` kind (#3738, owner decisions 2026-10-19).
+ * THE LANGSMITH SOURCE — the `runtime` kind.
  *
  * A customer that runs its agents under LangSmith has, in LangSmith, the one
  * inventory that knows which agents RAN and which tools they CALLED. This
@@ -7,7 +7,7 @@
  *
  *   • DEPLOYMENTS, WHEN THE ESTATE OPTS IN. `GET /v2/deployments` (the
  *     LangSmith Deployment control plane), paged by offset, and only with
- *     `readDeployments: true` (owner decision 2026-10-19: off by default,
+ *     `readDeployments: true` (off by default,
  *     because that listing carries each deployment's secrets). A deployment is
  *     an agent server by existence, so every one listed is reported, as
  *     `langsmith:deployment:<id>`, whether or not it ran in the window. Its
@@ -34,8 +34,8 @@
  * `manifestHash: null` and `pinned: false` (LangSmith records no definition,
  * so nothing the scanner saw pins one), and `readOnlyHint: null` (none is
  * declared; the contract counts that as a write). The call COUNT has a member
- * in `inflect-agent-harness/2` (`calls`, with `windowDays`) that a follow-up of
- * #3738 fills; until then the source holds it on the observation and the
+ * in `inflect-agent-harness/2` (`calls`, with `windowDays`) that the scanner
+ * does not fill yet; until then the source holds it on the observation and the
  * scanner's log reports the total. A tool name that is not a plain identifier
  * — a run name can be set at call time, and so can carry content — is
  * reported as a digest (`tool-sha256:<16 hex>`), never verbatim.
@@ -105,7 +105,7 @@ import {
     type SourceRead,
 } from '../source';
 
-/** LangSmith's cloud API hosts by data region (owner decision 2026-10-19: US and EU). */
+/** LangSmith's cloud API hosts by data region (US and EU). */
 export const LANGSMITH_CLOUD_ORIGINS = {
     us: 'https://api.smith.langchain.com',
     eu: 'https://eu.api.smith.langchain.com',

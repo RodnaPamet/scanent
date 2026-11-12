@@ -19,15 +19,14 @@
  * `crypto.verify(null, message, keyObject, signature)`).
  *
  * ── Canonicalization assumption ───────────────────────────────────────────
- * pipelock's public docs (docs/guides/receipt-verification.md) state the signed
+ * pipelock's public documentation (its receipt-verification guide) states the signed
  * content is "SHA-256(canonical JSON of action_record)" but do NOT pin the exact
  * canonical form (key ordering / whitespace). We therefore implement a single,
  * clearly-documented canonical form — recursive **sorted-key, no-whitespace
  * JSON** of `action_record`, hashed with SHA-256 — behind the ONE swappable
  * function `canonicalizeActionRecord()`. If pipelock later publishes an exact
  * spec (or conformance vectors under sdk/conformance/testdata/), swap the body
- * of that one function; nothing else changes. See the implementation note
- * docs/implementation-notes/2026-07-03-agent-action-receipts.md.
+ * of that one function; nothing else changes.
  */
 import { createHash, createPublicKey, verify as cryptoVerify, type KeyObject } from 'crypto';
 import { z } from 'zod';
@@ -77,8 +76,8 @@ export interface ExtractedReceiptFields {
  * Arrays keep order (order is semantic). This is the documented assumption for
  * pipelock's "canonical JSON of action_record" — see the module header.
  *
- * The body is `canonicalJson` from `@/lib/canonical-json` and not a copy of it,
- * because the tool-manifest pin hashes schemas through the same form. Two
+ * The body is `canonicalJson` from `./canonical-json` and not a copy of it,
+ * because the report's signature hashes through the same form. Two
  * implementations that merely look alike drift on the first edit, and the drift
  * would surface here as a receipt signature that stops verifying.
  */

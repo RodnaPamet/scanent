@@ -1,26 +1,27 @@
 /**
- * The wire contracts `inflect-agent-harness/2` (#3754) and `/3` (#3785), and
- * the refusal of the retired `/1` (#3660, retired by #3686).
+ * The wire contracts `inflect-agent-harness/2` and `/3`, and
+ * the refusal of the retired `/1`.
  *
- * ONE SOURCE OF TRUTH, three readers. `docs/agent-harness-contract.md` is what a
+ * ONE SOURCE OF TRUTH, three readers. `docs/contract.md` is what a
  * scanner is built against, `tests/helpers/agent-harness-fake-scanner.ts` is the
  * executable reference, and these schemas are what the ingest enforces. The suite
- * validates the fake scanner's output against these schemas, so the three cannot
- * drift apart silently. Same arrangement as `src/lib/mcp/client/contract.ts`.
+ * validates the fake scanner's output against these schemas, and holds the
+ * document's limits and lists to these constants, so the three cannot drift
+ * apart silently.
  *
  * ‾‾‾ TWO IDS, AND A RETIRED ONE ‾‾‾
  *
- * `/3` is `/2` plus the `gcp-sa` source kind (#3785, owner decision
- * 2026-10-19), and nothing else: one more member of a closed list, which is why
+ * `/3` is `/2` plus the `gcp-sa` source kind, and nothing else: one more
+ * member of a closed list, which is why
  * it is a new id. Each report is held to the schema of the id it names, so a
  * `/2` report that names `gcp-sa` is refused, as a `/2` verifier would refuse
  * it. The reference scanner speaks `/3`; `/2` stays accepted.
  *
  * `/2` is `/1` plus the `code` source kind, the `UNPARSEABLE` reason, the
  * `unboundCredentials[]` member, and per agent an optional call count on each
- * tool and optional `models[]` endpoints (owner decisions, 2026-10-19). `/1` was
+ * tool and optional `models[]` endpoints. `/1` was
  * accepted beside it while a `/1` scanner could exist, and was retired at the
- * scanner container's release (#3686, owner decision 2026-10-19): a report that
+ * scanner container's release: a report that
  * names it is a `SCHEMA` refusal, and the ingest writes nothing. Scans already
  * stored from `/1` reports still read, because `/2`'s kinds and reasons
  * contain `/1`'s.
@@ -290,8 +291,8 @@ const toolMembers = {
 };
 
 /**
- * A tool: `/1`'s members, plus `/2`'s optional call count over a window (owner
- * decision, 2026-10-19). A count is a number of calls and nothing of what was
+ * A tool: `/1`'s members, plus `/2`'s optional call count over a window. A
+ * count is a number of calls and nothing of what was
  * called with — no input, no output, no prompt. It means something only beside
  * its window, so the two come together or not at all.
  */
@@ -325,7 +326,7 @@ const endpointRef = z
     .refine((v) => !looksLikeSecret(v), 'an endpoint reference must not contain a secret-shaped value');
 
 /**
- * `/2`: a model endpoint the agent calls (owner decision, 2026-10-19). A
+ * `/2`: a model endpoint the agent calls. A
  * reference and a model id — never a prompt, an input or an output.
  */
 const ModelEndpointSchema = z
@@ -623,7 +624,7 @@ export function parseStoredHarnessTools(json: unknown): StoredHarnessTool[] | nu
 }
 
 /**
- * One scan item's stored model endpoints (#3759), re-validated against `/2`'s
+ * One scan item's stored model endpoints, re-validated against `/2`'s
  * strict model schema: the endpoint's reference shape, no userinfo, no
  * secret's shape, no member the contract does not define, and at most
  * `MAX_MODELS_PER_AGENT`.

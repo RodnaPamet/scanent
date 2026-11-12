@@ -1,5 +1,5 @@
 /**
- * `@scanent/scanner` — the reference harness scanner (#3678).
+ * `@scanent/scanner` — the reference harness scanner.
  * See README.md for what it reads, what it may import, and how to run it.
  */
 export {

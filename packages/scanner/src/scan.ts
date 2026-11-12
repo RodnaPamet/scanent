@@ -198,7 +198,7 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
     const asOf = new Date(now());
     const deadline = asOf.getTime() + config.timeBoxSeconds * 1000;
     // The egress proof, once per scan and before any source reads, so a scan
-    // taken outside its confinement says so in the same report (#5004).
+    // taken outside its confinement says so in the same report.
     const egressProof = config.egress && config.inflect
         ? await proveEgress({
               proxyUrl: config.egress.proxyUrl,

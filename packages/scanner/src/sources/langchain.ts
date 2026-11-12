@@ -1,15 +1,13 @@
 /**
  * THE `code` SOURCE: LANGCHAIN, LANGGRAPH AND CLAUDE AGENT SDK AGENTS IN AN
- * ESTATE'S CODE (#3737, #4156).
+ * ESTATE'S CODE.
  *
- * Owner decision, 2026-10-19: LangChain-built agents are governed as things the
- * product DISCOVERS. Agents a customer builds on the Claude Agent SDK and runs
- * themselves are discovered the same way (Route B of
- * `docs/claude-agent-sdk-design.md`). LangChain is not a dependency of the platform or of this
- * scanner; the scanner reads the text of the code and configuration it is
- * pointed at and reports each agent definition through the signed contract
- * (`inflect-agent-harness/2`, whose `code` kind and `UNPARSEABLE` reason are
- * #3754's).
+ * Agents built on these frameworks are things the scanner DISCOVERS: it does
+ * not run them and does not depend on them. None of the frameworks is a
+ * dependency of this scanner; it reads the text of the code and configuration
+ * it is pointed at and reports each agent definition through the signed
+ * contract (the `code` kind and the `UNPARSEABLE` reason are what
+ * `inflect-agent-harness/2` added for it).
  *
  * ── STATIC ONLY ─────────────────────────────────────────────────────────────
  *
@@ -32,8 +30,8 @@
  *   owner         null; code names no accountable person
  *   verdicts      none for LangChain and LangGraph, whose code holds no
  *                 evidence for a harness criterion. For an Agent SDK agent,
- *                 the NOT MET verdicts its options support, as the owner
- *                 mapped them (`agentSdkOptionVerdicts`, #4156): code can
+ *                 the NOT MET verdicts its options support, by the
+ *                 contract's mapping (`agentSdkOptionVerdicts`): code can
  *                 show a control is missing, never that one works
  *
  *   models        the model endpoints it calls (`/2`'s optional `models[]`):

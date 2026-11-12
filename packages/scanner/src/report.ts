@@ -2,7 +2,7 @@
  * FROM SOURCE READS TO A SIGNED `inflect-agent-harness/3` REPORT.
  *
  * The report is built against the contract's own schemas
- * (`src/lib/agentic/harness-contract.ts`) rather than a copy of them, and the
+ * (`@scanent/contract/harness-contract`) rather than a copy of them, and the
  * scanner checks its own output with them BEFORE it signs: a body the ingest
  * would refuse as SCHEMA, or as SECRET_IN_REPORT, is refused here and never
  * leaves the estate. The signed message is the contract's
@@ -20,8 +20,8 @@
  *     The owner is the first one found in source order — the identity source
  *     before the vault — and a disagreement is not resolved by inventing a
  *     third answer. A tool's call count stays with the source for now: `/2`
- *     has a member for it (`calls`, with `windowDays`), and filling it is a
- *     follow-up of #3738's.
+ *     has a member for it (`calls`, with `windowDays`), which the scanner
+ *     does not fill yet.
  *   • VERDICTS COLLAPSE TO THE LEAST FAVOURABLE per criterion, the ladder's
  *     own rule (`collapseVerdicts`), so the report never says more than the
  *     most cautious source did.
@@ -43,7 +43,7 @@
  *     time as one `<key>:*` entry at the server's URL. When the `mcp` source
  *     read that same server IN FULL, the placeholder becomes the server's
  *     actual tools, with their hashes, hints and pin, and the agent is
- *     `discoveredVia` `mcp` too (owner decision 2 on #3686). A server read in
+ *     `discoveredVia` `mcp` too. A server read in
  *     part replaces nothing: the placeholder, which counts as a write, stays.
  *   • AN UNBOUND CREDENTIAL IS ONE NO PRINCIPAL HOLDS, across every source.
  *     `unboundCredentials[]` is what each source saw bound to no principal,

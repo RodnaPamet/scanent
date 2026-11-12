@@ -1,10 +1,10 @@
 /**
- * THE ENTRA SOURCE — `entra-sp` (#3686, owner decisions 2026-10-19).
+ * THE ENTRA SOURCE — `entra-sp`.
  *
  * The non-human principals of one Entra directory, read from Microsoft Graph:
  * its service principals, and the application registrations behind them.
  *
- * WHICH SERVICE PRINCIPALS ARE AGENTS (owner decision 1 on #3686):
+ * WHICH SERVICE PRINCIPALS ARE AGENTS:
  *
  *   • an `Application` service principal whose application is registered in
  *     THIS directory (`appOwnerOrganizationId` is the directory's own id);

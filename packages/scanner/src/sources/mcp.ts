@@ -1,13 +1,13 @@
 /**
- * THE MCP SOURCE — `mcp` (#3686, owner decisions 2026-10-19).
+ * THE MCP SOURCE — `mcp`.
  *
  * Each configured MCP server is asked what it serves, and nothing else:
  * `initialize`, the one-way `notifications/initialized` the protocol requires,
- * and `tools/list`, paged (DPIA condition 1, amended by owner decision 5). The
+ * and `tools/list`, paged. No tool is ever called. The
  * wire it holds (`McpListingWire`) has no way to spell `tools/call`, and a
  * test holds the request log to those three messages.
  *
- * WHICH AGENT A SERVER'S TOOLS BELONG TO (owner decision 2). Neither answer
+ * WHICH AGENT A SERVER'S TOOLS BELONG TO. Neither answer
  * names a caller, so a server's tools reach an agent two ways:
  *
  *   • the estate's configuration lists, per server, the agents that use it
@@ -28,7 +28,7 @@
  * live (SHA-256 over each tool's name and hash, in name order), so a server
  * whose tools changed after the estate pinned them reads as unpinned.
  *
- * AUTHENTICATION (owner decision 6). A server may take a read token, named by
+ * AUTHENTICATION. A server may take a read token, named by
  * an environment variable and sent as a bearer token with the three messages
  * above and nothing else. For Inflect's own `/api/mcp` that is a key holding
  * `mcp:read` only. A configured token that is missing from the environment
