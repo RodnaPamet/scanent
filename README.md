@@ -19,6 +19,11 @@ JSON and the signed report. See [Quick start](#quick-start-from-source) and
 [See your results locally](#see-your-results-locally). A container image is
 built and tested in CI; no image or package is published yet.
 
+**Running it at your own site:** [docs/quick-start.md](docs/quick-start.md),
+"Run it at your site in 15 minutes", needs a container runtime and nothing
+else. [docs/deployment.md](docs/deployment.md) covers Docker, Podman, Compose,
+Kubernetes (a Helm chart) and a site with no internet (an air-gapped bundle).
+
 ## Read-only by design
 
 - A source holds an HTTP client whose only verb is GET. The one POST a source
@@ -242,7 +247,11 @@ produce one in a few seconds.
 
 ## Quick start, container
 
-Needs Docker (or another runtime that builds a Dockerfile) and `openssl`.
+To run the image at a site, follow [docs/quick-start.md](docs/quick-start.md):
+`init`, `doctor` and `scan` from the image, as yourself, with no `openssl` and
+no checkout. What follows builds the image from this checkout and scans the
+example estate with it. It needs Docker (or another runtime that builds a
+Dockerfile) and `openssl`.
 
 ```bash
 docker build -f deploy/Dockerfile -t scanent .
@@ -289,6 +298,10 @@ docker build --secret id=ca,src=/path/to/ca.pem -f deploy/Dockerfile -t scanent 
 
 `deploy/smoke.sh scanent` runs the image's smoke test against the image you
 built.
+
+`deploy/` also holds a Compose file and its egress overlay, a Helm chart
+(`deploy/helm/scanent`), the air-gapped bundle's scripts (`deploy/airgap`) and
+example configurations (`deploy/examples`).
 
 ## Development
 

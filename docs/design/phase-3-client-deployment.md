@@ -1256,3 +1256,83 @@ are not part of this record.
 - No source was probed against the real product. Every probe is a request the
   source's `read` already makes, against the same fakes the reads are tested
   with.
+
+## 14. Implementation record: the packaging half
+
+What was built for sections 8, 9.5, 9.6 and 10 (Compose, the examples, the
+chart, the bundle, the release workflow, the smoke steps, the two guides), what
+was run for real, and where it differs from the sections above.
+
+### Run for real
+
+- **The image and the smoke test.** The image was built from this tree and
+  `deploy/smoke.sh` passed all ten steps, once as root and once as a non-root
+  user (uid 4321) with access to the Docker socket. The second run is the one
+  that means something for step 7: a scan as that uid into a directory it owns
+  with mode 0700, read back with no container, the run directory 0750 and its
+  files 0640.
+- **The quick start's Docker path**, as uid 4321, on the code-only example:
+  `init`, `doctor` (exit 0), `scan`, and the files read back by that user.
+- **Compose.** `deploy/compose.yaml` was started with `docker compose` as that
+  uid: the service ran the schedule, wrote a run, and the running container
+  was inspected (the user, a read-only root, `CapDrop [ALL]`,
+  `no-new-privileges`, no ports). With `compose.egress.yaml` the scanner was
+  on a network with `Internal=true`; from inside it a CONNECT to a host off
+  the list and to port 80 of a listed host were both answered 403 by the
+  proxy, and a direct dial to a public address failed `ENETUNREACH`.
+- **The chart**, with Helm 3.19.0 run from a container (`alpine/helm`, no
+  network): `helm lint --strict` with each of the four value sets, and the
+  Jest suite's 30 rendered cases. `NOTES.txt` was rendered for each value set.
+  The chart archive the bundle carries was rendered too.
+- **The bundle.** `build-bundle.sh` ran against the real image and the real
+  runtime; the archive was unpacked elsewhere, the image removed from the
+  local store, and `verify.sh`, `load.sh` and then the whole smoke test run on
+  what was loaded. The arm64 archive in that run was a stand-in image
+  (`docker import --platform linux/arm64`), because this machine cannot build
+  or run arm64.
+- **The base image digest** in the Dockerfile is the multi-architecture index
+  (`application/vnd.oci.image.index.v1+json`, with `linux/amd64` and
+  `linux/arm64/v8`), checked with `docker buildx imagetools inspect`. It was
+  not changed.
+
+### Not run
+
+- **No cluster.** Nothing was installed on Kubernetes: `kind` and `kubectl`
+  are not available here. The chart is held by lint and by assertions on what
+  it renders. Whether a cluster accepts and runs it, whether the claim binds,
+  whether `fsGroup` makes the Secret readable, and whether either network
+  policy is enforced are not established.
+- **No Cilium.** The `CiliumNetworkPolicy` is rendered and asserted on, and
+  was never applied.
+- **No arm64 image** was built or run. The release workflow builds it on an
+  arm64 runner; that workflow has not run.
+- **Podman** is not installed here. The `--userns=keep-id` form of the smoke
+  test and of the quick start was not run. Section 9.6 said it would be run by
+  hand and recorded; it was not.
+- **Rootless Docker** was not run.
+- **`release.yml` and the `chart` job of `ci.yml`** have not run. Both parse
+  as YAML, the test suite runs the version commands the release makes, and
+  every script they call was run here. `release.yml` relies on the runner
+  image carrying `docker buildx` and `jq`, and the `chart` job on it carrying
+  `helm`.
+
+### Differences from the note
+
+| Section | The note | What was built, and why |
+|---|---|---|
+| 8.2 | `./config`, `./secrets/signing-key.pem`, `./out`, `./scanent.env` | One directory, the one `init` writes: `${SCANENT_DIR:-./scanent}` holds `config.json`, `scanent.env` and `signing-key.pem`, and runs go to `${SCANENT_OUT:-./scanent-out}`. The quick start's six steps then need no file moved. The signing key is still a Compose file secret |
+| 8.2 | Four example configurations, each with its `.env` | Each also has its `.answers.json`, and a test holds the configuration and the template equal to what `init` plans for those answers. `npm run docs:examples` rewrites them |
+| 8.3 | Values as listed | One more, `codeRoots`: claims mounted read-only for a `code` source, which otherwise has nothing to read in a pod |
+| 8.3 | `additionalProperties: false` at every level | Every object but `config`, the scanner's own configuration, which the scanner's strict schema parses and refuses a secret-shaped string in. Maps of labels, annotations and resource quantities are typed maps of scalars |
+| 8.3 | `proxy.httpsProxy` | The schema refuses a URL with a user name or password. It is a credential, and the chart holds none; a proxy that needs one is not supported by the chart |
+| 8.3 | `defaultMode: 0440` | Written `288`, its decimal value. YAML 1.1 and 1.2 parsers disagree about a leading zero |
+| 8.3 | `emptyDir` refused unless the outputs include `inflect` or `stdout` | Also refused with `existingConfigMap`, where the chart cannot read the outputs |
+| 8.4 | Cilium and the egress proxy as two options | Refused together, and each refused beside a forward proxy (`networkPolicy.proxy.cidr` with cilium; `proxy.httpsProxy` with the bundled proxy): each combination has a rule that would be silently unused |
+| 8.4 | The egress proxy needs `noProxy` and `extraEgress` for a private host | Also refused when `egress.fqdns` is empty, as cilium is: an empty allowlist refuses every host |
+| 8.5 | `load.sh` prints the loaded reference | It also tags it `ghcr.io/rodnapamet/scanent:<version>`, so the Compose file and the chart find it. `images/IMAGES` records which reference each archive holds. The bundle's root also carries a `README.md` |
+| 8.5 | `build-bundle.sh` packages two images | It first checks each image is of the architecture its argument says, and refuses to write over an earlier bundle |
+| 8.6 | `build` pushes on a tag; `manifest` creates the manifest | `build` pushes nothing and holds no write permission. One job, `publish`, loads the two archives `build` tested, pushes them and creates the manifest. `packages: write` is on that job alone |
+| 8.6 | `bundle` runs one code-only scan of the loaded image | It runs the whole smoke test on it |
+| 9.5 | The rendered cases skip without Helm | As written. Beside them, cases that read the chart as text run everywhere: the template list, the kinds, no `secretKeyRef`, no `command` on the scanner, the schema, the README's hosts |
+| 9.6 | The `chart` job installs on `kind` | Not built. The job lints and renders, with Helm required. An install job was not written because it could not be run here first, and a job that fails for its own reasons blocks every pull request |
+| 10 | Six steps | Step 0 gets the image, then six |

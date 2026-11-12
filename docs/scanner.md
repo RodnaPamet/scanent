@@ -1259,5 +1259,13 @@ scan of a two-agent estate verified inside the image through the image's own
 contract module (`deploy/smoke-verify.js`), that a scan with nowhere to
 post exits non-zero, and that `scan --dry-run --out /out` on the read-only
 root with one writable mount writes the six files of a run and that a second
-run leaves the first as it was. CI runs it, followed by a Trivy scan that fails on a
-fixed CRITICAL or HIGH vulnerability.
+run leaves the first as it was. It then runs as the invoking user (`--user`,
+or `--userns=keep-id` with `CONTAINER_RUNTIME=podman`) into an output
+directory of mode 0700 and reads the run back without the container, gives the
+signing key as a mounted file, runs `init --answers` and `doctor` on what it
+wrote, and `hosts` on a code-only configuration. CI runs it, followed by a
+Trivy scan that fails on a fixed CRITICAL or HIGH vulnerability.
+
+Compose, the Helm chart and the air-gapped bundle are described in
+[deployment.md](deployment.md); a first run at a site is
+[quick-start.md](quick-start.md).
