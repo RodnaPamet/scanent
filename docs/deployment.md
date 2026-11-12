@@ -14,7 +14,8 @@ first run, start with [quick-start.md](quick-start.md). The commands are in
   environment, or from a file named by `NAME_FILE`.
 - **The container.** A non-root user, a read-only root filesystem, every
   capability dropped, no privilege gain. The entrypoint is `node` and the
-  command line's file, in exec form: no shell starts it.
+  command line's file, in exec form: no shell starts it, and the image holds
+  none. To look inside a running container use `node -e`, not `sh`.
 - **A version, never `latest`.** The Compose file requires `SCANENT_VERSION`
   and the chart refuses the tag `latest`.
 
@@ -133,6 +134,14 @@ egress proxy (`egressProxy.enabled: true`), both given the list
 A policy does nothing on a cluster whose network plugin does not enforce it.
 The chart's README has a one-command check.
 
+CI installs the chart into a kind cluster, runs one scan as a Job, reads the
+run back from the output volume, and probes the default NetworkPolicy: a pod
+carrying the scanner's labels cannot connect to a private address that a pod
+without them can (`deploy/kind-test.sh`). That covers the default policy on
+kind's own network plugin. The Cilium flavor and the bundled egress proxy are
+rendered and asserted on, and the proxy is run through Compose
+(`deploy/smoke.sh`, step 11); neither is installed into a cluster in CI.
+
 ## A site with no internet
 
 `scanent-<version>-airgap.tar` holds one image archive per architecture
@@ -147,13 +156,20 @@ tar -xf scanent-<version>-airgap.tar && cd scanent-<version>-airgap
 - `verify.sh` fails when a file is changed, missing or added, and when
   anything is present that is not a regular file (a symbolic link) or is an
   empty directory.
-- **Nothing in the bundle is signed.** The checksums detect a damaged copy,
-  not a replaced one: whoever can replace a file can replace the list. Obtain
-  the bundle over a channel you trust, and compare the archive's SHA-256 with
-  the one the release states: the GitHub release for the version carries the
+- **A released bundle is signed.** The list of checksums carries a signature
+  made by the release workflow (`signatures/SHA256SUMS.sigstore.json`). With
+  `cosign` on the path, `./verify.sh --require-signature` checks it; with the
+  signature present and no `cosign`, `verify.sh` fails and says the signature
+  was not checked, unless you pass `--no-signature`. The checksums alone
+  detect a damaged copy, not a replaced one.
+  [verify-a-release.md](verify-a-release.md) has the whole procedure,
+  including a machine with no network.
+- Before you carry the bundle anywhere, compare the archive's SHA-256 with the
+  one the release states: the GitHub release for the version carries the
   archive and `scanent-<version>-airgap.tar.sha256`.
-- The bundle holds no SBOM unless the release was built with one; `sbom/` says
-  which.
+- A released bundle holds a CycloneDX SBOM per image under `sbom/`. A bundle
+  you build yourself holds none unless you give `build-bundle.sh` one, and
+  says so.
 - For a cluster, push the loaded image to a registry inside your network and
   set the chart's `image.repository`, or import the archive on each node and
   tag it with the name the chart asks for (the bundle's README has the two
@@ -219,4 +235,12 @@ smoke test and the vulnerability gate on each, and pushes
 workflow builds the air-gapped bundle and checks it by unpacking, verifying
 and loading it. No image has been published yet.
 
-Images are not signed, and carry no SBOM or provenance attestation yet.
+A release is signed, with no key of ours to trust: the workflow signs the
+manifest and each architecture's image by digest (keyless, through Sigstore),
+attaches each image's CycloneDX SBOM as an attestation, attests the build's
+provenance, and signs the bundle's list of checksums.
+[verify-a-release.md](verify-a-release.md) has the command for each and says
+what it proves. Run the image by the digest you verified.
+
+The runtime image is distroless: Node, the C library, the CA bundle and
+time-zone data. It holds no shell and no package manager.

@@ -1017,6 +1017,23 @@ holds it equal to the hosts a full scan contacts.
 prints the comma-separated value the bundled proxy's `EGRESS_ALLOW` takes.
 `json` prints each entry with its source and purpose.
 
+### `support-bundle`
+
+```bash
+scanent support-bundle --config <file> [--out <file>] [--runs <dir>] [--doctor] [--include-identifiers]
+```
+
+One `scanent-support/1` document for whoever helps with a deployment: the
+versions, the shape of the configuration, which credential variables are set
+(never a value), and how the last run went. Hosts, labels, paths and agent ids
+are replaced by tokens unless `--include-identifiers` is given. It resolves no
+credential and, without `--doctor`, makes no request. Exit 0 when the document
+was written, also when the configuration could not be read (the document then
+says why); 1 when it was refused for holding a secret's shape or could not be
+written; 2 for wrong arguments or an existing `--out` file.
+[operations.md](operations.md#asking-for-help-the-support-bundle) describes
+every member.
+
 ## Secrets from files
 
 For each variable the configuration names, and for no other, `<NAME>_FILE`
@@ -1382,11 +1399,13 @@ stage compiles the packages with `tsc`; its runtime stage holds the
 compiled JavaScript, the package manifests and the production dependencies
 (`zod`, `js-yaml` with `argparse`, and `typescript`, whose parser the `code`
 source reads JavaScript and TypeScript with). It holds no TypeScript source, no
-compiler step at start and no package manager: `npm`, `npx`, `corepack` and
-`yarn` are removed. The base image is `node:24-alpine`, pinned by digest, so
-the image does contain a shell (BusyBox); starting the scanner does not use it.
+compiler step at start, no package manager and no shell. The runtime base is
+`gcr.io/distroless/nodejs24-debian13`, pinned by digest: the Node binary, the
+C library, the CA bundle and the time-zone data. Nothing can be run inside the
+image except `node`, so a check of a running container uses `node -e`, and
+`docker exec <container> sh` does not work.
 
-- User: `node` (uid 1000). Nothing under `/app` is writable by it.
+- User: uid 1000, gid 1000, by number. Nothing under `/app` is writable by it.
 - Entrypoint: `node /app/packages/scanner/dist/cli.js`, in exec form, so `node`
   is PID 1 and receives the signal `docker stop` sends.
 - Default command: `schedule --config /etc/scanent/config.json`.

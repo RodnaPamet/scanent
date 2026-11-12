@@ -283,9 +283,12 @@ so steps 1 to 6 run as written, with `IMAGE` set to the reference it printed.
 A code-only estate then needs no network at all; other sources need a route to
 their own hosts and nothing else.
 
-The checksums show the copy is complete and undamaged. They do not show where
-it came from: nothing in the bundle is signed yet. Carry it over a channel you
-trust.
+The checksums show the copy is complete and undamaged. Where it came from is
+shown by the signature a released bundle carries: with `cosign` installed, run
+`./verify.sh --require-signature` before `./load.sh`
+([verify-a-release.md](verify-a-release.md)). Without `cosign`, `load.sh`
+stops and says the signature was not checked; `./load.sh --no-signature`
+accepts the checksums alone.
 
 ## Behind a proxy, or a proxy that inspects TLS
 

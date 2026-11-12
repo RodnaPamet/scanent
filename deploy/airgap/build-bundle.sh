@@ -19,10 +19,22 @@
 #                       `save` writes.
 #   SCANENT_SBOM_CMD    optional. A command run once per image, with the image
 #                       reference as its last argument; its standard output is
-#                       stored as sbom/<arch>.cdx.json. Unset: the bundle says
-#                       it holds no SBOM. It never holds an empty one.
+#                       stored as sbom/<arch>.cdx.json.
+#   SCANENT_SBOM_DIR    optional, instead of SCANENT_SBOM_CMD. A directory
+#                       holding amd64.cdx.json and arm64.cdx.json, made
+#                       elsewhere from the same two images; each is copied in.
+#                       With neither set the bundle says it holds no SBOM. It
+#                       never holds an empty one, or one that is not CycloneDX.
+#   SCANENT_SIGN_CMD    optional. A command run once, after SHA256SUMS is
+#                       written, with two more arguments: the file to write
+#                       the signature to, then SHA256SUMS. The release passes
+#                       `cosign sign-blob --yes --bundle`. The result is stored
+#                       as signatures/SHA256SUMS.sigstore.json, the one file
+#                       SHA256SUMS does not list. Unset: the bundle is not
+#                       signed, and verify.sh says so.
 #
-# Nothing here is signed. SHA256SUMS detects a damaged copy, not a replaced one.
+# This script signs nothing itself and holds no key. Without a signature,
+# SHA256SUMS detects a damaged copy, not a replaced one.
 set -euo pipefail
 
 usage() {
@@ -74,7 +86,7 @@ cp "$HERE/README.md" "$TREE/README.md"
 chmod 0755 "$TREE/load.sh" "$TREE/verify.sh"
 cp "$REPO/deploy/compose.yaml" "$REPO/deploy/compose.egress.yaml" "$TREE/deploy/"
 cp -R "$REPO/deploy/examples" "$TREE/examples"
-for doc in quick-start.md deployment.md scanner.md access.md; do
+for doc in quick-start.md deployment.md scanner.md access.md operations.md network-and-permissions.md verify-a-release.md; do
     cp "$REPO/docs/$doc" "$TREE/docs/$doc"
 done
 
@@ -95,16 +107,28 @@ for pair in "amd64 $REF_AMD64" "arm64 $REF_ARM64"; do
     printf '%s %s %s\n' "$arch" "$file" "$ref" >> "$TREE/images/IMAGES"
 done
 
-if [ -n "${SCANENT_SBOM_CMD:-}" ]; then
+[ -z "${SCANENT_SBOM_CMD:-}" ] || [ -z "${SCANENT_SBOM_DIR:-}" ] || fail "set SCANENT_SBOM_CMD or SCANENT_SBOM_DIR, not both"
+is_cyclonedx() {
+    grep -q '"bomFormat"' "$1" && grep -q 'CycloneDX' "$1"
+}
+if [ -n "${SCANENT_SBOM_DIR:-}" ]; then
+    for arch in amd64 arm64; do
+        [ -s "$SCANENT_SBOM_DIR/$arch.cdx.json" ] || fail "SCANENT_SBOM_DIR holds no $arch.cdx.json, or an empty one; an empty SBOM is not stored"
+        is_cyclonedx "$SCANENT_SBOM_DIR/$arch.cdx.json" || fail "$arch.cdx.json is not a CycloneDX document"
+        cp "$SCANENT_SBOM_DIR/$arch.cdx.json" "$TREE/sbom/$arch.cdx.json"
+        chmod 0644 "$TREE/sbom/$arch.cdx.json"
+    done
+elif [ -n "${SCANENT_SBOM_CMD:-}" ]; then
     for pair in "amd64 $REF_AMD64" "arm64 $REF_ARM64"; do
         arch="${pair%% *}"
         ref="${pair#* }"
         # shellcheck disable=SC2086 # the command and its own arguments, split on purpose
         $SCANENT_SBOM_CMD "$ref" > "$TREE/sbom/$arch.cdx.json" || fail "the SBOM command failed for $ref"
         [ -s "$TREE/sbom/$arch.cdx.json" ] || fail "the SBOM command printed nothing for $ref; an empty SBOM is not stored"
+        is_cyclonedx "$TREE/sbom/$arch.cdx.json" || fail "the SBOM command did not print a CycloneDX document for $ref"
     done
 else
-    printf 'No SBOM in this bundle. Phase 4 adds one.\n' > "$TREE/sbom/README.txt"
+    printf 'No SBOM in this bundle: it was built without one. A released bundle holds sbom/<arch>.cdx.json for each image.\n' > "$TREE/sbom/README.txt"
 fi
 
 # Every file but the list itself, sorted by path.
@@ -114,6 +138,16 @@ fi
         sha256sum "$f"
     done > SHA256SUMS
 )
+
+# The signature over the list, made by whoever runs this with an identity to
+# sign with. It is the one file the list cannot hold.
+if [ -n "${SCANENT_SIGN_CMD:-}" ]; then
+    mkdir -p "$TREE/signatures"
+    # shellcheck disable=SC2086 # the command and its own arguments, split on purpose
+    $SCANENT_SIGN_CMD "$TREE/signatures/SHA256SUMS.sigstore.json" "$TREE/SHA256SUMS" || fail "the signing command failed"
+    [ -s "$TREE/signatures/SHA256SUMS.sigstore.json" ] || fail "the signing command wrote no signature; an empty one is not stored"
+    chmod 0644 "$TREE/signatures/SHA256SUMS.sigstore.json"
+fi
 
 tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$SOURCE_DATE_EPOCH" \
     -C "$OUT" -cf "$TREE.tar" "$NAME"

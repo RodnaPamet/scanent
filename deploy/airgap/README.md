@@ -8,10 +8,14 @@ cd scanent-<version>-airgap
 ./load.sh
 ```
 
-`load.sh` checks every file against `SHA256SUMS` first, loads the image for
-this machine's architecture, and tags it `ghcr.io/rodnapamet/scanent:<version>`
-so the Compose files and the chart find it locally. It needs `docker` (or set
+`load.sh` runs `verify.sh` first, loads the image for this machine's
+architecture, and tags it `ghcr.io/rodnapamet/scanent:<version>` so the
+Compose files and the chart find it locally. It needs `docker` (or set
 `CONTAINER_RUNTIME=podman` or `nerdctl`) and no network.
+
+A released bundle is signed. With `cosign` on the path the signature is
+checked; without it `load.sh` stops and says so. See
+"What the checks do and do not show" below.
 
 ## What is in it
 
@@ -25,21 +29,39 @@ so the Compose files and the chart find it locally. It needs `docker` (or set
 | `deploy/compose.yaml`, `deploy/compose.egress.yaml` | Run on a schedule with Compose |
 | `deploy/helm/scanent-<version>.tgz` | The Helm chart |
 | `examples/` | Example configurations |
-| `docs/` | The quick start, the deployment guide, the command reference, and the access each source needs |
-| `sbom/` | A software bill of materials per image, or a note that there is none |
+| `docs/` | The quick start, the deployment guide, the command reference, the access each source needs, every request the scanner makes, operations, and how to verify a release |
+| `sbom/` | A CycloneDX software bill of materials per image (`<arch>.cdx.json`), or a note that the bundle was built without one |
 | `SHA256SUMS` | The checksum of every file above |
+| `signatures/SHA256SUMS.sigstore.json` | In a released bundle: the release workflow's signature over `SHA256SUMS`. The one file the list does not name |
 
-## What the checksums do and do not show
+## What the checks do and do not show
 
 `./verify.sh` shows the copy is complete and undamaged: every listed file
-matches, and no file is present that is not listed.
+matches, no file is present that is not listed, and `sbom/` holds one SBOM per
+image or the notice that there is none.
 
-It does not show where the bundle came from. Nothing in it is signed, and
-whoever can replace a file can replace the list. Obtain it over a channel you
-trust, and compare the archive's own SHA-256 with the one published for the
-release: the GitHub release for the version carries
+Where the bundle came from is shown by the signature. A released bundle
+carries one over `SHA256SUMS`, made by the release workflow with no stored
+key:
+
+| You run | With | Result |
+|---|---|---|
+| `./verify.sh --require-signature` | `cosign` on the path | Passes only if the signature verifies for the release workflow at the tag of this bundle's version |
+| `./verify.sh` | a signed bundle, no `cosign` | Fails: the signature is there and was not checked |
+| `./verify.sh --no-signature` | a signed bundle | Checks the checksums and says the signature was not checked |
+| `./verify.sh` | a bundle with no signature (one you built) | Checks the checksums and says there is no signature |
+
+`load.sh` takes the same flag and passes it on.
+
+Without the signature check, the checksums do not show where the bundle came
+from: whoever can replace a file can replace the list. Then obtain it over a
+channel you trust, and compare the archive's own SHA-256 with the one
+published for the release: the GitHub release for the version carries
 `scanent-<version>-airgap.tar` and `scanent-<version>-airgap.tar.sha256`
 (`sha256sum -c scanent-<version>-airgap.tar.sha256`).
+
+`docs/verify-a-release.md` in this bundle has the whole procedure, including
+a machine that has never had network access.
 
 ## Other runtimes
 
@@ -68,4 +90,7 @@ deploy/airgap/build-bundle.sh <version> <amd64-image-ref> <arm64-image-ref> <out
 ```
 
 Both images must already be in the local image store; the script pulls and
-builds nothing. The release workflow runs it on every tag.
+builds nothing. The release workflow runs it on every tag, with the SBOMs it
+made from the two images (`SCANENT_SBOM_DIR`) and a command that signs the
+list of checksums (`SCANENT_SIGN_CMD`). A bundle built without them holds no
+SBOM and no signature, and `verify.sh` says so.

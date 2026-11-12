@@ -12,6 +12,7 @@
  * and with REQUIRE_HELM=1 (CI's `chart` job) its absence fails the suite.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -845,8 +846,12 @@ esac
                 `deploy/helm/scanent-${VERSION}.tgz`,
                 'docs/access.md',
                 'docs/deployment.md',
+                // Phase 4: what a site's security team and its operator read, and how to verify the bundle itself.
+                'docs/network-and-permissions.md',
+                'docs/operations.md',
                 'docs/quick-start.md',
                 'docs/scanner.md',
+                'docs/verify-a-release.md',
                 ...examples,
                 'images/IMAGES',
                 `images/scanent-${VERSION}-linux-amd64.tar`,
@@ -868,7 +873,12 @@ esac
             .map((line) => line.replace(/^[0-9a-f]{64} {2}/, ''));
         expect(listed).toEqual(files.filter((f) => f !== 'SHA256SUMS'));
         // No SBOM was asked for: the bundle says so, and holds no file under an SBOM's name.
-        expect(fs.readFileSync(path.join(tree, 'sbom/README.txt'), 'utf8')).toBe('No SBOM in this bundle. Phase 4 adds one.\n');
+        // (The notice used to name Phase 4 as where an SBOM would come from. A release now carries one, so it says why this bundle does not.)
+        expect(fs.readFileSync(path.join(tree, 'sbom/README.txt'), 'utf8')).toBe(
+            'No SBOM in this bundle: it was built without one. A released bundle holds sbom/<arch>.cdx.json for each image.\n',
+        );
+        // Nor was a signature asked for: there is no signatures directory at all.
+        expect(fs.existsSync(path.join(tree, 'signatures'))).toBe(false);
         // It asked the runtime about, and saved, the two images, and did nothing else with it: no build, pull or push.
         const calls = fs.readFileSync(stubLog, 'utf8').trim().split('\n');
         expect(calls.map((c) => c.split(' ').slice(1, 3).join(' '))).toEqual(['image inspect', 'image inspect', 'save -o', 'save -o']);
@@ -935,6 +945,86 @@ esac
         expect(empty.status).toBe(1);
         expect(empty.stderr).toMatch(/an empty SBOM is not stored/);
         expect(fs.existsSync(path.join(work, 'empty', `scanent-${VERSION}-airgap.tar`))).toBe(false);
+
+        // Something that is not an SBOM is not stored as one.
+        const prose = path.join(stubs, 'sbom-prose');
+        fs.writeFileSync(prose, '#!/bin/sh\necho "no vulnerabilities found"\n', { mode: 0o755 });
+        const notOne = build(path.join(work, 'prose'), { SCANENT_SBOM_CMD: prose });
+        expect(notOne.status).toBe(1);
+        expect(notOne.stderr).toMatch(/did not print a CycloneDX document/);
+        expect(fs.existsSync(path.join(work, 'prose', `scanent-${VERSION}-airgap.tar`))).toBe(false);
+    });
+
+    const CYCLONEDX = '{"bomFormat":"CycloneDX","components":[{"name":"zod"}]}\n';
+
+    /** SBOMs as the release's build job makes them: one file per architecture, in one directory. */
+    function sbomDir(name: string, files: Record<string, string> = { 'amd64.cdx.json': CYCLONEDX, 'arm64.cdx.json': CYCLONEDX }): string {
+        const dir = path.join(work, name);
+        fs.mkdirSync(dir);
+        for (const [file, text] of Object.entries(files)) fs.writeFileSync(path.join(dir, file), text);
+        return dir;
+    }
+
+    /**
+     * A signing command. It logs its arguments, then runs `body` with `$1` the
+     * file to write and `$2` the file to sign, which are its last two arguments.
+     */
+    function signTool(body: string): string {
+        const tool = path.join(stubs, 'sign-tool');
+        fs.writeFileSync(tool, `#!/bin/sh\necho "sign $*" >> "$STUB_LOG"\nwhile [ "$#" -gt 2 ]; do shift; done\n${body}\n`, { mode: 0o755 });
+        return tool;
+    }
+    /** Writes `signed:<sha256 of the file>`: a stand-in that still depends on every byte of what it signs. */
+    const SIGN = 'printf "signed:%s\\n" "$(sha256sum "$2" | cut -d" " -f1)" > "$1"';
+
+    it('copies in the SBOMs a directory holds, one per image, and refuses a missing, empty or foreign one, or both ways at once', () => {
+        const ok = build(path.join(work, 'with'), { SCANENT_SBOM_DIR: sbomDir('sboms') });
+        expect(ok.stderr).toBe('');
+        expect(ok.status).toBe(0);
+        const tree = path.join(work, 'with', `scanent-${VERSION}-airgap`);
+        expect(fs.readdirSync(path.join(tree, 'sbom')).sort()).toEqual(['amd64.cdx.json', 'arm64.cdx.json']);
+        expect(fs.readFileSync(path.join(tree, 'sbom/amd64.cdx.json'), 'utf8')).toBe(CYCLONEDX);
+        expect(fs.readFileSync(path.join(tree, 'SHA256SUMS'), 'utf8')).toContain('  sbom/arm64.cdx.json\n');
+
+        const refused: Array<[string, Record<string, string>, RegExp]> = [
+            ['one-missing', { 'amd64.cdx.json': CYCLONEDX }, /holds no arm64\.cdx\.json, or an empty one/],
+            ['one-empty', { 'amd64.cdx.json': CYCLONEDX, 'arm64.cdx.json': '' }, /holds no arm64\.cdx\.json, or an empty one/],
+            ['one-foreign', { 'amd64.cdx.json': '{"spdxVersion":"SPDX-2.3"}', 'arm64.cdx.json': CYCLONEDX }, /amd64\.cdx\.json is not a CycloneDX document/],
+        ];
+        for (const [name, files, message] of refused) {
+            const out = build(path.join(work, `out-${name}`), { SCANENT_SBOM_DIR: sbomDir(name, files) });
+            expect(out.status).toBe(1);
+            expect(out.stderr).toMatch(message);
+            expect(fs.existsSync(path.join(work, `out-${name}`, `scanent-${VERSION}-airgap.tar`))).toBe(false);
+        }
+        const both = build(path.join(work, 'both'), { SCANENT_SBOM_DIR: path.join(work, 'sboms'), SCANENT_SBOM_CMD: 'true' });
+        expect(both.status).toBe(1);
+        expect(both.stderr).toMatch(/not both/);
+    });
+
+    it('signs the list of checksums when given a command to, and stores the signature outside the list and inside the archive', () => {
+        const out = build(path.join(work, 'signed'), { SCANENT_SIGN_CMD: `${signTool(SIGN)} sign-blob --yes --bundle`, SCANENT_SBOM_DIR: sbomDir('sboms') });
+        expect(out.stderr).toBe('');
+        expect(out.status).toBe(0);
+        const tree = path.join(work, 'signed', `scanent-${VERSION}-airgap`);
+        const sums = fs.readFileSync(path.join(tree, 'SHA256SUMS'));
+        // The command was given its flags as written, then where to write, then the list: `cosign sign-blob --yes --bundle <out> <blob>`.
+        expect(fs.readFileSync(stubLog, 'utf8')).toContain(`sign sign-blob --yes --bundle ${tree}/signatures/SHA256SUMS.sigstore.json ${tree}/SHA256SUMS\n`);
+        // What it signed is the list as it stands in the bundle, with every other file already hashed into it.
+        expect(fs.readFileSync(path.join(tree, 'signatures/SHA256SUMS.sigstore.json'), 'utf8')).toBe(`signed:${createHash('sha256').update(sums).digest('hex')}\n`);
+        expect(sums.toString('utf8')).not.toContain('signatures/');
+        expect(sums.toString('utf8')).toContain('  sbom/amd64.cdx.json\n');
+        expect(execFileSync('tar', ['-tf', `${tree}.tar`], { encoding: 'utf8' })).toContain(`scanent-${VERSION}-airgap/signatures/SHA256SUMS.sigstore.json\n`);
+
+        // A command that fails, or that writes nothing, leaves no archive: an unsigned bundle is never passed off as a signed one.
+        const failing = build(path.join(work, 'failing'), { SCANENT_SIGN_CMD: signTool('exit 3') });
+        expect(failing.status).toBe(1);
+        expect(failing.stderr).toMatch(/the signing command failed/);
+        expect(fs.existsSync(path.join(work, 'failing', `scanent-${VERSION}-airgap.tar`))).toBe(false);
+        const silent = build(path.join(work, 'silent'), { SCANENT_SIGN_CMD: signTool(': > "$1"') });
+        expect(silent.status).toBe(1);
+        expect(silent.stderr).toMatch(/wrote no signature/);
+        expect(fs.existsSync(path.join(work, 'silent', `scanent-${VERSION}-airgap.tar`))).toBe(false);
     });
 
     describe('verify.sh and load.sh, on a built bundle', () => {
@@ -951,7 +1041,63 @@ esac
         it('verify passes on the bundle as built, and says how many files it checked', () => {
             const out = verify();
             expect(out.status).toBe(0);
-            expect(out.stdout).toBe(`verify: ${treeFiles(tree).length - 1} files match SHA256SUMS\n`);
+            // Phase 4 added the two lines after the first: what the bundle holds no SBOM and no signature of, said and not left out.
+            expect(out.stdout).toBe(
+                `verify: ${treeFiles(tree).length - 1} files match SHA256SUMS\n` +
+                    'verify: this bundle was built without an SBOM\n' +
+                    'verify: this bundle carries no signature. The checksums detect damage, not a replaced bundle\n',
+            );
+        });
+
+        it('verify takes one flag, and refuses anything else', () => {
+            for (const args of [['--frobnicate'], ['--require-signature', '--no-signature'], ['--no-signature', '--no-signature'], ['x']]) {
+                const out = sh(path.join(tree, 'verify.sh'), args);
+                expect(out.status).toBe(2);
+                expect(out.stderr).toBe('usage: verify.sh [--require-signature | --no-signature]\n');
+            }
+        });
+
+        it('verify --require-signature fails on a bundle with no signature, and load with it loads nothing', () => {
+            const out = sh(path.join(tree, 'verify.sh'), ['--require-signature']);
+            expect(out.status).toBe(1);
+            expect(out.stderr).toBe('verify: this bundle carries no signature, and --require-signature was given\n');
+            const loaded = sh(path.join(tree, 'load.sh'), ['--require-signature']);
+            expect(loaded.status).toBe(1);
+            expect(fs.readFileSync(stubLog, 'utf8')).toBe('');
+        });
+
+        it('verify fails when sbom/ holds both a notice and an SBOM, neither, an empty one, or a file that is neither', () => {
+            // Each change is made with the list brought up to date, so the checksum step passes and the SBOM step is what decides.
+            const relist = () => {
+                const lines = treeFiles(tree)
+                    .filter((f) => f !== 'SHA256SUMS')
+                    .map((f) => `${createHash('sha256').update(fs.readFileSync(path.join(tree, f))).digest('hex')}  ${f}`);
+                fs.writeFileSync(path.join(tree, 'SHA256SUMS'), `${lines.join('\n')}\n`);
+            };
+            const expectFailure = (message: RegExp) => {
+                relist();
+                const out = verify();
+                expect(out.status).toBe(1);
+                expect(out.stderr).toMatch(message);
+            };
+            fs.writeFileSync(path.join(tree, 'sbom/amd64.cdx.json'), CYCLONEDX);
+            expectFailure(/holds both an SBOM and the notice that there is none/);
+            fs.rmSync(path.join(tree, 'sbom/README.txt'));
+            expectFailure(/the SBOM for arm64 is missing or empty/);
+            fs.writeFileSync(path.join(tree, 'sbom/arm64.cdx.json'), '{"spdxVersion":"SPDX-2.3"}\n');
+            expectFailure(/the SBOM for arm64 is not a CycloneDX document/);
+            fs.writeFileSync(path.join(tree, 'sbom/arm64.cdx.json'), CYCLONEDX);
+            fs.writeFileSync(path.join(tree, 'sbom/notes.txt'), 'x');
+            expectFailure(/holds a file that is not the SBOM of one of the images/);
+            fs.rmSync(path.join(tree, 'sbom/notes.txt'));
+            relist();
+            expect(verify().stdout).toContain('verify: 2 CycloneDX SBOMs, one per image\n');
+            // The notice with something beside it is refused too.
+            fs.rmSync(path.join(tree, 'sbom/amd64.cdx.json'));
+            fs.rmSync(path.join(tree, 'sbom/arm64.cdx.json'));
+            fs.writeFileSync(path.join(tree, 'sbom/README.txt'), 'No SBOM.\n');
+            fs.writeFileSync(path.join(tree, 'sbom/notes.txt'), 'x');
+            expectFailure(/holds a file that is neither an SBOM nor the notice/);
         });
 
         it('verify fails when a byte is changed, a file is removed, a file is added, or the list is emptied', () => {
@@ -1042,6 +1188,159 @@ esac
         });
     });
 
+    describe('verify.sh and load.sh, on a signed bundle', () => {
+        let tree: string;
+        let bin: string;
+        const IDENTITY = `https://github.com/RodnaPamet/scanent/.github/workflows/release.yml@refs/tags/v${VERSION}`;
+        const SIGNATURE = 'signatures/SHA256SUMS.sigstore.json';
+
+        /**
+         * A `cosign` that verifies the stand-in signature `signTool(SIGN)` writes: it passes
+         * only when the bundle file holds the SHA-256 of the blob it is given. It logs its arguments.
+         */
+        function cosignStub(dir: string): void {
+            fs.writeFileSync(
+                path.join(dir, 'cosign'),
+                `#!/bin/sh
+echo "cosign $*" >> "$STUB_LOG"
+[ "$1" = "verify-blob" ] || exit 64
+shift
+bundle=""
+while [ "$#" -gt 1 ]; do
+  case "$1" in
+    --bundle) bundle="$2"; shift ;;
+    --certificate-identity | --certificate-oidc-issuer | --trusted-root) shift ;;
+    --offline) ;;
+    *) exit 64 ;;
+  esac
+  shift
+done
+[ "$(cat "$bundle")" = "signed:$(sha256sum "$1" | cut -d' ' -f1)" ]
+`,
+                { mode: 0o755 },
+            );
+        }
+
+        /** With `cosign` on the path, or with a path that holds every tool the scripts use and no `cosign`. */
+        const run = (script: string, args: string[], cosign: boolean, extraEnv: Record<string, string> = {}) =>
+            spawnSync(path.join(tree, script), args, {
+                encoding: 'utf8',
+                env: { PATH: cosign ? `${stubs}:${bin}` : bin, STUB_LOG: stubLog, STUB_MACHINE: 'x86_64', ...extraEnv },
+            });
+
+        beforeEach(() => {
+            const out = build(path.join(work, 'signed'), { SCANENT_SIGN_CMD: `${signTool(SIGN)} sign-blob --yes --bundle`, SCANENT_SBOM_DIR: sbomDir('sboms') });
+            expect(out.status).toBe(0);
+            tree = path.join(work, 'signed', `scanent-${VERSION}-airgap`);
+            cosignStub(stubs);
+            // The tools the two scripts call, and nothing else: whatever `cosign` this machine has is not among them.
+            bin = path.join(work, 'bin');
+            fs.mkdirSync(bin);
+            for (const tool of ['sh', 'cat', 'cut', 'dirname', 'find', 'grep', 'head', 'sed', 'sha256sum', 'sort', 'tr', 'wc']) {
+                const found = execFileSync('sh', ['-c', `command -v ${tool}`], { encoding: 'utf8' }).trim();
+                fs.symlinkSync(found, path.join(bin, tool));
+            }
+            for (const stub of ['docker', 'uname']) fs.copyFileSync(path.join(stubs, stub), path.join(bin, stub));
+            fs.writeFileSync(stubLog, '');
+        });
+
+        it('passes with cosign on the path, for the release workflow at this version\'s tag, offline', () => {
+            const out = run('verify.sh', ['--require-signature'], true);
+            expect(out.stderr).toBe('');
+            expect(out.status).toBe(0);
+            expect(out.stdout).toBe(
+                `verify: ${treeFiles(tree).length - 2} files match SHA256SUMS\n` +
+                    'verify: 2 CycloneDX SBOMs, one per image\n' +
+                    `verify: SHA256SUMS is signed by ${IDENTITY}\n`,
+            );
+            // Exactly the check the documents give: the bundle's own signature, this identity, GitHub's issuer, no network.
+            expect(fs.readFileSync(stubLog, 'utf8')).toBe(
+                `cosign verify-blob --offline --bundle ${SIGNATURE} --certificate-identity ${IDENTITY} --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS\n`,
+            );
+            // Without the flag a signed bundle is checked all the same.
+            expect(run('verify.sh', [], true).stdout).toContain(`verify: SHA256SUMS is signed by ${IDENTITY}\n`);
+        });
+
+        it('fails when the signature does not verify: the list changed, the signature changed, or it is empty', () => {
+            // A file and the list changed together, as someone replacing a file would: the checksums agree, the signature does not.
+            const doc = path.join(tree, 'docs/access.md');
+            fs.appendFileSync(doc, 'replaced\n');
+            const sums = path.join(tree, 'SHA256SUMS');
+            const original = fs.readFileSync(sums, 'utf8');
+            const digest = createHash('sha256').update(fs.readFileSync(doc)).digest('hex');
+            fs.writeFileSync(sums, original.replace(/^[0-9a-f]{64} {2}docs\/access\.md$/m, `${digest}  docs/access.md`));
+            const replaced = run('verify.sh', [], true);
+            expect(replaced.status).toBe(1);
+            expect(replaced.stdout).toContain('files match SHA256SUMS');
+            expect(replaced.stderr).toBe(`verify: the signature over SHA256SUMS does not verify for ${IDENTITY}\n`);
+            // The checksums alone would have let it through: that is what the signature is for.
+            expect(run('verify.sh', ['--no-signature'], true).status).toBe(0);
+            // And load stops there.
+            expect(run('load.sh', [], true).status).toBe(1);
+            expect(fs.readFileSync(stubLog, 'utf8')).not.toContain('docker load');
+
+            fs.writeFileSync(sums, original);
+            fs.copyFileSync(abs('docs/access.md'), doc);
+            expect(run('verify.sh', [], true).status).toBe(0);
+            fs.writeFileSync(path.join(tree, SIGNATURE), 'signed:0000\n');
+            expect(run('verify.sh', [], true).status).toBe(1);
+            fs.writeFileSync(path.join(tree, SIGNATURE), '');
+            const empty = run('verify.sh', [], true);
+            expect(empty.status).toBe(1);
+            expect(empty.stderr).toBe('verify: the signature file is empty\n');
+        });
+
+        it('fails, and says the signature was not checked, when the bundle is signed and cosign is absent', () => {
+            const out = run('verify.sh', [], false);
+            expect(out.status).toBe(1);
+            expect(out.stdout).toContain('files match SHA256SUMS');
+            expect(out.stderr).toBe(
+                'verify: this bundle is signed, and cosign is not on the path, so the signature was NOT checked.\n' +
+                    'verify: install cosign and run this again, or pass --no-signature to accept the checksums alone.\n',
+            );
+            expect(run('verify.sh', ['--require-signature'], false).status).toBe(1);
+            // load.sh loads nothing either.
+            expect(run('load.sh', [], false).status).toBe(1);
+            expect(fs.readFileSync(stubLog, 'utf8')).toBe('');
+        });
+
+        it('--no-signature accepts the checksums alone, says so, and load then loads', () => {
+            const out = run('verify.sh', ['--no-signature'], false);
+            expect(out.status).toBe(0);
+            expect(out.stdout).toContain('verify: the signature was NOT checked (--no-signature)\n');
+            const loaded = run('load.sh', ['--no-signature'], false);
+            expect(loaded.status).toBe(0);
+            expect(loaded.stdout).toContain('verify: the signature was NOT checked (--no-signature)\n');
+            expect(fs.readFileSync(stubLog, 'utf8')).toContain(`docker load -i images/scanent-${VERSION}-linux-amd64.tar\n`);
+        });
+
+        it('allows the signature file and nothing else outside the list', () => {
+            fs.writeFileSync(path.join(tree, 'signatures/extra.json'), '{}');
+            const out = run('verify.sh', [], true);
+            expect(out.status).toBe(1);
+            expect(out.stderr).toBe('verify: the files here are not the files SHA256SUMS lists\n');
+        });
+
+        it('passes a trusted root to cosign when one is named, and refuses a VERSION that is not one', () => {
+            expect(run('verify.sh', [], true, { SCANENT_TRUSTED_ROOT: '/srv/trusted_root.json' }).status).toBe(0);
+            expect(fs.readFileSync(stubLog, 'utf8')).toContain('cosign verify-blob --offline --trusted-root /srv/trusted_root.json --bundle ');
+            // The identity is built from VERSION, which is in the signed list: a changed one fails at the checksums, before it is used.
+            fs.writeFileSync(path.join(tree, 'VERSION'), '9.8.7 --insecure\n');
+            const out = run('verify.sh', [], true);
+            expect(out.status).toBe(1);
+            expect(out.stderr).toContain('verify: a file does not match its checksum\n');
+            // And with the list changed to match, the identity is still never built from text that is not a version.
+            const sums = path.join(tree, 'SHA256SUMS');
+            const digest = createHash('sha256').update('9.8.7 --insecure\n').digest('hex');
+            fs.writeFileSync(sums, fs.readFileSync(sums, 'utf8').replace(/^[0-9a-f]{64} {2}VERSION$/m, `${digest}  VERSION`));
+            fs.writeFileSync(stubLog, '');
+            const relisted = run('verify.sh', [], true);
+            expect(relisted.status).toBe(1);
+            expect(relisted.stderr).toBe('verify: VERSION does not hold a version\n');
+            expect(fs.readFileSync(stubLog, 'utf8')).toBe('');
+        });
+    });
+
     it('the containerd path gives the imported image the name the chart asks for', () => {
         // The archive holds the per-architecture reference; without the tag step a pod with pullPolicy Never cannot start.
         const readme = read('deploy/airgap/README.md');
@@ -1106,9 +1405,18 @@ describe('the release workflow', () => {
 
     it('may read the repository everywhere and write packages in the publishing job alone', () => {
         expect(release.permissions).toEqual({ contents: 'read' });
-        expect(release.jobs.publish.permissions).toEqual({ contents: 'read', packages: 'write' });
+        // Phase 4: keyless signing needs the job's identity token, and the provenance attestation its own permission.
+        // `publish` gains those two; `bundle` gains the identity token alone, to sign the list of checksums.
+        expect(release.jobs.publish.permissions).toEqual({ contents: 'read', packages: 'write', 'id-token': 'write', attestations: 'write' });
         expect(release.jobs.build.permissions).toBeUndefined();
-        expect(release.jobs.bundle.permissions).toBeUndefined();
+        expect(release.jobs.bundle.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+        // No job but `publish` may write a package, and none may write the repository's contents but `release`.
+        for (const [name, job] of Object.entries(release.jobs as Record<string, Json>)) {
+            const granted = (job.permissions ?? {}) as Record<string, string>;
+            if (name !== 'publish') expect(granted.packages).toBeUndefined();
+            if (name !== 'release') expect(granted.contents ?? 'read').toBe('read');
+            for (const scope of Object.keys(granted)) expect(['contents', 'packages', 'id-token', 'attestations']).toContain(scope);
+        }
         // `release` is new with the review: the one job that may write a release, and it may write nothing else.
         expect(Object.keys(release.jobs)).toEqual(['build', 'publish', 'bundle', 'release']);
         expect(release.jobs.release.permissions).toEqual({ contents: 'write' });
@@ -1176,8 +1484,24 @@ describe('the release workflow', () => {
         const text = scripts(job);
         expect(text).toContain('sha256sum "scanent-${VERSION}-airgap.tar" > "scanent-${VERSION}-airgap.tar.sha256"');
         expect(text).toMatch(/gh release create "\$REF_NAME" --verify-tag[\s\S]*"scanent-\$\{VERSION\}-airgap\.tar" "scanent-\$\{VERSION\}-airgap\.tar\.sha256"/);
-        // No third-party action, and the token is the job's own.
-        expect(steps(job).filter((s) => s.uses !== undefined).map((s) => String(s.uses).split('@')[0])).toEqual(['actions/download-artifact']);
+        // No third-party action, and the token is the job's own. (Three downloads since Phase 4: the bundle, its signed checksums, the SBOMs.)
+        expect(steps(job).filter((s) => s.uses !== undefined).map((s) => String(s.uses).split('@')[0])).toEqual([
+            'actions/download-artifact',
+            'actions/download-artifact',
+            'actions/download-artifact',
+        ]);
+        // The release also carries each image's SBOM and the signed list of the bundle's checksums, named by version.
+        const create = text.slice(text.indexOf('gh release create'));
+        for (const file of [
+            '"scanent-${VERSION}-linux-amd64.cdx.json"',
+            '"scanent-${VERSION}-linux-arm64.cdx.json"',
+            '"scanent-${VERSION}-airgap.SHA256SUMS"',
+            '"scanent-${VERSION}-airgap.SHA256SUMS.sigstore.json"',
+        ]) {
+            expect(create).toContain(file);
+        }
+        expect(create).not.toMatch(/not signed|signed yet/i);
+        expect(create).toContain('docs/verify-a-release.md');
         // Both documents now say where that checksum is.
         expect(read('deploy/airgap/README.md')).toContain('scanent-<version>-airgap.tar.sha256');
         expect(read('docs/deployment.md')).toContain('scanent-<version>-airgap.tar.sha256');
@@ -1200,7 +1524,301 @@ describe('the release workflow', () => {
                 .map((u) => u.split('@')[0]);
         const known = new Set(usesOf(ci));
         const extra = [...new Set(usesOf(release))].filter((u) => !known.has(u));
-        expect(extra).toEqual(['actions/download-artifact']);
+        // Phase 4 adds the three a signed release needs: the SBOM generator, the cosign installer, and GitHub's provenance attestation.
+        expect(extra.sort()).toEqual(['actions/attest-build-provenance', 'actions/download-artifact', 'anchore/sbom-action', 'sigstore/cosign-installer']);
+    });
+});
+
+describe('what a release signs and attests', () => {
+    const text = read('.github/workflows/release.yml');
+    const release = yaml.load(text) as Json;
+    const steps = (job: Json): Json[] => job.steps as Json[];
+    const named = (job: Json, needle: string): Json => {
+        const found = steps(job).filter((s) => String(s.name ?? '').includes(needle));
+        expect(found).toHaveLength(1);
+        return found[0];
+    };
+    const order = (job: Json, needles: string[]): void => {
+        const names = steps(job).map((s) => String(s.name ?? s.uses ?? ''));
+        const at = needles.map((n) => names.findIndex((name) => name.includes(n)));
+        expect(at.every((i) => i >= 0)).toBe(true);
+        expect([...at].sort((a, b) => a - b)).toEqual(at);
+    };
+    const TAG_ONLY = "github.event_name == 'push' && github.ref_type == 'tag'";
+
+    it('signs by digest, never by tag: the manifest and each architecture, read from what was pushed', () => {
+        const publish = release.jobs.publish as Json;
+        order(publish, ['Push each', 'Create the manifest', 'Read the digests', 'Sign the manifest', 'Attest each', 'Attest the build', 'Verify the signatures', 'Log out']);
+        const digests = named(publish, 'Read the digests');
+        expect(digests.id).toBe('digests');
+        // Read two ways, which must agree, and each is checked to be a digest before anything is signed with it.
+        expect(digests.run).toContain('sha256sum index.json');
+        expect(digests.run).toContain("--format '{{json .Manifest}}'");
+        expect(digests.run).toContain('[ "$index" = "$named" ]');
+        expect(digests.run).toContain('is_digest() { [[ "$1" =~ ^sha256:[0-9a-f]{64}$ ]]; }');
+        const sign = named(publish, 'Sign the manifest');
+        expect(sign.env).toEqual({ INDEX: '${{ steps.digests.outputs.index }}', AMD64: '${{ steps.digests.outputs.amd64 }}', ARM64: '${{ steps.digests.outputs.arm64 }}' });
+        expect(sign.run).toContain('cosign sign --yes "${IMAGE_REPOSITORY}@${digest}"');
+        // Nothing is ever signed, attested or verified by a tag.
+        for (const line of text.split('\n').filter((l) => /cosign (sign|attest|verify|verify-attestation) /.test(l) && !l.trimStart().startsWith('#'))) {
+            expect(line).toMatch(/"\$\{IMAGE_REPOSITORY\}@\$\{(digest|AMD64|ARM64)\}"/);
+            expect(line).not.toMatch(/:\$\{VERSION\}/);
+        }
+        // Keyless: no key, no key reference and no secret anywhere in the workflow.
+        expect(text).not.toMatch(/--key\b|COSIGN_PRIVATE_KEY|COSIGN_PASSWORD|\$\{\{\s*secrets\./);
+    });
+
+    it('makes the SBOM from the image that was tested, checks it is one, and attaches it to that image', () => {
+        const build = release.jobs.build as Json;
+        order(build, ['Smoke-test', 'Trivy', 'Grype', 'SBOM of the image', 'The SBOM is a CycloneDX', 'Upload the SBOM', 'Save the image']);
+        const sbom = named(build, 'SBOM of the image');
+        expect(String(sbom.uses)).toMatch(/^anchore\/sbom-action@[0-9a-f]{40}$/);
+        expect(sbom.with).toEqual({
+            image: '${{ env.IMAGE_REPOSITORY }}:${{ steps.version.outputs.version }}-${{ matrix.arch }}',
+            format: 'cyclonedx-json',
+            'output-file': 'sbom/${{ matrix.arch }}.cdx.json',
+            'syft-version': '${{ env.SYFT_VERSION }}',
+            // The action neither uploads nor publishes anything itself.
+            'upload-artifact': false,
+            'upload-release-assets': false,
+            'dependency-snapshot': false,
+        });
+        expect(named(build, 'The SBOM is a CycloneDX').run).toContain('for name in zod js-yaml typescript; do');
+        const attest = named(release.jobs.publish as Json, 'Attest each');
+        expect(attest.run).toContain('cosign attest --yes --type cyclonedx --predicate sboms/amd64.cdx.json "${IMAGE_REPOSITORY}@${AMD64}"');
+        expect(attest.run).toContain('cosign attest --yes --type cyclonedx --predicate sboms/arm64.cdx.json "${IMAGE_REPOSITORY}@${ARM64}"');
+        // The tools are named by version, in one place.
+        expect(release.env.COSIGN_VERSION).toMatch(/^v\d+\.\d+\.\d+$/);
+        expect(release.env.SYFT_VERSION).toMatch(/^v\d+\.\d+\.\d+$/);
+        for (const job of [release.jobs.publish, release.jobs.bundle] as Json[]) {
+            const installer = steps(job).find((s) => String(s.uses ?? '').startsWith('sigstore/cosign-installer@'));
+            expect(installer?.with).toEqual({ 'cosign-release': '${{ env.COSIGN_VERSION }}' });
+        }
+    });
+
+    it('attests provenance for the pushed manifest, and the images stay plain manifests', () => {
+        const provenance = named(release.jobs.publish as Json, 'Attest the build');
+        expect(String(provenance.uses)).toMatch(/^actions\/attest-build-provenance@[0-9a-f]{40}$/);
+        expect(provenance.with).toEqual({ 'subject-name': '${{ env.IMAGE_REPOSITORY }}', 'subject-digest': '${{ steps.digests.outputs.index }}', 'push-to-registry': true });
+        expect(text).toContain('docker build --provenance=false --sbom=false');
+    });
+
+    it('verifies its own signatures with the identity the documents give, before it logs out', () => {
+        const verify = named(release.jobs.publish as Json, 'Verify the signatures');
+        expect(verify.run).toContain('identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/v${VERSION}"');
+        expect(verify.run).toContain('issuer="https://token.actions.githubusercontent.com"');
+        expect(verify.run).toContain('cosign verify "${IMAGE_REPOSITORY}@${digest}" --certificate-identity "$identity" --certificate-oidc-issuer "$issuer"');
+        expect(verify.run).toContain('cosign verify-attestation --type cyclonedx "${IMAGE_REPOSITORY}@${digest}" --certificate-identity "$identity" --certificate-oidc-issuer "$issuer"');
+    });
+
+    it('signs the bundle\'s list of checksums on a pushed tag only, and requires the signature when it checks that bundle', () => {
+        const bundle = release.jobs.bundle as Json;
+        expect(bundle.env.SIGN).toBe(`\${{ ${TAG_ONLY} }}`);
+        const installer = steps(bundle).find((s) => String(s.uses ?? '').startsWith('sigstore/cosign-installer@'));
+        expect(installer?.if).toBe(TAG_ONLY);
+        const build = named(bundle, 'Build the bundle');
+        expect(build.run).toContain('export SCANENT_SBOM_DIR="$PWD/sboms"');
+        expect(build.run).toMatch(/if \[ "\$SIGN" = "true" \]; then\n\s*export SCANENT_SIGN_CMD="cosign sign-blob --yes --bundle"\n\s*fi/);
+        expect(build.run).toContain('test -s "bundle-out/scanent-${VERSION}-airgap/signatures/SHA256SUMS.sigstore.json"');
+        const check = named(bundle, 'Unpack, verify and load');
+        expect(check.run).toMatch(/if \[ "\$SIGN" = "true" \]; then\n\s*\.\/verify\.sh --require-signature\n\s*\.\/load\.sh --require-signature\n\s*else\n\s*\.\/verify\.sh\n\s*\.\/load\.sh\n\s*fi/);
+        expect(named(bundle, 'Upload the signed checksums').if).toBe(TAG_ONLY);
+        // A manual run signs nothing: every use of cosign is in a job or a step that runs on a pushed tag only.
+        expect(release.jobs.publish.if).toBe(TAG_ONLY);
+    });
+
+    it('verify.sh, the workflow and the document name one identity', () => {
+        const identity = 'https://github.com/RodnaPamet/scanent/.github/workflows/release.yml@refs/tags/v';
+        expect(read('deploy/airgap/verify.sh')).toContain(`identity="${identity}$version"`);
+        const doc = read('docs/verify-a-release.md');
+        expect(doc).toContain(`--certificate-identity "${identity}<version>"`);
+        expect(doc).toContain(`IDENTITY="${identity}$VERSION"`);
+        expect(doc).toContain('--certificate-oidc-issuer "https://token.actions.githubusercontent.com"');
+        // The path in the identity is this workflow's own file, and the tag is the pattern it runs on.
+        expect(fs.existsSync(abs('.github/workflows/release.yml'))).toBe(true);
+        const on = (release.on ?? release.true) as Json;
+        expect(on.push.tags).toEqual(['v*.*.*']);
+        expect(release.name).toBe('Release');
+        // The repository in the identity is this one, as the image's own name spells it, case apart.
+        expect(identity.toLowerCase()).toContain(IMAGE_REPOSITORY.replace('ghcr.io/', 'github.com/'));
+        // Every command the document gives verifies by that identity: none trusts any workflow, or any tag.
+        expect(doc).not.toMatch(/certificate-identity-regexp|certificate-oidc-issuer-regexp/);
+        for (const command of ['cosign verify ', 'cosign verify-attestation ', 'cosign verify-blob ', 'gh attestation verify ']) expect(doc).toContain(command);
+    });
+});
+
+describe('the CI gates', () => {
+    const text = read('.github/workflows/ci.yml');
+    const ci = yaml.load(text) as Json;
+    const steps = (job: Json): Json[] => job.steps as Json[];
+    const runOf = (job: Json): string => steps(job).map((s) => String(s.run ?? '')).join('\n');
+
+    it('has these jobs, runs on pull requests, pushes to main and weekly, and may only read', () => {
+        expect(Object.keys(ci.jobs)).toEqual(['checks', 'image', 'image-podman', 'chart', 'chart-install']);
+        const on = (ci.on ?? ci.true) as Json;
+        expect(Object.keys(on).sort()).toEqual(['pull_request', 'push', 'schedule']);
+        expect(on.push).toEqual({ branches: ['main'] });
+        expect(ci.permissions).toEqual({ contents: 'read' });
+        for (const job of Object.values(ci.jobs as Record<string, Json>)) expect(job.permissions).toBeUndefined();
+        // Nothing is pushed anywhere, and no registry is logged in to.
+        expect(text).not.toMatch(/docker push|docker login|podman push|imagetools create|gh release|cosign sign/);
+    });
+
+    it('audits and licence-checks the production dependencies before anything is built, and fails closed', () => {
+        const names = steps(ci.jobs.checks).map((s) => String(s.name ?? s.uses));
+        const at = (needle: string) => names.findIndex((n) => n.includes(needle));
+        expect(at('npm audit')).toBeGreaterThan(at('Install'));
+        expect(at('licences')).toBeGreaterThan(at('Install'));
+        expect(at('Lint')).toBeGreaterThan(at('licences'));
+        const audit = steps(ci.jobs.checks)[at('npm audit')].run as string;
+        expect(audit).toContain('npm audit --omit=dev --audit-level=moderate --json > audit.json');
+        expect(audit).toContain('for attempt in 1 2 3 4; do');
+        // No report after the retries is a failure, not a pass.
+        expect(audit).toMatch(/the gate fails closed" >&2\n\s*cat audit\.err >&2 \|\| true\n\s*exit 1\s*$/);
+        expect(steps(ci.jobs.checks)[at('licences')].run).toBe('node scripts/check-licences.js');
+        expect(runOf(ci.jobs.checks)).toContain('node scripts/check-reproducible-build.js');
+    });
+
+    it('scans the image with two scanners, both blocking, on fixed findings of high severity and above', () => {
+        for (const wf of [ci, yaml.load(read('.github/workflows/release.yml')) as Json]) {
+            const job = (wf.jobs.image ?? wf.jobs.build) as Json;
+            const trivy = steps(job).find((s) => String(s.uses ?? '').startsWith('aquasecurity/trivy-action@'));
+            expect(trivy?.with).toMatchObject({ 'exit-code': '1', severity: 'CRITICAL,HIGH', 'ignore-unfixed': true });
+            const grype = steps(job).find((s) => String(s.uses ?? '').startsWith('anchore/scan-action@'));
+            expect(grype?.with).toMatchObject({ 'fail-build': true, 'severity-cutoff': 'high', 'only-fixed': true });
+            expect(String(grype?.with['grype-version'])).toMatch(/^v\d+\.\d+\.\d+$/);
+            for (const step of [trivy, grype]) expect(step?.['continue-on-error']).toBeUndefined();
+        }
+    });
+
+    it('no step of any workflow is allowed to fail quietly', () => {
+        for (const file of fs.readdirSync(abs('.github/workflows'))) {
+            expect(read(`.github/workflows/${file}`)).not.toMatch(/continue-on-error/);
+        }
+    });
+
+    it('runs the smoke test under Podman as the invoking user, and says which step that run leaves out', () => {
+        const job = ci.jobs['image-podman'] as Json;
+        const smoke = steps(job).find((s) => String(s.run ?? '').includes('deploy/smoke.sh'));
+        expect(smoke?.env).toEqual({ CONTAINER_RUNTIME: 'podman', SMOKE_SKIP_COMPOSE: '1' });
+        expect(runOf(job)).toContain('docker save "${DOCKER_REF}" | podman load');
+        // The Docker job leaves nothing out.
+        const docker = steps(ci.jobs.image).find((s) => String(s.run ?? '').includes('deploy/smoke.sh'));
+        expect(docker?.env).toBeUndefined();
+    });
+
+    it('installs the chart on kind from an image built in the job, with the kind version pinned', () => {
+        const job = ci.jobs['chart-install'] as Json;
+        const kind = steps(job).find((s) => String(s.uses ?? '').startsWith('helm/kind-action@'));
+        expect(kind?.with).toEqual({ version: expect.stringMatching(/^v\d+\.\d+\.\d+$/), cluster_name: 'scanent', wait: '120s' });
+        const text = runOf(job);
+        expect(text).toContain('docker build -f deploy/Dockerfile -t "${IMAGE_REPOSITORY}:${IMAGE_TAG}" .');
+        expect(text).toContain('kind load docker-image "${IMAGE_REPOSITORY}:${IMAGE_TAG}" --name scanent');
+        expect(text).toContain('deploy/kind-test.sh "${IMAGE_REPOSITORY}" "${IMAGE_TAG}"');
+        // Registry-less: the image name cannot be pulled from anywhere.
+        expect(job.env.IMAGE_REPOSITORY).toBe('scanent');
+    });
+});
+
+describe('the other workflows', () => {
+    const load = (name: string): Json => yaml.load(read(`.github/workflows/${name}`)) as Json;
+
+    it('are exactly these five', () => {
+        expect(fs.readdirSync(abs('.github/workflows')).sort()).toEqual(['ci.yml', 'codeql.yml', 'long-tests.yml', 'release.yml', 'scorecard.yml']);
+    });
+
+    it('CodeQL analyses the TypeScript on pull requests, pushes to main and weekly, and may write security events only', () => {
+        const wf = load('codeql.yml');
+        const on = (wf.on ?? wf.true) as Json;
+        expect(Object.keys(on).sort()).toEqual(['pull_request', 'push', 'schedule']);
+        expect(wf.permissions).toEqual({ contents: 'read' });
+        expect(wf.jobs.analyze.permissions).toEqual({ contents: 'read', 'security-events': 'write' });
+        const init = (wf.jobs.analyze.steps as Json[]).find((s) => String(s.uses ?? '').startsWith('github/codeql-action/init@'));
+        expect(init?.with).toMatchObject({ languages: 'javascript-typescript', 'build-mode': 'none' });
+        expect((wf.jobs.analyze.steps as Json[]).some((s) => String(s.uses ?? '').startsWith('github/codeql-action/analyze@'))).toBe(true);
+    });
+
+    it('Scorecard runs weekly and on main, publishes nothing, and may write security events only', () => {
+        const wf = load('scorecard.yml');
+        const on = (wf.on ?? wf.true) as Json;
+        expect(Object.keys(on).sort()).toEqual(['push', 'schedule']);
+        expect(wf.permissions).toEqual({});
+        expect(wf.jobs.analysis.permissions).toEqual({ contents: 'read', actions: 'read', 'security-events': 'write' });
+        const scorecard = (wf.jobs.analysis.steps as Json[]).find((s) => String(s.uses ?? '').startsWith('ossf/scorecard-action@'));
+        // Publishing is the owner's decision, and would also need id-token: write.
+        expect(scorecard?.with).toEqual({ results_file: 'results.sarif', results_format: 'sarif', publish_results: false });
+    });
+
+    it('the long tests run by hand and weekly, never on a pull request or a push, and may only read', () => {
+        const wf = load('long-tests.yml');
+        const on = (wf.on ?? wf.true) as Json;
+        expect(Object.keys(on).sort()).toEqual(['schedule', 'workflow_dispatch']);
+        expect(wf.permissions).toEqual({ contents: 'read' });
+        const run = (wf.jobs.long.steps as Json[]).map((s) => String(s.run ?? '')).join('\n');
+        expect(run).toContain('npm run test:long');
+        const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, string> }).scripts;
+        expect(scripts['test:long']).toContain('SCANENT_LONG=1');
+        // And `npm test`, which CI's normal job runs, does not set it.
+        expect(scripts.test).toBe('jest');
+        expect(read('.github/workflows/ci.yml')).not.toMatch(/SCANENT_LONG|test:long\b(?! )/);
+        // A seed typed into the form reaches the tests as a value of the environment, never as script text.
+        expect(wf.jobs.long.env.FUZZ_SEED).toBe("${{ github.event_name == 'schedule' && github.run_id || inputs.seed }}");
+        expect(run).not.toContain('${{');
+    });
+
+    it('no workflow puts an expression of the event inside a script', () => {
+        for (const file of fs.readdirSync(abs('.github/workflows'))) {
+            const wf = load(file);
+            for (const job of Object.values(wf.jobs as Record<string, Json>)) {
+                for (const step of job.steps as Json[]) {
+                    // `${{ }}` belongs in `env:` and `with:`. In a script it is text the shell would run.
+                    expect(`${file}: ${String(step.run ?? '').includes('${{')}`).toBe(`${file}: false`);
+                }
+            }
+        }
+    });
+});
+
+describe('deploy/kind-test.sh', () => {
+    const script = read('deploy/kind-test.sh');
+
+    it('is executable, pulls and pushes nothing, and installs the chart with the code-only values and the image it is given', () => {
+        expect(execFileSync('git', ['ls-files', '-s', 'deploy/kind-test.sh'], { cwd: REPO_ROOT, encoding: 'utf8' })).toMatch(/^100755 /);
+        expect(script).not.toMatch(/\b(curl|wget)\b|docker (pull|push|build)|helm (push|repo)|kubectl (cp|exec)\b/);
+        expect(script).toContain('helm install scanent "$CHART" --namespace "$NS" -f "$CHART/ci/base-values.yaml"');
+        expect(script).toContain('--set image.repository="$REPOSITORY" --set image.tag="$TAG" --set image.pullPolicy=Never --set strict=true');
+        // The names it relies on are the ones the base values give.
+        const base = yaml.load(read(`${CHART}/ci/base-values.yaml`)) as Json;
+        expect(script).toContain(`kubectl -n "$NS" create secret generic ${base.secrets.existingSecret} --from-file=signing-key.pem=`);
+        expect(script).toContain(`name: ${base.codeRoots[0].existingClaim}\n`);
+        expect(script).toContain(`"${base.codeRoots[0].existingClaim}:${base.codeRoots[0].mountPath}"`);
+    });
+
+    it('makes the signing key with scanent keygen, and leaves no copy of it behind', () => {
+        expect(script).toMatch(/"\$IMAGE" keygen --out \/key\/signing-key\.pem/);
+        expect(script).toContain('rm -f "$WORK/key/signing-key.pem"');
+        expect(script).toContain('docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges');
+    });
+
+    it('has the five steps, in order, and the probe that proves nothing fails', () => {
+        expect([...script.matchAll(/^echo "== (\d+)\. /gm)].map((m) => Number(m[1]))).toEqual([1, 2, 3, 4, 5]);
+        expect(script).toContain('so the probe proves nothing"');
+        expect(script).toContain('the NetworkPolicy is not enforced here"');
+        // A cluster that does not enforce policy is said, never passed.
+        expect(script).toContain('echo "SKIPPED the NetworkPolicy was NOT tested');
+        // The labels the probe carries are the ones the chart's policy selects.
+        const helpers = read(`${CHART}/templates/_helpers.tpl`);
+        expect(helpers).toContain('app.kubernetes.io/name: {{ include "scanent.name" . }}');
+        expect(helpers).toContain('app.kubernetes.io/instance: {{ .Release.Name }}');
+        expect(script).toContain('app.kubernetes.io/name: scanent\n    app.kubernetes.io/instance: scanent\n    app.kubernetes.io/component: scanner');
+    });
+
+    it('every pod it starts runs non-root, read-only, with nothing added, from the image it was given', () => {
+        expect(script).toContain('runAsNonRoot: true\n    runAsUser: 1000');
+        expect(script).toContain('readOnlyRootFilesystem: true\n        allowPrivilegeEscalation: false\n        capabilities:\n          drop: [ALL]');
+        expect(script).toContain('imagePullPolicy: Never');
+        expect(script.match(/^\s+image: /gm)).toEqual(['      image: ']);
+        expect(script).toContain('      image: $IMAGE\n');
     });
 });
 
@@ -1230,10 +1848,55 @@ describe('deploy/smoke.sh', () => {
         // One place starts a container to test the scanner, and it carries the hardening.
         expect(smoke).toContain('"$RUNTIME" run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges "$@"');
         const starts = smoke.split('\n').filter((line) => /"\$RUNTIME" run|docker run/.test(line) && !line.trimStart().startsWith('#'));
-        // The other one only removes what the image's user wrote, at exit.
-        expect(starts).toHaveLength(2);
-        expect(starts.filter((line) => line.includes('rm -rf /out/runs'))).toHaveLength(1);
+        // Two others, neither of which runs the scanner. One removes what the image's user wrote, at exit: with the
+        // image's node since Phase 4, because the image has no shell to run `rm` with. The other is the proof of
+        // that: it asks for a shell, and passes only when none starts.
+        expect(starts).toHaveLength(3);
+        expect(starts.filter((line) => line.includes('--entrypoint node') && line.includes('rmSync(p, { recursive: true, force: true })'))).toHaveLength(1);
+        expect(starts.filter((line) => line.startsWith('if "$RUNTIME" run --rm --network none --entrypoint sh "$IMAGE" -c true'))).toHaveLength(1);
+        for (const line of starts) expect(line).toContain('--network none');
         expect(smoke).not.toMatch(/--privileged|--cap-add|--network host/);
+    });
+
+    it('needs nothing inside the image but node: no shell, no coreutils', () => {
+        const entrypoints = [...smoke.matchAll(/--entrypoint (\S+)/g)].map((m) => m[1]);
+        expect(entrypoints.length).toBeGreaterThan(8);
+        // `sh` is asked for once, by the check that it is not there.
+        expect(entrypoints.filter((e) => e !== 'node')).toEqual(['sh']);
+        expect(smoke).not.toMatch(/--entrypoint (id|ls|cat|find|sha256sum|test)\b/);
+    });
+
+    it('step 11 runs the two Compose files a site uses, with this image, and proves the proxy is the only way out', () => {
+        // The site's own files, and one more that names the image and the stand-in server.
+        expect(smoke).toContain('-f "$HERE/compose.yaml" -f "$HERE/compose.egress.yaml" -f "$WORK/overlay/compose.smoke.yaml" "$@"');
+        // The stand-in server runs from the image, hardened as the scanner is, on the proxy's outer network only.
+        expect(smoke).toMatch(/smoke-mcp:\n {4}image: \$IMAGE\n {4}entrypoint: \["node", "\/smoke\/smoke-mcp-server\.js"\]/);
+        expect(smoke).toMatch(/smoke-mcp:[\s\S]*?read_only: true\n {4}cap_drop: \[ALL\]\n {4}security_opt: \["no-new-privileges:true"\]/);
+        expect(smoke).toMatch(/networks:\n {6}scanent-egress:\n {8}aliases: \[\$MCP_HOST\]/);
+        // Allowed, then refused, and in between the direct route is tried and must not exist.
+        const order = [
+            'export EGRESS_ALLOW="$MCP_HOST"',
+            '[ "$allowed" = "COMPLETE - smoke_close_ticket,smoke_lookup_ticket" ]',
+            '[ "$asked" = "message initialize;message notifications/initialized;message tools/list;" ]',
+            '[ "$direct" = "NO_ROUTE name=unresolved" ]',
+            'export EGRESS_ALLOW=other.smoke.example',
+            '[ "$refused" = "INCOMPLETE UNREACHABLE -" ]',
+            '\\"msg\\":\\"egress refused\\",\\"reason\\":\\"HOST_NOT_ALLOWED\\",\\"host\\":\\"$MCP_HOST\\"',
+        ];
+        const at = order.map((needle) => smoke.indexOf(needle));
+        expect(at.every((i) => i >= 0)).toBe(true);
+        expect([...at].sort((a, b) => a - b)).toEqual(at);
+        // Leaving the step out is said, never passed off as a pass.
+        expect(smoke).toContain('echo "SKIPPED step 11 was left out by SMOKE_SKIP_COMPOSE=1: the egress overlay was NOT tested"');
+        expect(smoke).toContain('echo "smoke: passed, without step 11"');
+        expect(smoke).toContain('compose down --volumes --remove-orphans');
+    });
+
+    it('the stand-in MCP server speaks the three declared messages and refuses every other', () => {
+        const server = read('deploy/smoke-mcp-server.js');
+        for (const method of ['initialize', 'notifications/initialized', 'tools/list']) expect(server).toContain(`method === '${method}'`);
+        expect(server).toContain("error: { code: -32601, message: 'Method not found' }");
+        expect(server).not.toMatch(/tools\/call|child_process|require\('node:(net|http)'\)/);
     });
 
     it('scans as the invoking user into a 0700 directory and reads the run back without the container', () => {
@@ -1246,8 +1909,9 @@ describe('deploy/smoke.sh', () => {
         expect(smoke).toMatch(/grep -q '<html' "\$WORK\/mine\/runs\/\$mine\/summary\.html"/);
     });
 
-    it('has the ten steps, in order', () => {
+    it('has the eleven steps, in order', () => {
+        // Ten until Phase 4; the eleventh is the MCP server through the Compose egress overlay.
         const steps = [...smoke.matchAll(/^echo "== (\d+)\. /gm)].map((m) => Number(m[1]));
-        expect(steps).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+        expect(steps).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
     });
 });
