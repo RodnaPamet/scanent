@@ -131,10 +131,10 @@ values, is a design question to raise before any code.
 
 | Thing | Identifier today | How it changes |
 |---|---|---|
-| The scanner | `SCANNER_VERSION`, 0.12.0 | Raised with any change to what the scanner reads or reports. It is in every report, beside the hash of the declared request surface |
+| The scanner | `SCANNER_VERSION`, 0.13.0 | Raised with any change to what the scanner reads or reports. It is in every report, beside the hash of the declared request surface |
 | The report contract | `inflect-agent-harness/3` is written; `/2` is accepted by the verifier; `/1` is retired and refused | A new id is a new strict schema beside the others, never a looser schema that reads either. An unknown member anywhere is a refusal. [The report contract](../contract.md) is the normative description, and a test holds it to the code |
 | The ladder | `LADDER_VERSION`, a hash over the levels, criteria and bars | It is not in the report. Results derived from a report carry it, and two sets of results compare level for level only when they carry the same one |
-| The results file | `scanent-results/1` | One schema id exists. An optional member has been added to it once without a new id; `packages/scanner/tests/compat.test.ts` proves that files written by an earlier commit of 0.12.0 are still read |
+| The results file | `scanent-results/1` | One schema id exists. An optional member has been added to it once without a new id; `packages/scanner/tests/compat.test.ts` proves that files written by the earlier, unreleased 0.12.0 are still read |
 | The inventory file | `scanent-inventory/2` | `/1` is retired and refused, and the refusal says what changed: `/2` took the axis names, their values and the risk tiers of Inflect's agent register. No version was released with `/1`, so nothing converts a `/1` file |
 | The `init` answers file | `scanent-init-answers/1` | One id exists |
 | The `doctor` report and the support bundle | `scanent-doctor/1`, `scanent-support/1` | One id each |
@@ -143,8 +143,8 @@ Compatibility is tested, not promised in words: each release is to add a
 directory of what that version wrote under
 `packages/scanner/tests/fixtures/compat`, and every such directory is read by
 the current code on every test run. One directory exists today, named
-0.12.0. It was made from an earlier commit of the current, unreleased
-version (`190f3fb`), not from a release.
+0.12.0. It was made from a commit of that earlier, unreleased version
+(`190f3fb`), not from a release.
 
 A change that can stop a set-up that scanned before is listed in
 `docs/scanner.md` under "Changes that can stop a setup that scanned before",

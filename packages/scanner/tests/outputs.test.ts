@@ -9,10 +9,12 @@
  *      happened to the others; delivered only when all were.
  *   5. The scanner's declared surface did not change.
  */
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
 import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { INVENTORY_SCHEMA_ID, InventoryRefused } from '@scanent/report/results/inventory';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
@@ -358,8 +360,25 @@ describe('4. delivery', () => {
 });
 
 describe('5. the declared surface', () => {
-    it('outputs added no request: the manifest hash is what it was before them', () => {
-        expect(scannerManifestHash()).toBe(MANIFEST_BEFORE_OUTPUTS);
+    it('outputs added no request: but for the version and the grants 0.13.0 declared inside it, the surface hashes to what it did before them', () => {
+        // 0.13.0 put each token exchange's grant inside the surface, so the hash moved once, on purpose,
+        // and the surface names its own version. Put those two back and the surface is, to the byte,
+        // the one from before outputs existed: nothing else was added to it, by outputs or by anything since.
+        expect(SCANNER_SURFACE.version).toBe('0.13.0');
+        const withoutGrants = {
+            ...SCANNER_SURFACE,
+            version: '0.12.0',
+            authenticates: SCANNER_SURFACE.authenticates.map((entry) => Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'grant'))),
+        };
+        expect(`sha256:${createHash('sha256').update(canonicalJson(withoutGrants), 'utf8').digest('hex')}`).toBe(MANIFEST_BEFORE_OUTPUTS);
+        expect(scannerManifestHash()).not.toBe(MANIFEST_BEFORE_OUTPUTS);
+        expect(scannerManifestHash()).toBe(`sha256:${createHash('sha256').update(canonicalJson(SCANNER_SURFACE), 'utf8').digest('hex')}`);
+        // Every token exchange names exactly one grant, and it is one of the two the scanner has always used.
+        expect(SCANNER_SURFACE.authenticates.map((entry) => [entry.product, entry.grant])).toEqual([
+            ['azure-key-vault', 'client_credentials'],
+            ['entra', 'client_credentials'],
+            ['gcp-iam', 'urn:ietf:params:oauth:grant-type:jwt-bearer'],
+        ]);
         expect(JSON.stringify(SCANNER_SURFACE)).not.toMatch(/scanent-results|results\.json|latest\.json|summary\.html/);
     });
 

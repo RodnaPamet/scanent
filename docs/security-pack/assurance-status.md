@@ -159,7 +159,7 @@ and the [threat model](../threat-model.md).
   source: none makes a finding disappear.
 - **Scale**, at 500 agents in every run.
 - **Compatibility.** Files written by an earlier commit of the code
-  (`190f3fb`, the same unreleased version 0.12.0) are read by the current
+  (`190f3fb`, the earlier unreleased version 0.12.0) are read by the current
   code, with one exception: its two inventory files are
   `scanent-inventory/1`, which the current code refuses with a message
   saying what changed. No released version exists to compare with.

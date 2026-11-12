@@ -298,7 +298,7 @@ describe('docs/security-pack/assurance-status.md', () => {
         expect(compat).toEqual(['0.12.0']);
         // The one directory is named for a version that has not been released: the page says which commit made it.
         expect(text).toContain('Files written by an earlier commit of the code');
-        expect(text).toContain('the same unreleased version 0.12.0');
+        expect(text).toContain('the earlier unreleased version 0.12.0');
         expect(text).toContain('No released version exists to compare with');
         expect(read('packages/scanner/tests/fixtures/compat/README.md')).toContain('`0.12.0` was made from commit `190f3fb`');
         expect(text).toContain('`190f3fb`');

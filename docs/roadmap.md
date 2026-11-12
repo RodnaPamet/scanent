@@ -4,7 +4,7 @@ What scanent does not do today, taken from the code and from the open issues
 of the repository. These are open items. None is a promise, none has a date,
 and none should be offered to a client as coming.
 
-"This version" is the scanner at version 0.12.0, unreleased.
+"This version" is the scanner at version 0.13.0, unreleased.
 
 ## Sources that are not usable
 

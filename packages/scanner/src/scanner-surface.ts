@@ -42,9 +42,10 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * 0.11.0: the register read exchanges the ingest key for a token naming the
  * register tool alone, and the register source reports the gate's enforcement
  * as H2 and H3 verdicts. 0.12.0: the egress proof, and the proxy it
- * runs behind.
+ * runs behind. 0.13.0: the grant of each token exchange is declared inside the
+ * surface, so the manifest hash covers it; no request changed.
  */
-export const SCANNER_VERSION = '0.12.0';
+export const SCANNER_VERSION = '0.13.0';
 
 /** The ingest route, as `docs/contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
@@ -78,10 +79,14 @@ export const SCANNER_SURFACE = {
         },
     ],
     authenticates: [
-        { product: 'azure-key-vault', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryTenantId}/oauth2/v2.0/token' },
-        { product: 'entra', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryId}/oauth2/v2.0/token' },
+        // `grant` is what the body may ask the token endpoint for: a request to a
+        // declared endpoint with another grant (a password grant, say) is not a
+        // declared request. It is inside the surface, so it is in the manifest
+        // hash: a scanner that asked for another grant would show another hash.
+        { product: 'azure-key-vault', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryTenantId}/oauth2/v2.0/token', grant: CLIENT_CREDENTIALS_GRANT },
+        { product: 'entra', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryId}/oauth2/v2.0/token', grant: CLIENT_CREDENTIALS_GRANT },
         // The JWT-bearer grant (RFC 7523): an assertion the scanner signed, for a token to read with.
-        { product: 'gcp-iam', method: 'POST', origin: GOOGLE_OAUTH_ORIGIN, path: GOOGLE_TOKEN_PATH },
+        { product: 'gcp-iam', method: 'POST', origin: GOOGLE_OAUTH_ORIGIN, path: GOOGLE_TOKEN_PATH, grant: JWT_BEARER_GRANT },
     ],
     // No request: the `code` source reads local files, and never runs them.
     // Declared all the same, so reading code shows in the manifest hash.
@@ -151,23 +156,17 @@ export const SCANNER_SURFACE = {
     ],
 } as const;
 
+type TokenExchangeProduct = (typeof SCANNER_SURFACE.authenticates)[number]['product'];
+
 /**
  * The OAuth grant each `authenticates` entry asks its token endpoint for, by
- * the entry's `product`. A token exchange is declared by method, origin and
- * path above; this says what its body may ask for, so a request to a declared
- * endpoint with another grant (a password grant, say) is not a declared
- * request.
- *
- * It stands BESIDE the surface and not inside it. The surface is hashed into
- * every report, and these are the grants the scanner has always used: adding
- * a member there would change the manifest hash of a scanner that makes
- * exactly the requests it made before.
+ * the entry's `product`. It is READ FROM the surface and holds nothing of its
+ * own: the grant is declared once, in the entry, where the manifest hash covers
+ * it. (Until 0.13.0 it stood beside the surface, and the hash did not.)
  */
-export const TOKEN_EXCHANGE_GRANTS: Readonly<Record<(typeof SCANNER_SURFACE.authenticates)[number]['product'], string>> = {
-    'azure-key-vault': CLIENT_CREDENTIALS_GRANT,
-    entra: CLIENT_CREDENTIALS_GRANT,
-    'gcp-iam': JWT_BEARER_GRANT,
-};
+export const TOKEN_EXCHANGE_GRANTS: Readonly<Record<TokenExchangeProduct, string>> = Object.fromEntries(
+    SCANNER_SURFACE.authenticates.map((entry) => [entry.product, entry.grant]),
+) as Record<TokenExchangeProduct, string>;
 
 /**
  * Whether one form body sent to a product's token endpoint is on the declared

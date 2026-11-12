@@ -13,7 +13,7 @@ read, made once from a checkout of that version, and never changed afterwards.
 | `inventory.example.json`, `inventory.example.csv` | The example inventory, and the same rows as CSV. That version scored both the same. A later version may have retired the schema they are written in; it then refuses both and says what changed, and the test holds it to that |
 | `configs/` | Every example configuration and answers file of that version (`deploy/examples`, `examples/code-only`) |
 
-`0.12.0` was made from commit `190f3fb`, an earlier commit of the current,
+`0.12.0` was made from commit `190f3fb`, a commit of that earlier,
 unreleased version: the last one before the results file
 gained `toolEvidenceSources`. It is the proof that the member is an addition.
 

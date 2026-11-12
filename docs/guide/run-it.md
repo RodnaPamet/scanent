@@ -24,7 +24,7 @@ from the source code. This needs internet access, and takes a few minutes the
 first time:
 
 ```bash
-export IMAGE=ghcr.io/rodnapamet/scanent:0.12.0
+export IMAGE=ghcr.io/rodnapamet/scanent:0.13.0
 git clone https://github.com/RodnaPamet/scanent.git
 docker build -f scanent/deploy/Dockerfile -t "$IMAGE" scanent
 ```
