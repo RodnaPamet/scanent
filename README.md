@@ -19,6 +19,12 @@ JSON and the signed report. See [Quick start](#quick-start-from-source) and
 [See your results locally](#see-your-results-locally). A container image is
 built and tested in CI; no image or package is published yet.
 
+**For the organisation being scanned:** [docs/guide/README.md](docs/guide/README.md)
+is a guide in plain language for an IT or security lead who is not a
+developer: what the scanner is and is not, what it reads and the access to
+grant, how to run a first scan, how to read the report, what to do about each
+finding, and the questions a security team asks.
+
 **For a security team:** [docs/network-and-permissions.md](docs/network-and-permissions.md)
 lists every request the scanner can make and every grant it asks for,
 [docs/threat-model.md](docs/threat-model.md) what it defends against and what
