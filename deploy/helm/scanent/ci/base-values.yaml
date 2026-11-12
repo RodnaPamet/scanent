@@ -1,0 +1,23 @@
+# The smallest install: the code-only example configuration, one credential
+# (the signing key) from an existing Secret, the default NetworkPolicy.
+config:
+  estate: acme-code
+  scanner:
+    agentId: scanent-acme-code
+    signingKeyEnv: SCANNER_SIGNING_KEY
+  outputs:
+    - kind: file
+      dir: /out
+  schedule:
+    everyHours: 24
+  sources:
+    - kind: code
+      product: langchain
+      roots:
+        - label: agents
+          path: /estate
+secrets:
+  existingSecret: scanent-credentials
+codeRoots:
+  - existingClaim: agents-code
+    mountPath: /estate

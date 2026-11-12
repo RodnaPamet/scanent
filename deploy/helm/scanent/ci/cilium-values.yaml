@@ -1,0 +1,20 @@
+# Exact hosts through a CiliumNetworkPolicy. Use with base-values.yaml.
+networkPolicy:
+  flavor: cilium
+  extraEgress:
+    - cidr: 10.20.0.0/16
+      port: 443
+egress:
+  fqdns:
+    - api.github.com
+    - iam.googleapis.com
+    - oauth2.googleapis.com
+secrets:
+  existingSecret: scanent-credentials
+  files:
+    - env: SCANNER_SIGNING_KEY
+      key: signing-key.pem
+    - env: GITHUB_READ_TOKEN
+      key: github-read-token
+    - env: GCP_SCANNER_KEY
+      key: gcp-key.json

@@ -1,0 +1,111 @@
+# scanent chart values. values.schema.json refuses any key that is not here.
+#
+# The chart holds no credential and has no value that can hold one. Credentials
+# live in a Secret you create (`secrets.existingSecret`) and reach the scanner
+# as files.
+
+image:
+  repository: ghcr.io/rodnapamet/scanent
+  # The image tag. Empty: the chart's appVersion. `latest` is refused.
+  tag: ""
+  # sha256:<64 hex>. When set it is used instead of the tag.
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# When a scan runs (cron syntax), and in which time zone (empty: the cluster's).
+schedule: "17 2 * * *"
+timeZone: ""
+# Pass --strict to scan: the Job fails (exit 3) when a source was incomplete or
+# no agent was found, instead of succeeding with the gap recorded in the run.
+strict: false
+activeDeadlineSeconds: 1800
+history:
+  successful: 3
+  failed: 5
+
+# The scanner configuration as an object; it is rendered to config.json. It
+# holds the NAMES of credential variables, never a value: the scanner refuses a
+# configuration holding anything shaped like a secret.
+# `scanent init` writes one; deploy/examples/ holds four.
+config: {}
+# Or the name of a ConfigMap you manage, holding the key `config.json` (and
+# `inventory.json`, when the configuration names /etc/scanent/inventory.json).
+existingConfigMap: ""
+
+secrets:
+  # The Secret holding every credential the configuration names. Required when
+  # `files` is not empty. The chart never creates it; NOTES.txt prints the
+  # command.
+  existingSecret: ""
+  # Each entry mounts one key of the Secret as a file and sets <env>_FILE to its
+  # path. `env` is the NAME the configuration gives the credential.
+  files:
+    - env: SCANNER_SIGNING_KEY
+      key: signing-key.pem
+
+# For a `code` source: claims holding the code, each mounted read-only at the
+# path a root of the configuration names.
+# - { existingClaim: agents-code, mountPath: /estate }
+codeRoots: []
+
+output:
+  # pvc: the chart creates a claim (kept when the release is removed).
+  # existingClaim: use `existingClaim`.
+  # emptyDir: nothing is kept after the pod ends. Refused unless the
+  # configuration also delivers each run somewhere else.
+  type: pvc
+  size: 1Gi
+  storageClassName: ""
+  existingClaim: ""
+
+# A forward proxy the scanner must use. No userinfo: a proxy password is a
+# credential, and this chart holds none.
+proxy:
+  httpsProxy: ""
+  noProxy: ""
+# A private certificate authority (for example a TLS-inspecting proxy's), from
+# a ConfigMap you manage. It is added to the public authorities; nothing turns
+# verification off.
+extraCa:
+  existingConfigMap: ""
+  key: ca.pem
+
+networkPolicy:
+  # kubernetes: a NetworkPolicy. It matches addresses and ports, not names, so
+  #   it cannot limit the scanner to exactly the hosts it reads. See README.md.
+  # cilium: a CiliumNetworkPolicy limited to exactly `egress.fqdns`.
+  # none: no policy.
+  flavor: kubernetes
+  dns:
+    namespace: kube-system
+    podLabels:
+      k8s-app: kube-dns
+  # Hosts on private addresses (a self-hosted LangSmith, an MCP server):
+  # - { cidr: 10.20.0.0/16, port: 443 }
+  extraEgress: []
+  # Your forward proxy's address. When set, the rule "TCP 443 to public
+  # addresses" is replaced by this one address and port.
+  proxy:
+    cidr: ""
+    port: 3128
+
+egress:
+  # The exact hosts the scanner reaches, from
+  # `scanent hosts --config config.json`. Used by the cilium flavor and by the
+  # egress proxy.
+  fqdns: []
+# Run the CONNECT-only proxy that ships in the image, limited to
+# `egress.fqdns`, and let the scanner reach nothing else.
+egressProxy:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 1Gi
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
