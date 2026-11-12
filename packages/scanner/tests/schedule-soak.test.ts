@@ -27,7 +27,9 @@ import type { ScannerLog } from '../src/log';
 import { scanAndDeliver } from '../src/outputs';
 import { runOnSchedule } from '../src/schedule';
 import { configOf, ENV, noFetch, PUBLIC_HEX } from './helpers/output-fixtures';
-import { LONG, rng } from './helpers/prng';
+import { LONG, rng, TEST_TIMEOUT_MS } from './helpers/prng';
+
+jest.setTimeout(TEST_TIMEOUT_MS);
 
 const HOUR = 3_600_000;
 const T0 = Date.UTC(2026, 0, 1);

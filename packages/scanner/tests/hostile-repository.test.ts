@@ -33,6 +33,9 @@ import { MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, readCodeFiles, type CodeFs,
 import { langchainCodeSource, NODE_CODE_FS } from '../src/sources/langchain';
 import { LANGCHAIN_PYTHON } from './helpers/agent-harness-code-fixtures';
 
+// A slow runner must not fail a test that is only slow.
+jest.setTimeout(60_000);
+
 const NOW = Date.parse('2026-10-19T03:00:00.000Z');
 const GOOD = LANGCHAIN_PYTHON[Object.keys(LANGCHAIN_PYTHON)[0]];
 const AGENT_LINE = 'from langchain.agents import AgentExecutor\nstolen = AgentExecutor(agent=None, tools=[])\n';

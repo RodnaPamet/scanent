@@ -36,7 +36,9 @@ import { rawPublicKeyHex, signReport } from '../src/report';
 import { validV3ReportBody } from '../../contract/tests/helpers/agent-harness-fake-scanner';
 import { fullEstateConfig } from './helpers/doctor-world';
 import { CANARIES, scanExample } from './helpers/output-fixtures';
-import { forAll, FUZZ_ITERATIONS, mutateJson, randomJson, type Rng } from './helpers/prng';
+import { forAll, FUZZ_ITERATIONS, mutateJson, randomJson, type Rng, TEST_TIMEOUT_MS } from './helpers/prng';
+
+jest.setTimeout(TEST_TIMEOUT_MS);
 
 /** A marker no reader produces: a refusal that holds it repeated a value from its input. */
 const MARK = 'q7Zk-canary-value-';

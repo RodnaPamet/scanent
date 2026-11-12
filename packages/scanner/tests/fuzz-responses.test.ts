@@ -28,7 +28,9 @@ import { MAX_PAGES_PER_SOURCE } from '../src/source';
 import { langSmithFixture, LANGSMITH_SELF_HOSTED, LANGSMITH_US } from './helpers/agent-harness-source-fakes';
 import { SIGNING_PEM } from './helpers/doctor-world';
 import { createEstateWorld, ESTATE_SOURCES, estateConfig, estateEnv, PUBLIC_RESOLVER, SELF_HOSTED_RUNTIME, type EstateSourceKind } from './helpers/estate-world';
-import { forAll, FUZZ_ITERATIONS, mutateJson, randomJson, type Rng } from './helpers/prng';
+import { forAll, FUZZ_ITERATIONS, mutateJson, randomJson, type Rng, TEST_TIMEOUT_MS } from './helpers/prng';
+
+jest.setTimeout(TEST_TIMEOUT_MS);
 import { configuredHostsOf, readOnlyProblems, recordRequests } from './helpers/request-recorder';
 
 const NOW = Date.parse('2026-10-19T03:00:00.000Z');

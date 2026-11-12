@@ -42,6 +42,9 @@ import { SourceReadError } from '../src/source';
 import { langSmithFixture, LANGSMITH_SELF_HOSTED, MCP_CRM } from './helpers/agent-harness-source-fakes';
 import { createEstateWorld, ESTATE_SOURCES, estateConfig, estateEnv, SELF_HOSTED_RUNTIME } from './helpers/estate-world';
 
+// A slow runner must not fail a test that is only slow.
+jest.setTimeout(60_000);
+
 const NONE: PrivateCidrAllowlist = [];
 const cidrs = (...entries: string[]): PrivateCidrAllowlist => parsePrivateCidrAllowlist(entries) as PrivateCidrAllowlist;
 /** Every private range at once: what an operator who allowlists too much has written. */

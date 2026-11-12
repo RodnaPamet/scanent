@@ -102,8 +102,12 @@ configured token missing from the environment leaves that server unread
 (`AUTH_FAILED`), and the other servers are still read.
 
 Each server is a host the customer names, so it is checked as the self-hosted
-LangSmith is: at configuration, and again before every request, with an optional
-`egressPrivateCidrAllowlist` per server. The source is complete only when every
+LangSmith is: at configuration, and again before every request (the handshake's
+second request included), with an optional `egressPrivateCidrAllowlist` per
+server. The name is resolved by this machine for the check and again by the
+request, so a resolver that changes its answer between the two is not caught;
+behind the bundled egress proxy it is, because the proxy resolves once and
+dials the address it checked. The source is complete only when every
 server was read to the end of its listing.
 
 ### The register
@@ -434,15 +438,27 @@ What the sources never do:
   other source, because a label in the estate being scanned is something its
   administrator can write.
 - **Leave their origin.** Every request is https, on the configured host, with
-  redirects refused; a next-page link anywhere else ends the read as
-  `PAGINATION_TORN`. Each source has a time box and a byte budget.
+  redirects refused; a next-page link to another host, or to another path on
+  the same host, ends the read as `PAGINATION_TORN`. Each source has a time box
+  and a byte budget.
 - **Run what they read.** The `code` source parses text. It follows no symbolic
   link, caps each file at 1 MiB and the whole read at 20,000 files and 128 MiB,
-  and stops at the scan's deadline, reporting each as its reason.
+  and stops at the scan's deadline, reporting each as its reason. A file is
+  opened without following a link and without blocking, and what was opened
+  must be a regular file, so a file swapped for a link or a pipe after it was
+  looked at is a location not read, never one followed. A file that does not
+  parse, however it fails, costs that file and no other.
 
 `packages/scanner/src/scanner-surface.ts` declares every request the scanner can make, and its
 hash is the report's `scan.scanner.manifestHash`. The tests hold every request
-the HTTP fakes see to that declaration.
+the HTTP fakes see to that declaration, and one test
+(`tests/read-only-proof.test.ts`) runs every source kind and every preflight
+against a recorder and fails on any request the declaration does not name, and
+on any declared request that nothing makes.
+[network-and-permissions.md](network-and-permissions.md) is that declaration
+rendered for a reviewer: every host, method and path, what is kept from each,
+and what is never requested. The report itself is specified in
+[contract.md](contract.md).
 
 ## What it may import
 

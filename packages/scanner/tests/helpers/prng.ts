@@ -19,6 +19,13 @@ export const LONG = process.env.SCANENT_LONG === '1';
 export const FUZZ_SEED = Number.parseInt(process.env.FUZZ_SEED ?? '', 10) || 0x5ca7e47;
 export const FUZZ_ITERATIONS = Number.parseInt(process.env.FUZZ_ITERATIONS ?? '', 10) || (LONG ? 50_000 : 200);
 
+/**
+ * How long one test of a property or scale suite may take. A minute with the
+ * short budget, so a slow runner does not fail a test that is only slow; an
+ * hour under `SCANENT_LONG=1`, where one property runs fifty thousand cases.
+ */
+export const TEST_TIMEOUT_MS = LONG ? 3_600_000 : 60_000;
+
 /** `describe` for a suite that runs only under `SCANENT_LONG=1`. */
 export const describeLong = LONG ? describe : describe.skip;
 

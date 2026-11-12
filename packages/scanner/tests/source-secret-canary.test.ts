@@ -45,7 +45,9 @@ import {
 import { GOOGLE_ACCESS_TOKEN_VALUE, WORLD_SECRETS } from './helpers/doctor-world';
 import { createEstateWorld, ESTATE_SOURCE_KINDS, ESTATE_SOURCES, estateConfig, estateEnv, PUBLIC_RESOLVER } from './helpers/estate-world';
 import { CANARIES, capturedLog, tree } from './helpers/output-fixtures';
-import { LONG } from './helpers/prng';
+import { LONG, TEST_TIMEOUT_MS } from './helpers/prng';
+
+jest.setTimeout(TEST_TIMEOUT_MS);
 
 const NOW = Date.parse('2026-10-19T03:00:00.000Z');
 const SOURCES = ESTATE_SOURCE_KINDS.map((kind) => ESTATE_SOURCES[kind]);

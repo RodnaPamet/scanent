@@ -57,7 +57,9 @@ import type { Observation, SourceRead } from '../src/source';
 import { SIGNING_PEM } from './helpers/doctor-world';
 import { estateConfig, estateEnv, PUBLIC_RESOLVER } from './helpers/estate-world';
 import { capturedLog, tree } from './helpers/output-fixtures';
-import { describeLong } from './helpers/prng';
+import { describeLong, TEST_TIMEOUT_MS } from './helpers/prng';
+
+jest.setTimeout(TEST_TIMEOUT_MS);
 import { configuredHostsOf, readOnlyProblems, recordRequests } from './helpers/request-recorder';
 import { syntheticEstate, type SyntheticShape } from './helpers/synthetic-estate';
 

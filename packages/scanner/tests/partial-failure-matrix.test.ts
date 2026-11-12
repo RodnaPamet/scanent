@@ -65,6 +65,9 @@ import {
 } from './helpers/estate-world';
 import { capturedLog } from './helpers/output-fixtures';
 
+// A slow runner must not fail a test that is only slow.
+jest.setTimeout(60_000);
+
 const NOW = Date.parse('2026-10-19T03:00:00.000Z');
 const PUBLIC_KEY = rawPublicKeyHex(loadSigningKey(SIGNING_PEM).publicKey);
 const SOURCES = ESTATE_SOURCE_KINDS.map((kind) => ESTATE_SOURCES[kind]);

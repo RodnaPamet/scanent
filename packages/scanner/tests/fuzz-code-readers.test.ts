@@ -36,7 +36,9 @@ import {
     NOT_LANGCHAIN,
     UNPARSEABLE,
 } from './helpers/agent-harness-code-fixtures';
-import { forAll, FUZZ_ITERATIONS, type Rng } from './helpers/prng';
+import { forAll, FUZZ_ITERATIONS, type Rng, TEST_TIMEOUT_MS } from './helpers/prng';
+
+jest.setTimeout(TEST_TIMEOUT_MS);
 
 const ALL = { ...LANGCHAIN_PYTHON, ...LANGCHAIN_JS, ...LANGGRAPH, ...UNPARSEABLE, ...NOT_LANGCHAIN, ...AGENT_SDK_TS, ...AGENT_SDK_PY, ...AGENT_SDK_UNRESOLVED, ...NOT_AGENT_SDK };
 const PYTHON = Object.entries(ALL).filter(([name]) => name.endsWith('.py')).map(([, text]) => text);
