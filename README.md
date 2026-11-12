@@ -9,14 +9,15 @@ reference), the tools it can call, the model endpoints it uses, and verdicts
 against a six-rung harness ladder (H0 to H5). The result is one signed JSON
 report.
 
-**Status: Phase 2, standalone results.** This repository is the scanner carved
-out of the Inflect Compliance repository (see
-[docs/EXTRACTION.md](docs/EXTRACTION.md) for what was moved and what was not),
-and it now works with no Inflect tenant at all: one command scans an estate
-and writes a page you can open, two spreadsheets, the results as JSON and the
-signed report. See [See your results locally](#see-your-results-locally). A
-container image is built and tested in CI; no image or package is published
-yet.
+**Status: Phase 3, client deployment (in progress).** This repository is the
+scanner carved out of the Inflect Compliance repository (see
+[docs/EXTRACTION.md](docs/EXTRACTION.md) for what was moved and what was not).
+It works with no Inflect tenant at all: `scanent init` writes a configuration
+and a signing key, `scanent doctor` checks that the estate can be read, and
+`scanent scan` writes a page you can open, two spreadsheets, the results as
+JSON and the signed report. See [Quick start](#quick-start-from-source) and
+[See your results locally](#see-your-results-locally). A container image is
+built and tested in CI; no image or package is published yet.
 
 ## Read-only by design
 
@@ -66,35 +67,87 @@ against fakes of the product's API.
 
 ## Quick start, from source
 
-Needs Node.js 22 or later, and `openssl` for the throwaway key.
+Needs Node.js 22 or later, and nothing else.
 
 ```bash
 npm ci
 npm run build
 
-# A throwaway signing key.
+# 1. Set up. Asks which sources you have, then writes ./scanent/config.json,
+#    ./scanent/scanent.env (the NAMES of the credentials to fill in) and a
+#    signing key, and prints the read-only access each source needs.
+npx scanent init
+
+# 2. Put each credential in scanent.env, then load it.
+set -a; . ./scanent/scanent.env; set +a
+
+# 3. Check: the configuration, the key, each credential, each host, each read.
+npx scanent doctor --config ./scanent/config.json
+
+# 4. Scan. The results are written under the directory you chose.
+npx scanent scan --config ./scanent/config.json
+```
+
+`init` never asks for a secret value, and refuses an answer that looks like
+one. `doctor` reads only: it writes and posts nothing, and it says "not
+observable" where it cannot check something rather than passing it. Both are
+described in [docs/scanner.md](docs/scanner.md#setting-up-an-estate), and the
+access each source needs is in [docs/access.md](docs/access.md).
+
+To try it on the example estate in this repository, with no credential and no
+network, give `init` its answers as a file:
+
+```bash
+cat > /tmp/scanent-answers.json <<ANSWERS
+{
+  "answers": "scanent-init-answers/1",
+  "estate": "example-code",
+  "outputDir": "$HOME/scanent-out",
+  "inventoryPath": "$(pwd)/examples/code-only/inventory.example.json",
+  "sources": [
+    { "kind": "code", "roots": [{ "label": "example", "path": "$(pwd)/examples/code-only/estate" }] }
+  ]
+}
+ANSWERS
+npx scanent init --dir /tmp/scanent-example --answers /tmp/scanent-answers.json
+set -a; . /tmp/scanent-example/scanent.env; set +a
+npx scanent doctor --config /tmp/scanent-example/config.json
+npx scanent scan --config /tmp/scanent-example/config.json
+```
+
+`doctor` exits 3 here, with one warning: the example estate is writable by
+you, and it advises mounting agent code read-only. The scan runs all the same.
+
+`npx scanent` and `npx aes` are the same program, and so is
+`node packages/scanner/dist/cli.js`. `npx scanent help` lists every command.
+
+### Without `init`
+
+A configuration can also be written by hand, and the signing key made with
+`openssl` and passed in the environment:
+
+```bash
 export SCANNER_SIGNING_KEY="$(openssl genpkey -algorithm ed25519)"
 
 # A configuration that reads the example estate. A code root is an absolute path.
 sed "s#__REPO__#$(pwd)#" examples/code-only/config.template.json > /tmp/scanent-example.json
 
 # The public half of the key, then one scan printed instead of posted.
-node packages/scanner/dist/cli.js public-key --config /tmp/scanent-example.json
-node packages/scanner/dist/cli.js scan --dry-run --config /tmp/scanent-example.json
-```
-
-`npm ci` also links the two commands, so after the build the same thing is
-`npx scanent` or `npx aes`:
-
-```bash
+npx scanent public-key --config /tmp/scanent-example.json
 npx scanent scan --dry-run --config /tmp/scanent-example.json
-npx aes public-key --config /tmp/scanent-example.json
 ```
 
 `--dry-run` prints the signed report on stdout and posts nothing; the log is
 JSON lines on stderr. The `code` source reads local files only, so this example
 makes no network request. Without `--dry-run` the scanner posts the report to
 the tenant the configuration's `inflect` block names.
+
+For any credential the configuration names, `<NAME>_FILE` may name a file
+holding the value instead of the variable holding it
+(`SCANNER_SIGNING_KEY_FILE=/path/to/key.pem`). Behind a proxy, set
+`HTTPS_PROXY` and `NODE_USE_ENV_PROXY=1`; to trust a private certificate
+authority, set `NODE_EXTRA_CA_CERTS` to its PEM file. See
+[docs/scanner.md](docs/scanner.md#secrets-from-files).
 
 ## See your results locally
 
@@ -216,6 +269,11 @@ meant to run everywhere. `--network none` suits this example only, because the
 `code` source reads local files; a source that reads an API needs a network.
 The mounted files must be readable by the user the container runs as (uid 1000
 unless `--user` says otherwise).
+
+`init`, `keygen`, `doctor` and `hosts` are in the image too. A credential can
+be given as a mounted file: set `<NAME>_FILE` to its path in the container.
+The image sets `NODE_USE_ENV_PROXY=1`, so `HTTPS_PROXY` and `NO_PROXY` take
+effect when they are set.
 
 With no arguments the image runs `schedule --config /etc/scanent/config.json`:
 one scan at once, then one every `schedule.everyHours`, each delivered to the

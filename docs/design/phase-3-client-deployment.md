@@ -1199,3 +1199,60 @@ Each has a default this note builds; none blocks the work.
 5. **Object-store output** for the chart. Default: not built; a volume only.
 6. **GitHub Release.** Attaching the bundle to a release needs
    `contents: write`. Default: the bundle is a workflow artifact.
+
+## 13. Implementation record: the command-line half
+
+What was built for P3.1 to P3.3 (the wizard, the preflight, secret files, proxy
+and certificate-authority support, the exit codes), and where it differs from
+the sections above. Sections 8 and 9.5 to 9.6 (Compose, Helm, the bundle, the
+release, the smoke steps) and `docs/quick-start.md` and `docs/deployment.md`
+are not part of this record.
+
+### Checked here
+
+- **The proxy.** On Node 22.22.0, with a local CONNECT proxy: `fetch` sends
+  its request through `HTTPS_PROXY` when `NODE_USE_ENV_PROXY=1`, and directly
+  when it is not set. Node 22 prints an experimental warning on stderr when it
+  does.
+  The same was then observed in the built image (Node 24.22.2, which sets
+  the variable itself): with `--network none` and a proxy listening inside
+  the container, the proxy saw `CONNECT api.github.com:443`, and a host named
+  in `NO_PROXY` was dialled directly.
+- **`NO_PROXY`.** Observed in the Node 22 run: a bare name exempts that name
+  only (`example.test` does not exempt `sub.example.test`); `.suffix` and
+  `*.suffix` exempt subdomains and not the name itself; `name:port` exempts
+  that port only. Section 6.2 said a bare name is a suffix; `isProxied`
+  follows what Node does.
+- **No test pinned exit code 1 for a refused configuration.** The existing
+  tests pin that `main` REJECTS for a missing, malformed or refused
+  configuration, so `main` still rejects with the same error, and the process
+  (`run`) exits 4 through `exitCodeForError`. Section 7 said `main` returns 4.
+- **The manifest hash is unchanged**; `outputs.test.ts`, which pins it by
+  value, passes unmodified.
+- **The prompts on a real terminal** (a pseudo-terminal, answers piped in at
+  once). `readline`'s `question` drops lines that arrive before the question
+  that wants them, so the terminal front end queues lines itself.
+
+### Differences from the note
+
+| Section | The note | What was built, and why |
+|---|---|---|
+| 2.2 | The answers schema lists each source's fields | A source is checked for its `kind` only in the answers schema, and for everything else by the configuration's own schema in the planner: one copy of the rules. `signingKeyEnv` and `inflect.apiKeyEnv` may be given |
+| 2.4 | The signing key's path in `scanent.env` is the path the container sees | It is the path `init` wrote the key to (`<dir>/signing-key.pem`). `init` cannot know where a directory will be mounted; run it with the directory mounted where the scan will have it, and the two are the same |
+| 2.8 | Exit codes 0, 2, 4 | Also 1 when the directory or a file cannot be written (a full disk, a permission) |
+| 5.3 | `ProbeStep` is `{ id, outcome, observed }`, and each source produces all six checks | A step is `exchange`, `read` or `write`, with the host asked. `credential.present` and `host.resolves` are decided by the runner from the configuration, which already knows each source's variable and hosts |
+| 5.3 | `code`: `write.absent` uses `access(W_OK)` in the source | The runner makes that call. The `code` source's file operations are declared in the surface (`lstat`, `readdir`, `readFile`), and adding one would change the manifest hash |
+| 5.3 | Entra passes when `roles` is exactly `Application.Read.All` | It passes when no role writes, and names the roles it saw. A token with no `roles` claim is not observable |
+| 5.3 | GitHub warns on `repo`, `workflow`, `admin:…`, `write:…`, `delete_repo` | Also `public_repo`, which writes to public repositories. A classic token holding none of them passes, naming its scopes |
+| 5.3 | The ingest is reported as `read.permitted`, not observable | The check is named `post.permitted`: what it cannot observe is a post |
+| 5.3 | Outcomes for 401, 403, 429 and no answer | Three more, each seen while testing: the time box ending after some requests were answered (the rest are blocked, not a network failure); a credential that cannot be used at all, such as a Google key that is not a key file (nothing is sent; `authenticated` fails); a 5xx or an answer that is not the API's (`read.permitted` fails as NETWORK without blaming the credential) |
+| 5.4 | `proxy` fails when `HTTPS_PROXY` is set without `NODE_USE_ENV_PROXY=1` | Not applicable for a configuration that reaches no host: there is no request for a proxy to carry |
+| 6.5 | `doctor` refuses to run with `NODE_TLS_REJECT_UNAUTHORIZED=0` | It runs its local checks, fails `tls.verification`, contacts no source (each is blocked behind that check) and exits 4. `scan` and `schedule` refuse outright, as written |
+| 7 | `schedule` ignores `--strict` | `schedule` refuses it (exit 2). The command line's rule is that a flag is refused, never ignored |
+| 7 | An unknown command | Now refused before the configuration is read (it was read first). Same message, same exit code 2 |
+
+### Not established
+
+- No source was probed against the real product. Every probe is a request the
+  source's `read` already makes, against the same fakes the reads are tested
+  with.
