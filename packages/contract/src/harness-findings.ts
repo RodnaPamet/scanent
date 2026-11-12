@@ -167,6 +167,12 @@ import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
  *
  * It walks any JSON-shaped value, so the same function checks whatever else is
  * about to be written beside a report: local results, an inventory, a diff.
+ *
+ * A member's NAME is content too. A strict schema fixes the names of a report
+ * body, but an inventory and a diff input are not report bodies, and a name
+ * with a secret's shape would be stored like any value. So a secret-shaped
+ * name is a hit as well, and the path says `<key>` in its place: the path is
+ * what the refusal prints, and it must not carry the secret it refuses.
  */
 export function firstSecretShapedMember(body: unknown): string | null {
     const walk = (node: unknown, path: string): string | null => {
@@ -180,6 +186,7 @@ export function firstSecretShapedMember(body: unknown): string | null {
         }
         if (node !== null && typeof node === 'object') {
             for (const [key, value] of Object.entries(node)) {
+                if (looksLikeSecret(key)) return path ? `${path}.<key>` : '<key>';
                 const hit = walk(value, path ? `${path}.${key}` : key);
                 if (hit) return hit;
             }

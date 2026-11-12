@@ -169,11 +169,13 @@ Stated plainly. None of these is closed by the code.
 3. **Okta API tokens may be only partly visible.** The token listing may show
    only the tokens the scanner's own administrator can see. Tokens it cannot
    see are not reported, and the source still reads as complete.
-4. **A secret-shaped object key in a refused report is printed.** When a
-   report is refused because a member has a secret's shape, the refusal names
-   the member's path, and a path can contain a key. A key that is itself a
-   secret would be printed to the operator's terminal. It is not written to a
-   file or posted. Changing this is a contract decision that is open.
+4. **A secret-shaped object key is refused, by shape only.** A report, an
+   inventory or a comparison input is refused when a member, or a member's
+   name, has a secret's shape. The refusal names the member's path, with
+   `<key>` where such a name would be, so it does not print what it refuses.
+   (Until 0.13.0 the name was printed to the operator's terminal.) The check
+   knows the shapes listed in the contract and no others: a name or a value
+   that is a secret of no known shape passes.
 5. **DNS rebinding on the direct path.** Without scanent's proxy, the address
    check and the connection resolve the name separately. A resolver that
    answers differently inside that gap can send one request, with that host's

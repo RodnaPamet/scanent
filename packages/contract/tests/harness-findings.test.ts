@@ -433,6 +433,21 @@ describe('a secret-shaped value anywhere is found, and named by path', () => {
         b.scan.scanner.version = secret();
         expect(firstSecretShapedMember(b)).toBe('scan.scanner.version');
     });
+
+    it('a secret-shaped member NAME is a hit, and the path says <key> where the name would be', () => {
+        // At the root, nested, and inside an array: the path never repeats the name.
+        const root = firstSecretShapedMember({ [secret()]: 'plain' });
+        expect(root).toBe('<key>');
+        const nested = firstSecretShapedMember({ rows: [{ id: 'a' }, { labels: { [secret()]: 'plain' } }] });
+        expect(nested).toBe('rows[1].labels.<key>');
+        for (const at of [root, nested]) expect(at).not.toContain(secret());
+        // The name is refused whatever its value holds, and before the value is looked at.
+        expect(firstSecretShapedMember({ a: { [secret()]: { deeper: secret() } } })).toBe('a.<key>');
+        // Members are read in order: an earlier secret-shaped value is still the one named.
+        expect(firstSecretShapedMember({ first: secret(), [secret()]: 'plain' })).toBe('first');
+        // A name that only looks unusual is not a hit.
+        expect(firstSecretShapedMember({ 'api-key-name': 'plain', OPENAI_API_KEY: 'env://OPENAI_API_KEY' })).toBeNull();
+    });
 });
 
 describe('the shortfall finding is described one way', () => {

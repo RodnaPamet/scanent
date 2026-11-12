@@ -184,7 +184,9 @@ anything is stored:
    (`looksLikeSecret`, `firstSecretShapedMember`). The shapes are a short
    list on purpose: GitHub tokens, AWS access key ids, Slack tokens, `sk-` and
    `sk-ant-` keys, a PEM private key header, a JSON web token, and a URL with a
-   password in its userinfo. A match inside a longer string is a match.
+   password in its userinfo. A match inside a longer string is a match. A
+   member's name is checked as a value is, and the refusal writes `<key>` in
+   its place.
 
 A refusal names the member's path and never the value.
 

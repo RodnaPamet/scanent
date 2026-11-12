@@ -116,8 +116,6 @@ to add sources that evidence H4 and H5 is an open product decision (issue 15).
   a read (issue 19).
 - **An incomplete scan exits 0 by default.** `--strict` opts in to a non-zero
   exit. Changing the default is an open decision (issue 19).
-- **A secret-shaped object key is printed in a refusal message** by the
-  contract's check (issue 17; threat model, residual risk 4).
 
 ## Hardening follow-ups
 
