@@ -120,18 +120,19 @@ when it has happened once, and say in which release.
 - `sign-bundle.sh` with a real `cosign`: run against a stand-in only.
 - The release workflow's `gates` job, and its check that the tagged commit is
   on main. The check's script has been run against a local repository.
-- Every workflow as a workflow: nothing has been pushed since they were
-  written. That is `ci.yml` in its current form, `release.yml`, `codeql.yml`
-  (CodeQL), `scorecard.yml` (Scorecard) and `long-tests.yml`.
-- The Grype gate and the Syft SBOM step. Of the image scans, only Trivy has
-  run, on a workstation; the SBOMs made there were Trivy's.
-- The `npm audit` gate as a workflow step.
-- The `chart-install` job (kind) and the `image-podman` job: written and
-  reviewed, first run when pushed. Podman was not available where they were
-  written.
+- The release workflow as a workflow, by tag or by hand, and with it the Syft
+  SBOM step. Of the image scans, Trivy and Grype have run in CI; no SBOM has
+  been made by Syft.
+- The long-test workflow (`long-tests.yml`).
 - The arm64 image: built and bundled on a workstation, never started. It is
   built and tested only by the release workflow's arm64 runner.
-- The test suite on Node 24, the version the image runs. It has run on
-  Node 22 only.
+- The last step of the smoke test under rootless Podman: the `image-podman`
+  job leaves the egress overlay out.
+
+Run for the first time on 2026-11-12, on `main`: `ci.yml` in its current form
+(the `checks` job on Node 22 and Node 24, with the `npm audit` and licence
+gates; `image` with Trivy and Grype; `image-podman`; `chart`;
+`chart-install` on kind), `codeql.yml` and `scorecard.yml`.
+
 - The 72-hour soak.
 - A pilot against a real estate of each provider.

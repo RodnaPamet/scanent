@@ -28,6 +28,18 @@ data it touches (with a DPIA template), and
 signature, SBOM and provenance. Report a vulnerability as
 [SECURITY.md](SECURITY.md) says.
 
+The [security intake pack](docs/security-pack/README.md) is the index for a
+reviewer: architecture, a table of each control with the code that enforces it
+and the test that proves it, and a blunt page on what has and has not been
+done to test the scanner. No pilot on a real estate, no external penetration
+test and no signed release exist yet.
+
+**For whoever arranges a scan:** the [engagement kit](docs/engagement/README.md)
+has a scoping checklist, a ready-to-send read-only access request for each
+source, a data-handling statement, a run-book and how to make a sample report
+from made-up data. [docs/roadmap.md](docs/roadmap.md) lists what is not in this
+version.
+
 **For whoever operates it:** [docs/operations.md](docs/operations.md) has the
 log's events and fields, the exit codes, and `scanent support-bundle`.
 

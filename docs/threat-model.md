@@ -148,7 +148,7 @@ every example configuration.
 | S, T | A client runs an image or a bundle that the release did not produce | Images are signed by digest, keyless, by the release workflow at the tag; the bundle's checksum list is signed the same way, and `verify.sh` and `load.sh` refuse a bundle whose signature is missing unless told the bundle is one you built. `.github/workflows/release.yml`, `deploy/airgap/verify.sh`, `docs/verify-a-release.md` | `packages/scanner/tests/deploy-templates.test.ts`; the first tagged release for the signing itself |
 | S, T | A tag is pushed on a commit that is not on main, or that fails the tests | The release workflow first holds the tagged commit to what a commit on main is held to (the dependency gates, lint, type-check, the tests under the coverage gate, the reproducible build), and refuses a tag whose commit main does not hold. Nothing is built or signed before that passes. `.github/workflows/release.yml` | `packages/scanner/tests/deploy-templates.test.ts`; never run on GitHub |
 | T | A dependency or a base image is replaced | The lockfile's integrity hashes decide what is installed, with no install script; both base images are pinned by digest; every action is pinned by commit. `deploy/Dockerfile` | `packages/scanner/tests/image.test.ts` |
-| T | A vulnerable dependency or base ships | Written as gates: Trivy and Grype on the image for fixed high and critical findings; `npm audit` on production dependencies; a licence allowlist; CodeQL. Of these, only Trivy and the licence allowlist have run, and only on a workstation; the others have never executed (see [What has not been done](#what-has-not-been-done)). `.github/workflows/ci.yml`, `scripts/check-licences.js` | The gates themselves, once they run; `packages/scanner/tests/supply-chain.test.ts` holds how they are written |
+| T | A vulnerable dependency or base ships | Written as gates: Trivy and Grype on the image for fixed high and critical findings; `npm audit` on production dependencies; a licence allowlist; CodeQL. Each has run in CI on `main`; CodeQL's findings have not been reviewed (see [What has not been done](#what-has-not-been-done)). `.github/workflows/ci.yml`, `scripts/check-licences.js` | The gates themselves, once they run; `packages/scanner/tests/supply-chain.test.ts` holds how they are written |
 | R | Nobody can say what is in the image | A CycloneDX SBOM per image, attached as an attestation, in the release and in the bundle; build provenance for the pushed manifest, for each architecture's image and for the bundle's archive | `packages/scanner/tests/deploy-templates.test.ts` |
 | E | The image gives an attacker tools | No shell, no package manager, uid 1000, and it runs with a read-only root, no capability and no privilege gain. `deploy/Dockerfile`, `deploy/compose.yaml` | `deploy/smoke.sh` (step 1), `packages/scanner/tests/image.test.ts` |
 | T | A version is replaced after release | A version already in the registry is never pushed again; no `latest` tag exists. `.github/workflows/release.yml` | `packages/scanner/tests/deploy-templates.test.ts` |
@@ -248,16 +248,22 @@ Stated plainly. None of these is closed by the code.
   against fakes written from the providers' documentation. False positives and
   false negatives per provider are not measured.
 - The 72-hour soak has not been run; a five-minute one has.
-- Keyless signing, the attestations and the cluster test run only on GitHub's
-  runners. They are written and reviewed; they first run when pushed and at the
-  first tag. No release exists, so nothing has been signed and no client-side
-  verification command has been run against a real signature.
-- None of the workflows has run on GitHub. The gates this page cites are
-  therefore written and tested for their shape, and most have never executed:
-  the Grype scan, the Syft SBOM step, CodeQL, Scorecard, `npm audit` as a
-  workflow step, the long-test workflow, the release workflow's own gates and
-  its on-main check, and the rootless Podman job. Of the image scans only
-  Trivy has run, on a workstation.
+- Keyless signing and the attestations run only on GitHub's runners, at a
+  tag. They are written and reviewed. No release exists, so nothing has been
+  signed and no client-side verification command has been run against a real
+  signature. The release workflow has never run, in any of its jobs: its own
+  gates, its on-main check, the Syft SBOM step, the arm64 build.
+- The long-test workflow has never run on GitHub.
+- CI first ran on GitHub in its present form on 2026-11-12, which is one day
+  of history: lint, type-check, build and the tests on Node 22 and Node 24, `npm audit`, the licence
+  allowlist, the Trivy and Grype scans, the cluster test, the rootless Podman
+  job, CodeQL and Scorecard. Under rootless Podman the smoke test runs
+  without its last step, the egress overlay. CodeQL's and Scorecard's
+  findings have not been reviewed.
 - The arm64 image has been built and bundled, never started.
-- The test suite has run on Node 22 only. Node 24, the version the image runs,
-  is the other half of CI's matrix and has not run it.
+- The repository settings the release checklist requires (private
+  vulnerability reporting, secret scanning, branch and tag protection) were
+  not on when last read, on 2026-11-12.
+
+`docs/security-pack/assurance-status.md` says the same at more length, with
+what has been done beside it.
