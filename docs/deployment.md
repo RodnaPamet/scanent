@@ -156,12 +156,15 @@ tar -xf scanent-<version>-airgap.tar && cd scanent-<version>-airgap
 - `verify.sh` fails when a file is changed, missing or added, and when
   anything is present that is not a regular file (a symbolic link) or is an
   empty directory.
-- **A released bundle is signed.** The list of checksums carries a signature
-  made by the release workflow (`signatures/SHA256SUMS.sigstore.json`). With
-  `cosign` on the path, `./verify.sh --require-signature` checks it; with the
-  signature present and no `cosign`, `verify.sh` fails and says the signature
-  was not checked, unless you pass `--no-signature`. The checksums alone
-  detect a damaged copy, not a replaced one.
+- **A released bundle is signed, and `load.sh` requires the signature.** The
+  list of checksums carries a signature made by the release workflow
+  (`signatures/SHA256SUMS.sigstore.json`), and `./load.sh` (and `./verify.sh`)
+  with no flag passes only when it is there and `cosign`, on the path,
+  verifies it. A bundle with no signature fails; so does a signed one with no
+  `cosign`, unless you pass `--no-signature`, which accepts the checksums
+  alone and says so. For a bundle you built yourself, which carries no
+  signature, pass `--unsigned`. The checksums alone detect a damaged copy, not
+  a replaced one.
   [verify-a-release.md](verify-a-release.md) has the whole procedure,
   including a machine with no network.
 - Before you carry the bundle anywhere, compare the archive's SHA-256 with the

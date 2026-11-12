@@ -85,5 +85,7 @@ whether a configuration that scanned before needs to change.
 
 ## Verifying what you run
 
-Releases are signed, with an SBOM and build provenance:
-`docs/verify-a-release.md`.
+No release has been published yet. From the first release, releases are
+signed, with an SBOM and build provenance, and `docs/verify-a-release.md` has
+the commands that check them. Until then there is no signed image or bundle
+to verify, and nothing on that page has been run against a real signature.

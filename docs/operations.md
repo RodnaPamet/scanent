@@ -135,17 +135,27 @@ Read it before you send it: it is yours to send or not.
 
 | Member | What it holds |
 |---|---|
+| `support` | The schema id, `scanent-support/1` |
+| `at` | When the bundle was made |
+| `identifiers` | `REPLACED` or `INCLUDED`: whether the names below are tokens or the names themselves |
 | `versions` | The scanner's version and manifest hash, the report contracts and the ladder version it speaks, the schemas of its files, and Node's version, platform and architecture |
-| `config` | The kinds of source and how many entries each lists, the outputs, the schedule and time box, whether an inventory and an egress proof are configured, and for each credential variable its NAME, what uses it, and whether it is set in the environment, as a file, both, or not at all |
+| `config` | The estate's label and, when one is configured, the tenant's host and slug (each a token by default). The kinds of source, how many entries each lists, and each source's hosts with what each is for (a host your configuration names is a token by default; a host that is the same for everyone is named). The outputs (a directory is a token by default) and `retainRuns`, the schedule and time box, whether an inventory and an egress proof are configured. For each credential variable: its NAME, what uses it, and whether it is set in the environment, as a file, both, or not at all |
 | `configProblem` | Why the configuration could not be read, when it could not. The bundle is still made |
-| `environment` | Whether each of these is set, and nothing of its value: a proxy, `NO_PROXY`, `NODE_USE_ENV_PROXY`, an extra certificate authority, `NODE_TLS_REJECT_UNAUTHORIZED=0`, and the egress proxy's variables |
-| `doctor` | With `--doctor` only: each check's scope, id and status |
-| `lastRun` | From the output directory, when it holds a run: when it was, whether it was complete, each source's status and reason, counts of agents and of findings by code, and the size of each file |
+| `environment` | Whether each of these is set, and nothing of its value: a proxy, `NO_PROXY`, `NODE_USE_ENV_PROXY`, an extra certificate authority, `NODE_TLS_REJECT_UNAUTHORIZED=0`, the egress proxy's allowlists, and `EGRESS_PROXY_CHECKS_ADDRESSES`. And three facts worked out from them: whether this Node honours the proxy variables, whether a proxy is in effect, and whether the egress proxy is the one checking addresses |
+| `doctor` | With `--doctor` only: whether the estate is ready, the exit code `doctor` would give, the count of checks by status, and each check's scope, id and status, with the class of a failure and the cause of a skipped check. A scope's label is a token by default, and a check's text is left out |
+| `lastRun` | From the output directory, when it holds a run: the scan id (its first part a token by default, its timestamp kept), when it was, whether it was complete, the report contract and the results schema, the scanner's version and manifest hash, why the results could not be read if they could not, each source's status, reason, rows and agents, counts of findings by code, **one entry per agent** (its id, a token by default; the sources it was found through; whether it was judged; its level), and the name and size of each file |
 
-**What it never holds.** A credential's value: the command does not read one,
-and it opens no secret file. A request or a response. A finding's text. If
-anything in the document has the shape of a secret, the command writes nothing
-and says where.
+**What it never holds.** A credential's value. A request or a response. A
+finding's text. If anything in the document has the shape of a secret, the
+command writes nothing and says where.
+
+**Whether it reads a credential depends on `--doctor`.** Without `--doctor`
+the command resolves no credential and opens no secret file: it asks only
+whether each variable is set. With `--doctor` it runs the preflight, and the
+preflight is `scanent doctor`: it resolves every credential the configuration
+names, opens every secret file, the signing key among them, and sends each
+credential to its own source to check it. No value is written to the bundle
+in either case.
 
 **What it replaces.** Every name of your estate is replaced by a token such as
 `host-3f9a1c2e`: the estate's label, the hosts and paths your configuration
@@ -157,15 +167,21 @@ token cannot be turned back into a name. The text of a doctor check is left
 out, because it may name a host. Hosts that are the same for everyone
 (`graph.microsoft.com`, `api.github.com`) are kept.
 
-Credential variable names are kept as they are. If your names say more than
-you want to send, edit them out.
+Credential variable names are kept as they are, with one exception. `init`
+names an MCP server's token variable after the server's label
+(`MCP_<LABEL>_TOKEN`), so that name is derived from an identifier: when a
+configuration uses it, the bundle writes the label's token in its place
+(`MCP_label-3f9a1c2e_TOKEN`), the same token the label has everywhere else in
+the bundle. Every other variable name is one `init` gives to everyone
+(`OKTA_API_TOKEN`) or one you chose, and is written as it is. If a name you
+chose says more than you want to send, edit it out.
 
 | Flag | Effect |
 |---|---|
 | `--out <file>` | Write to a new file, mode `0600`. An existing file is never replaced. Without it the document goes to stdout |
 | `--runs <dir>` | Read the last run from this output directory, when the configuration names none |
 | `--doctor` | Include the checks of `scanent doctor`. This makes the requests `doctor` makes; without it the command makes none |
-| `--include-identifiers` | Keep the names instead of tokens, and the text of each doctor check. Credential values are still never read |
+| `--include-identifiers` | Keep the names instead of tokens, and the text of each doctor check. That text can name hosts, among them the outbound proxy's, and gives the signing key's public fingerprint. No credential value is written |
 
 A run does not record its exit code or how long it took; the bundle says so
 under `lastRun.notRecorded`. Send the scheduler's own record of those with it.

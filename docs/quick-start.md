@@ -284,11 +284,12 @@ A code-only estate then needs no network at all; other sources need a route to
 their own hosts and nothing else.
 
 The checksums show the copy is complete and undamaged. Where it came from is
-shown by the signature a released bundle carries: with `cosign` installed, run
-`./verify.sh --require-signature` before `./load.sh`
-([verify-a-release.md](verify-a-release.md)). Without `cosign`, `load.sh`
-stops and says the signature was not checked; `./load.sh --no-signature`
-accepts the checksums alone.
+shown by the signature a released bundle carries, and `load.sh` requires it:
+with [`cosign`](verify-a-release.md) on the path it is verified, and a bundle
+whose signature is missing or does not verify loads nothing. Without `cosign`,
+`load.sh` stops and says the signature was not checked;
+`./load.sh --no-signature` accepts the checksums alone. A bundle you built
+yourself carries no signature: `./load.sh --unsigned`.
 
 ## Behind a proxy, or a proxy that inspects TLS
 

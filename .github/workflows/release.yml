@@ -1,16 +1,28 @@
 # The release of scanent's image and air-gapped bundle.
 #
-#   build     one image per architecture, each built and smoke-tested on a
-#             runner of that architecture, scanned (the Trivy and Grype
-#             gates), and described by a CycloneDX SBOM made from that image
-#   bundle    the air-gapped bundle from the two images and their SBOMs,
-#             checked by loading it. On a pushed tag its SHA256SUMS is signed
-#   publish   a pushed tag only, and only after the bundle check passed: push
-#             both images and one manifest over them, sign the three by digest,
-#             attach each SBOM as an attestation, and attest the build's
-#             provenance. A version already in the registry is never pushed again
-#   release   a pushed tag only: a GitHub release holding the bundle and its
-#             SHA-256, the SBOMs, and the signed SHA256SUMS
+#   gates        what ci.yml's `checks` job holds a commit to, run again on the
+#                commit being released: the dependency gates (npm audit, the
+#                licence allowlist), lint, type-check, build, the tests under
+#                the coverage gate, and the reproducible-build check. On a
+#                pushed tag it first refuses a commit that is not on main.
+#                Nothing below starts unless it passes
+#   build        one image per architecture, each built and smoke-tested on a
+#                runner of that architecture, scanned (the Trivy and Grype
+#                gates), and described by a CycloneDX SBOM made from that image
+#   bundle       the air-gapped bundle from the two images and their SBOMs,
+#                unsigned, checked by loading it. It cannot ask for the signing
+#                identity
+#   sign-bundle  a pushed tag only: sign the bundle's SHA256SUMS, make the
+#                archive again with the signature inside, check that one as a
+#                site would, and attest its provenance
+#   publish      a pushed tag only, and only after the signed bundle's check
+#                passed: push both images and one manifest over them, sign the
+#                three by digest, attach each SBOM as an attestation, and
+#                attest the build's provenance for the manifest and for each
+#                image. A version already in the registry is never pushed again
+#   release      a pushed tag only: a GitHub release holding the bundle and its
+#                SHA-256, the SBOMs, the signed SHA256SUMS, and the provenance
+#                attestations
 #
 # A pushed tag `v<MAJOR>.<MINOR>.<PATCH>` publishes. A manual run
 # (workflow_dispatch) builds, tests and bundles, and pushes and signs nothing,
@@ -41,9 +53,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# Read the repository, and nothing else. `publish` alone may write packages
-# and attestations, `publish` and `bundle` alone may ask for the signing
-# identity, and `release` alone may write a release.
+# Read the repository, and nothing else. `publish` alone may write packages,
+# `publish` and `sign-bundle` alone may ask for the signing identity and write
+# attestations, and both run for a pushed tag only; `release` alone may write
+# a release.
 permissions:
   contents: read
 
@@ -54,8 +67,91 @@ env:
   SYFT_VERSION: v1.57.1
 
 jobs:
+  # A tag can be pushed on any commit. What is signed below is signed with the
+  # identity docs/verify-a-release.md tells a client to trust, so the commit is
+  # held here to everything a commit on main is held to, whatever CI said about
+  # it or did not: the steps from `Install` to `Reproducible build` are
+  # ci.yml's, word for word (a test holds the two files to each other).
+  gates:
+    name: The commit passes what main is held to
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The whole history: the next step asks whether main holds this commit.
+          fetch-depth: 0
+
+      # A release is cut from main. A tag on a commit of some other branch, or
+      # of no branch, is refused before anything is installed.
+      - name: The tagged commit is on main
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || { echo "origin/main was not fetched; the check cannot be made, so the release stops" >&2; exit 1; }
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "the tagged commit $GITHUB_SHA is not on main; a release is cut from main" >&2
+            exit 1
+          fi
+          echo "on main: $GITHUB_SHA"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          # The version the image runs, and the one ci.yml runs the coverage gate on.
+          node-version: 24
+          cache: npm
+
+      # Exactly the lockfile's tree, or a failure. No install script runs.
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # Production dependencies only: what runs in a client's estate. A registry
+      # that does not answer is retried; after the retries the gate fails
+      # closed, because an audit that could not run found nothing.
+      - name: "Gate: npm audit of the production dependencies (moderate and above)"
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            set +e
+            npm audit --omit=dev --audit-level=moderate --json > audit.json 2> audit.err
+            code=$?
+            set -e
+            # An answer is a report that holds the audit's own metadata. Anything else is the registry failing.
+            if node -e 'const a = JSON.parse(require("node:fs").readFileSync("audit.json", "utf8")); process.exit(a.metadata && a.metadata.vulnerabilities ? 0 : 1)' 2> /dev/null; then
+              node -e 'const v = JSON.parse(require("node:fs").readFileSync("audit.json", "utf8")).metadata.vulnerabilities; console.log(JSON.stringify(v))'
+              [ "$code" -eq 0 ] || { npm audit --omit=dev --audit-level=moderate || true; echo "npm audit found a vulnerability of moderate severity or above" >&2; exit 1; }
+              exit 0
+            fi
+            echo "npm audit gave no report (attempt $attempt); retrying" >&2
+            sleep $((attempt * 15))
+          done
+          echo "npm audit gave no report after four attempts; the gate fails closed" >&2
+          cat audit.err >&2 || true
+          exit 1
+
+      # Every production package's licence is on the allowlist, or the build stops.
+      - name: "Gate: licences of the production dependencies"
+        run: node scripts/check-licences.js
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Test with coverage (gate)
+        run: npm run test:coverage
+
+      - name: Reproducible build
+        run: node scripts/check-reproducible-build.js
+
   build:
     name: Image (linux/${{ matrix.arch }})
+    needs: gates
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     strategy:
@@ -184,8 +280,8 @@ jobs:
     name: Push the images and the manifest
     # A PUSHED tag: a manual run on a tag ref builds and bundles, and pushes nothing.
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    # The bundle job loads and scans with what a site would receive; a version whose bundle fails is not published.
-    needs: [build, bundle]
+    # `sign-bundle` verifies, loads and scans with what a site would receive; a version whose bundle fails is not published.
+    needs: [build, bundle, sign-bundle]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -308,15 +404,57 @@ jobs:
           cosign attest --yes --type cyclonedx --predicate sboms/amd64.cdx.json "${IMAGE_REPOSITORY}@${AMD64}"
           cosign attest --yes --type cyclonedx --predicate sboms/arm64.cdx.json "${IMAGE_REPOSITORY}@${ARM64}"
 
-      # Provenance for the digest that was tested and pushed: which workflow,
+      # Provenance for each digest that was tested and pushed: which workflow,
       # at which commit, produced it. Stored with the repository's attestations
-      # and beside the image.
+      # and beside the image. One for the manifest, and one for each
+      # architecture's image: that is the digest a node runs, and the one a
+      # client is told to verify.
       - name: Attest the build's provenance
+        id: provenance-index
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ${{ env.IMAGE_REPOSITORY }}
           subject-digest: ${{ steps.digests.outputs.index }}
           push-to-registry: true
+
+      - name: Attest the amd64 image's provenance
+        id: provenance-amd64
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.digests.outputs.amd64 }}
+          push-to-registry: true
+
+      - name: Attest the arm64 image's provenance
+        id: provenance-arm64
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_REPOSITORY }}
+          subject-digest: ${{ steps.digests.outputs.arm64 }}
+          push-to-registry: true
+
+      # The attestations as files, for the release: a site with no network can
+      # then be handed them. An attestation that was not written stops here.
+      - name: Keep the provenance attestations
+        env:
+          INDEX_BUNDLE: ${{ steps.provenance-index.outputs.bundle-path }}
+          AMD64_BUNDLE: ${{ steps.provenance-amd64.outputs.bundle-path }}
+          ARM64_BUNDLE: ${{ steps.provenance-arm64.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          mkdir provenance
+          test -s "$INDEX_BUNDLE" && cp "$INDEX_BUNDLE" "provenance/scanent-${VERSION}-image.provenance.jsonl"
+          test -s "$AMD64_BUNDLE" && cp "$AMD64_BUNDLE" "provenance/scanent-${VERSION}-linux-amd64.provenance.jsonl"
+          test -s "$ARM64_BUNDLE" && cp "$ARM64_BUNDLE" "provenance/scanent-${VERSION}-linux-arm64.provenance.jsonl"
+          [ "$(find provenance -type f -size +0 | wc -l)" -eq 3 ]
+
+      - name: Upload the provenance attestations
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: provenance-images
+          path: provenance/
+          if-no-files-found: error
+          retention-days: 30
 
       # What a client will run, run here first: the signature verifies for the
       # identity docs/verify-a-release.md names, or the release stops.
@@ -346,14 +484,13 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # No identity token here, on any run: this job runs the repository's own
+    # scripts (build-bundle.sh, smoke.sh), on a manual run from any branch. The
+    # signature is made by `sign-bundle`, which runs for a pushed tag only.
     permissions:
       contents: read
-      # The signing identity for SHA256SUMS. Asked for on a pushed tag only:
-      # the two steps that use it carry that condition.
-      id-token: write
     env:
       VERSION: ${{ needs.build.outputs.version }}
-      SIGN: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -371,11 +508,6 @@ jobs:
           merge-multiple: true
           path: sboms
 
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
-        if: github.event_name == 'push' && github.ref_type == 'tag'
-        with:
-          cosign-release: ${{ env.COSIGN_VERSION }}
-
       - name: Load both images
         run: |
           set -euo pipefail
@@ -383,25 +515,20 @@ jobs:
             docker load -i "images-in/scanent-${VERSION}-linux-${arch}.tar"
           done
 
-      # The SBOMs are the ones the build job made from these two images. On a
-      # pushed tag the list of checksums is signed, keyless, before the archive
-      # is made, so the signature travels inside the bundle.
+      # The SBOMs are the ones the build job made from these two images. No
+      # signing command is given: this job has no identity to sign with.
       - name: Build the bundle
         run: |
           set -euo pipefail
           export SCANENT_SBOM_DIR="$PWD/sboms"
-          if [ "$SIGN" = "true" ]; then
-            export SCANENT_SIGN_CMD="cosign sign-blob --yes --bundle"
-          fi
           deploy/airgap/build-bundle.sh "${VERSION}" \
             "${IMAGE_REPOSITORY}:${VERSION}-amd64" "${IMAGE_REPOSITORY}:${VERSION}-arm64" bundle-out
-          if [ "$SIGN" = "true" ]; then
-            test -s "bundle-out/scanent-${VERSION}-airgap/signatures/SHA256SUMS.sigstore.json"
-          fi
+          test ! -e "bundle-out/scanent-${VERSION}-airgap/signatures"
 
       # The bundle as a site receives it: unpack, verify, load with no image in
       # the local store, then the smoke test of what was loaded. Every run of
-      # the smoke test has no network.
+      # the smoke test has no network. This bundle is not signed, and is
+      # accepted only by saying so: with no flag verify.sh refuses it.
       - name: Unpack, verify and load the bundle, and scan with what it loaded
         run: |
           set -euo pipefail
@@ -409,17 +536,87 @@ jobs:
           mkdir unpacked
           tar -xf "bundle-out/scanent-${VERSION}-airgap.tar" -C unpacked
           cd "unpacked/scanent-${VERSION}-airgap"
-          # A tag's bundle must carry a signature that verifies (cosign is on
-          # the path there). A manual run's bundle is not signed, and says so.
-          if [ "$SIGN" = "true" ]; then
-            ./verify.sh --require-signature
-            ./load.sh --require-signature
-          else
-            ./verify.sh
-            ./load.sh
-          fi
+          ./verify.sh --unsigned
+          ./load.sh --unsigned
           cd "$GITHUB_WORKSPACE"
           deploy/smoke.sh "${IMAGE_REPOSITORY}:${VERSION}"
+
+      # Named for what it is: a manual run's only bundle, and what `sign-bundle` signs on a tag.
+      - name: Upload the unsigned bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scanent-${{ needs.build.outputs.version }}-airgap-unsigned
+          path: bundle-out/scanent-*-airgap.tar
+          if-no-files-found: error
+          retention-days: 30
+
+  sign-bundle:
+    name: Sign the air-gapped bundle
+    # A PUSHED tag, as `publish`: the only two jobs that may ask for the signing identity.
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: [build, bundle]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # The signing identity for SHA256SUMS (keyless), and the bundle's provenance attestation.
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: scanent-${{ needs.build.outputs.version }}-airgap-unsigned
+          path: unsigned
+
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      # The list of checksums is signed, keyless, and the archive is made again
+      # with the signature inside it, so the signature travels with the bundle.
+      # sign-bundle.sh checks the tree against its own list before it signs.
+      - name: Sign the bundle
+        run: |
+          set -euo pipefail
+          export SCANENT_SIGN_CMD="cosign sign-blob --yes --bundle"
+          deploy/airgap/sign-bundle.sh "unsigned/scanent-${VERSION}-airgap.tar" bundle-out
+          test -s "bundle-out/scanent-${VERSION}-airgap/signatures/SHA256SUMS.sigstore.json"
+
+      # The signed bundle as a site receives it. A tag's bundle must carry a
+      # signature that verifies; cosign is on the path here.
+      - name: Unpack, verify and load the signed bundle, and scan with what it loaded
+        run: |
+          set -euo pipefail
+          mkdir unpacked
+          tar -xf "bundle-out/scanent-${VERSION}-airgap.tar" -C unpacked
+          cd "unpacked/scanent-${VERSION}-airgap"
+          ./verify.sh --require-signature
+          ./load.sh --require-signature
+          cd "$GITHUB_WORKSPACE"
+          deploy/smoke.sh "${IMAGE_REPOSITORY}:${VERSION}"
+
+      # Provenance for the archive a site downloads: which workflow, at which
+      # commit, produced these bytes.
+      - name: Attest the bundle's provenance
+        id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: bundle-out/scanent-${{ needs.build.outputs.version }}-airgap.tar
+
+      - name: Keep the provenance attestation
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          test -s "$BUNDLE"
+          mkdir provenance
+          cp "$BUNDLE" "provenance/scanent-${VERSION}-airgap.provenance.jsonl"
 
       - name: Upload the bundle
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -432,7 +629,6 @@ jobs:
       # The signed list and its signature, also beside the bundle: a site can
       # check them before it unpacks anything.
       - name: Upload the signed checksums
-        if: github.event_name == 'push' && github.ref_type == 'tag'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bundle-signature
@@ -442,10 +638,18 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Upload the bundle's provenance attestation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: provenance-bundle
+          path: provenance/
+          if-no-files-found: error
+          retention-days: 30
+
   release:
-    name: GitHub release with the bundle, its checksum, the SBOMs and the signature
+    name: GitHub release with the bundle, its checksum, the SBOMs, the signature and the provenance
     if: github.event_name == 'push' && github.ref_type == 'tag'
-    needs: [build, bundle, publish]
+    needs: [build, bundle, sign-bundle, publish]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -467,6 +671,20 @@ jobs:
           pattern: sbom-*
           merge-multiple: true
           path: sboms
+
+      # The four provenance attestations: the manifest, each image, the bundle.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: provenance-*
+          merge-multiple: true
+          path: provenance
+
+      - name: Every provenance attestation is here
+        run: |
+          set -euo pipefail
+          for name in image linux-amd64 linux-arm64 airgap; do
+            test -s "provenance/scanent-${VERSION}-${name}.provenance.jsonl"
+          done
 
       # Under names that say which version each belongs to.
       - name: Name the SBOMs and the signed checksums by version
@@ -499,7 +717,10 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$REF_NAME" --verify-tag --title "scanent ${VERSION}" \
-            --notes "Image: ${IMAGE_REPOSITORY}:${VERSION} (linux/amd64, linux/arm64), signed by this repository's release workflow, with an SBOM and build provenance attached. The air-gapped bundle, its SHA-256, the SBOM of each image and the signed list of the bundle's checksums are attached. docs/verify-a-release.md has the commands that check each of them." \
+            --notes "Image: ${IMAGE_REPOSITORY}:${VERSION} (linux/amd64, linux/arm64), signed by this repository's release workflow, with an SBOM and build provenance attached. The air-gapped bundle, its SHA-256, the SBOM of each image, the signed list of the bundle's checksums, and the build provenance of the manifest, of each image and of the bundle are attached. docs/verify-a-release.md has the commands that check each of them." \
             "scanent-${VERSION}-airgap.tar" "scanent-${VERSION}-airgap.tar.sha256" \
             "scanent-${VERSION}-linux-amd64.cdx.json" "scanent-${VERSION}-linux-arm64.cdx.json" \
-            "scanent-${VERSION}-airgap.SHA256SUMS" "scanent-${VERSION}-airgap.SHA256SUMS.sigstore.json"
+            "scanent-${VERSION}-airgap.SHA256SUMS" "scanent-${VERSION}-airgap.SHA256SUMS.sigstore.json" \
+            "provenance/scanent-${VERSION}-image.provenance.jsonl" \
+            "provenance/scanent-${VERSION}-linux-amd64.provenance.jsonl" "provenance/scanent-${VERSION}-linux-arm64.provenance.jsonl" \
+            "provenance/scanent-${VERSION}-airgap.provenance.jsonl"

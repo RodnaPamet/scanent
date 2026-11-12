@@ -824,3 +824,84 @@ documented inputs, and held for shape by tests.
 - A results file or an inventory of another schema is refused with the schema
   it names and the one this version reads. Only an id of the same family is
   repeated; any other text in that member is not.
+
+## What the review changed
+
+Four reviews of the above (an attacker's, the proofs' quality, the supply
+chain, and the documents against the code) found the following. Each is fixed
+with a test that fails without the fix, unless it says otherwise. Where a
+decision above was reversed, it says so.
+
+**Reversed.**
+
+- `verify.sh` on an unsigned bundle passed with a notice. It now fails, and
+  `--unsigned` accepts a bundle someone built themselves. The signature of a
+  released bundle could otherwise be removed, the list rewritten, and the
+  documented `./load.sh` would load the result. `--require-signature` is kept
+  and means the same as no flag. `--offline` is no longer passed to `cosign`
+  (cosign 3 deprecates it), and what `cosign` says on a failure is shown.
+- A model or MCP endpoint written in code was reported as its URL without the
+  query. It is now reported as its origin: a key in a path segment was signed
+  into the report. An MCP server in code is still matched to a server the
+  `mcp` source read by the whole URL, which is kept in memory for that and not
+  reported. Reports of code that names an endpoint with a path differ from
+  before in that one member; the contract is unchanged.
+- The AWS IPv6 metadata address was left to the operator's allowlist. It is
+  now never allowlistable, with two more metadata addresses that sit inside
+  ranges an operator may list whole.
+- The `bundle` job of the release held the signing identity on every run. It
+  holds none; a `sign-bundle` job, for a pushed tag only, signs.
+
+**Fixed.**
+
+- The Python reader re-read the same tokens when a conditional turned out not
+  to be one, doubling the work at every level of a lambda nested in a
+  conditional. A file of 828 bytes stopped the scanner for good, and the time
+  box could not stop it, because the read is synchronous. A conditional that
+  failed is remembered; the condition and the `else` branch no longer recurse
+  for a chain; and the reader counts its own steps and refuses a file past a
+  multiple of its length.
+- `NO_PROXY` entries separated by spaces were read as one entry, while Node
+  reads them as several. A test now asks a second Node process which hosts its
+  own `fetch` sends to the proxy, and holds `isProxied` to the answer.
+- IPv6 forms that carry or stand for a non-public destination (v4-translated,
+  local-use NAT64, site-local, Teredo, multicast) and four IPv4 ranges that
+  are not the public internet passed as public.
+- An inventory, a configuration or a `diff` input nested deeper than the stack
+  ended the command with the engine's message. Each is now the typed refusal
+  of its kind.
+- A support bundle wrote an MCP server's label inside the token variable name
+  `init` derives from it.
+- A tag published without the tests, lint, the dependency gates or the
+  reproducible-build check, from any commit. The release now runs them first,
+  and refuses a tagged commit that is not on main.
+- Provenance was attested for the manifest only. It is now attested for each
+  architecture's image and for the bundle's archive, and each attestation is
+  attached to the release as a file.
+- A file named `SHA256SUMS` in a subdirectory of a bundle passed as not added.
+
+**Proofs that were weaker than their names.**
+
+- The canary suites watched the outputs a run is handed. They now also watch
+  the process's own stdout, stderr and console, and lint refuses a write to
+  them outside `cli.ts`, `log.ts` and `outputs.ts`.
+- Three size caps could be removed with every test passing: the per-source
+  byte budget, the cap on an MCP answer delivered as an event stream, and the
+  cap on a token exchange's answer. Each has a case, paired with the same
+  answer just inside the bound.
+- A token exchange was judged by method, origin and path. Its grant is now
+  judged too. The grants are declared beside the surface and not inside it, so
+  the manifest hash is unchanged; putting them inside is a version bump and is
+  left to the owner.
+- The hostile-answer property claimed a truthful report. It is renamed to what
+  it holds, and now also holds that a refused or non-JSON answer is never read
+  as complete.
+- The check on an MCP session id had no test.
+- `FUZZ_SEED=0` and a seed that was not a number silently became the fixed
+  seed.
+
+**Not run, added to the list above.** The release workflow's `gates` and
+`sign-bundle` jobs, the per-image and bundle provenance attestations and the
+step that keeps each as a file, and `sign-bundle.sh` with a real `cosign`.
+`sign-bundle.sh` was run against a stand-in signer, and gives the same archive,
+byte for byte, as `build-bundle.sh` given the same signer.

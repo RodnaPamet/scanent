@@ -13,9 +13,11 @@ architecture, and tags it `ghcr.io/rodnapamet/scanent:<version>` so the
 Compose files and the chart find it locally. It needs `docker` (or set
 `CONTAINER_RUNTIME=podman` or `nerdctl`) and no network.
 
-A released bundle is signed. With `cosign` on the path the signature is
-checked; without it `load.sh` stops and says so. See
-"What the checks do and do not show" below.
+A released bundle is signed, and `load.sh` requires the signature: with
+`cosign` on the path it is checked; without `cosign`, or with no signature in
+the bundle, `load.sh` stops and says so. For a bundle you built yourself,
+which carries no signature, run `./load.sh --unsigned`. See "What the checks
+do and do not show" below.
 
 ## What is in it
 
@@ -46,12 +48,19 @@ key:
 
 | You run | With | Result |
 |---|---|---|
-| `./verify.sh --require-signature` | `cosign` on the path | Passes only if the signature verifies for the release workflow at the tag of this bundle's version |
+| `./verify.sh` | a signed bundle, `cosign` on the path | Passes only if the signature verifies for the release workflow at the tag of this bundle's version |
 | `./verify.sh` | a signed bundle, no `cosign` | Fails: the signature is there and was not checked |
-| `./verify.sh --no-signature` | a signed bundle | Checks the checksums and says the signature was not checked |
-| `./verify.sh` | a bundle with no signature (one you built) | Checks the checksums and says there is no signature |
+| `./verify.sh` | a bundle with no signature | Fails: nothing shows it is the bundle the release made |
+| `./verify.sh --unsigned` | a bundle with no signature (one you built) | Checks the checksums and says there is no signature |
+| `./verify.sh --unsigned` | a signed bundle | Checks the signature, as with no flag |
+| `./verify.sh --no-signature` | any bundle | Checks the checksums and says the signature was not checked |
 
-`load.sh` takes the same flag and passes it on.
+`--require-signature` is accepted and means the same as no flag. `load.sh`
+takes the same flag and passes it on.
+
+A bundle whose signature was taken out fails with no flag. That is the point:
+whoever replaces a file can rewrite the list of checksums and delete the
+signature, and only a check that insists on the signature notices.
 
 Without the signature check, the checksums do not show where the bundle came
 from: whoever can replace a file can replace the list. Then obtain it over a
@@ -91,6 +100,11 @@ deploy/airgap/build-bundle.sh <version> <amd64-image-ref> <arm64-image-ref> <out
 
 Both images must already be in the local image store; the script pulls and
 builds nothing. The release workflow runs it on every tag, with the SBOMs it
-made from the two images (`SCANENT_SBOM_DIR`) and a command that signs the
-list of checksums (`SCANENT_SIGN_CMD`). A bundle built without them holds no
-SBOM and no signature, and `verify.sh` says so.
+made from the two images (`SCANENT_SBOM_DIR`). The release signs the list of
+checksums in a second step, in a job that runs for a tag only and does nothing
+else: `deploy/airgap/sign-bundle.sh <bundle.tar> <out-dir>` with a signing
+command in `SCANENT_SIGN_CMD` checks the unsigned bundle against its own list,
+signs the list, and makes the archive again with the signature inside.
+(`build-bundle.sh` takes `SCANENT_SIGN_CMD` too, and then writes the same
+bytes in one step.) A bundle built without them holds no SBOM and no
+signature; `verify.sh` says so, and accepts it only with `--unsigned`.

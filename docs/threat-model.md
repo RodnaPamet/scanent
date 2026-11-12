@@ -67,7 +67,7 @@ disclosure, **D**enial of service, **E**levation of privilege.
 |---|---|---|---|
 | T | A configuration with an unknown or misspelt member is silently half-applied | Every object of the schema is strict; an unknown key refuses the file. `packages/scanner/src/config.ts` (`parseScannerConfig`) | `packages/scanner/tests/scanner-config-and-schedule.test.ts`, `packages/scanner/tests/fuzz-inputs.test.ts` |
 | I | A credential pasted into the configuration file ends up in a log or an error | A secret-shaped string anywhere in the file refuses it, and no message repeats a value of the file. `packages/scanner/src/config.ts` (`firstSecretShaped`), `packages/scanner/src/cli.ts` (`loadConfig`) | `packages/scanner/tests/cli-hardening.test.ts`, `packages/scanner/tests/fuzz-inputs.test.ts` |
-| I | A credential is read from a file another local user can replace | A secret file must be a regular file, at most 64 KiB, not world-writable; a variable and its `_FILE` both set is refused. `packages/scanner/src/secrets.ts` (`readSecretFile`) | `packages/scanner/tests/secrets.test.ts` |
+| I | A credential is read from a file another local user can replace | A secret file must be a regular file, at most 64 KiB, not world-writable; a variable and its `_FILE` both set is refused. The check is of the file's own mode and no more: see [Residual risks](#residual-risks), 12. `packages/scanner/src/secrets.ts` (`readSecretFile`) | `packages/scanner/tests/secrets.test.ts` |
 | I | The wizard is given a secret, or writes one where others can read it | `init` asks for names only and writes its files `0600` in a `0700` directory; a signing key is never replaced. `packages/scanner/src/init/write.ts` (`writeInit`), `packages/scanner/src/keygen.ts` (`generateSigningKey`) | `packages/scanner/tests/init-write.test.ts`, `packages/scanner/tests/keygen.test.ts` |
 | I | Certificate verification is switched off by a variable left in a shell profile | `scan` and `schedule` refuse to start with `NODE_TLS_REJECT_UNAUTHORIZED=0`. `packages/scanner/src/cli.ts` (`TLS_OFF`) | `packages/scanner/tests/proxy-and-tls.test.ts` |
 | D | A huge or malformed inventory or CSV | Size caps and a strict decoder; a refusal names a row and a field, never a value. `packages/scanner/src/inventory-file.ts` (`loadInventoryFile`) | `packages/scanner/tests/inventory-file.test.ts`, `packages/scanner/tests/fuzz-inputs.test.ts` |
@@ -82,7 +82,8 @@ disclosure, **D**enial of service, **E**levation of privilege.
 | T | A response steers the next request to another path or host (a next-page link to a secret's own URL) | A next link is followed only on the same origin and the same path. `packages/scanner/src/source.ts` (`readPages`), `packages/scanner/src/http.ts` (`isOnOrigin`) | `packages/scanner/tests/fuzz-responses.test.ts`, `packages/scanner/tests/ssrf.test.ts` |
 | T | A malformed or hostile response is taken as a clean, empty estate | A response that is not the listing's shape is `PAGINATION_TORN` or `UNPARSEABLE`, and the source is `INCOMPLETE`. Zero agents is a finding (`EMPTY_SCAN`), never a clean result | `packages/scanner/tests/fuzz-responses.test.ts`, `packages/scanner/tests/partial-failure-matrix.test.ts` |
 | R | A report cannot be tied to the scanner that made it, or a source is said to have been read when it was not | The report is signed with the scanner's key over canonical JSON, carries the manifest hash, and lists every source with its status and reason. `packages/scanner/src/report.ts` (`signReport`), `packages/contract/src/harness-contract.ts` (`verifyAndParseHarnessReport`) | `packages/scanner/tests/scanner-report.test.ts`, `packages/contract/tests/harness-contract.test.ts` |
-| I | A secret value is read from a provider and reported | No path that returns a secret's value is requested (Key Vault secret values, Okta client secrets, GitHub secret values, key material). A report member with a secret's shape refuses the whole report. `packages/scanner/src/report.ts` (`signReport`), `packages/contract/src/harness-contract-rules.ts` (`looksLikeSecret`) | `packages/scanner/tests/source-secret-canary.test.ts`, `packages/scanner/tests/read-only-proof.test.ts` |
+| I | A secret value is read from a provider and reported | No path that returns a secret's value is requested (Key Vault secret values, Okta client secrets, GitHub secret values, key material), with one exception that is off by default: LangSmith's deployments listing, read only when the configuration sets `readDeployments: true`, carries each deployment's secrets, names and values. The scanner keeps a deployment's id and tracing project from it and drops the rest with the page; see [Residual risks](#residual-risks), 10. A report member with a secret's shape refuses the whole report. `packages/scanner/src/report.ts` (`signReport`), `packages/contract/src/harness-contract-rules.ts` (`looksLikeSecret`), `packages/scanner/src/sources/langsmith.ts` | `packages/scanner/tests/source-secret-canary.test.ts`, `packages/scanner/tests/read-only-proof.test.ts`, `packages/scanner/tests/langsmith-source.test.ts` |
+| I | A credential, or a response body, is printed by a source to the process's own output, past the log and the outputs that are watched | Only three files may write to the console or to the process's stdout and stderr; lint refuses it everywhere else, and the canary suite watches the process itself during every run. `eslint.config.mjs`, `packages/scanner/src/log.ts` (`jsonLineLog`) | `packages/scanner/tests/no-stray-output-lint.test.ts`, `packages/scanner/tests/source-secret-canary.test.ts` |
 | I | A credential appears in a log line or an error | The log holds kinds and counts; a secret-shaped field is written `[redacted]`. `packages/scanner/src/log.ts` (`jsonLineLog`) | `packages/scanner/tests/scanner-log.test.ts`, `packages/scanner/tests/output-secret-canary.test.ts` |
 | D | A slow, huge or endless response holds the scan | 4 MiB per response, 64 MiB and one deadline per source, a page cap, no retry. Past a bound the source is `INCOMPLETE` and the others are unaffected. `packages/scanner/src/http.ts` (`MAX_RESPONSE_BYTES`, `MAX_SOURCE_BYTES`), `packages/scanner/src/source.ts` (`MAX_PAGES_PER_SOURCE`) | `packages/scanner/tests/partial-failure-matrix.test.ts`, `packages/scanner/tests/scale.test.ts` |
 | D | Rate limiting, an outage or an expired credential makes a finding disappear | A source that was not read in full closes nothing: its agents get no level, and `diff` reports nothing about them as resolved. `packages/report/src/diff/diff.ts` (`diffResults`) | `packages/scanner/tests/partial-failure-matrix.test.ts`, `packages/report/tests/diff.test.ts` |
@@ -91,7 +92,7 @@ disclosure, **D**enial of service, **E**levation of privilege.
 
 | | Threat | Mitigation | Held by |
 |---|---|---|---|
-| S, E | A configured URL, or the name behind it, points at a loopback, link-local, private or cloud-metadata address (server-side request forgery) | Checked when the configuration is read and again before every request: every address the name resolves to must be reachable under the rules, in every spelling (decimal, hex, IPv4 inside IPv6, NAT64, a trailing dot). Metadata, loopback and link-local stay refused inside an allowlisted private range. `packages/scanner/src/customer-host.ts` (`customerOriginProblem`, `assertResolvesReachable`, `isNeverAllowlistable`) | `packages/scanner/tests/ssrf.test.ts`, `packages/contract/tests/cidr.test.ts` |
+| S, E | A configured URL, or the name behind it, points at a loopback, link-local, private or cloud-metadata address (server-side request forgery) | Checked when the configuration is read and again before every request: every address the name resolves to must be reachable under the rules. The spellings covered are the ones in the test's tables, and no others are claimed: a URL host in decimal, octal, hex or short form, and with a trailing dot; an IPv4 address inside an IPv6 one as v4-mapped, v4-compatible, v4-translated, NAT64 (the well-known and the local-use prefix) and 6to4. Refused without an allowlist: the private, carrier-grade NAT and unique-local ranges, and the ranges that are not the public internet (192.0.0.0/24, benchmarking 198.18.0.0/15, multicast, 240.0.0.0/4, site-local, Teredo). Refused inside any allowlist: loopback, "this host", link-local (169.254.169.254 among it), and the metadata addresses that sit outside link-local: `fd00:ec2::254`, `100.100.100.200`, `192.0.0.192`. Another provider's metadata address that is neither link-local nor on that list is the operator's to keep out of the allowlist. `packages/scanner/src/customer-host.ts` (`customerOriginProblem`, `assertResolvesReachable`, `isNeverAllowlistable`, `addressReachable`) | `packages/scanner/tests/ssrf.test.ts`, `packages/contract/tests/cidr.test.ts` |
 | S | The name resolves to a public address at the check and a private one at the connection (DNS rebinding) | The check runs before each request, so a rebind between two requests stops the read. Behind scanent's own proxy the proxy resolves once and dials the address it checked. On the direct path the gap between check and connection remains: see [Residual risks](#residual-risks) | `packages/scanner/tests/ssrf.test.ts`, `packages/scanner/tests/egress-proxy.test.ts` |
 | T | An MCP server is asked to do something | Three messages only: `initialize`, the initialized notification, `tools/list`. No tool is ever called. `packages/scanner/src/http.ts` (`MCP_MESSAGES`), `packages/scanner/src/scanner-surface.ts` (`isDeclaredMcpMessage`) | `packages/scanner/tests/mcp-source.test.ts`, `packages/scanner/tests/read-only-proof.test.ts`, step 11 of `deploy/smoke.sh` |
 | I | An MCP server's tool descriptions or instructions carry text meant for a model, or a secret | Tool names and hashes are kept; descriptions and instructions are not reported. A secret-shaped name refuses the report | `packages/scanner/tests/mcp-source.test.ts`, `packages/scanner/tests/source-secret-canary.test.ts` |
@@ -101,9 +102,9 @@ disclosure, **D**enial of service, **E**levation of privilege.
 | | Threat | Mitigation | Held by |
 |---|---|---|---|
 | E | Scanned code is executed | The readers are static: a tokenizer for Python, the TypeScript parser for JavaScript and TypeScript. Nothing is imported, evaluated or spawned, and lint rules ban `child_process`, `vm`, `eval`, `Function` and dynamic import under the code source. `packages/scanner/src/sources/langchain.ts` (`scanLangChainCode`), `eslint.config.mjs` | `packages/scanner/tests/report-purity-lint.test.ts`, `packages/scanner/tests/fuzz-code-readers.test.ts` |
-| I | A symbolic link leads the read out of the root (to a key, to `/etc`) | Links are never followed; a file is opened without following, checked to be a regular file, and read to a cap. `packages/scanner/src/sources/code/files.ts` (`readCodeFiles`) | `packages/scanner/tests/hostile-repository.test.ts`, `packages/scanner/tests/code-files.test.ts` |
-| D | A pipe, a sparse file, deep nesting, millions of files, or input that makes a parser recurse or loop | 1 MiB per file, 20,000 files, 128 MiB in total, the source's deadline; a file that cannot be read is `UNPARSEABLE` and the rest is kept. `packages/scanner/src/sources/code/files.ts` (`MAX_FILE_BYTES`, `MAX_FILES`, `MAX_TOTAL_BYTES`) | `packages/scanner/tests/hostile-repository.test.ts`, `packages/scanner/tests/fuzz-code-readers.test.ts` |
-| I | A secret written in code is reported | The name of the variable a key is read from is kept, never a value; a secret-shaped member refuses the report | `packages/scanner/tests/langchain-code-source.test.ts`, `packages/scanner/tests/source-secret-canary.test.ts` |
+| I | A symbolic link leads the read out of the root (to a key, to `/etc`) | Two checks in two files. The walk stats each entry without following and refuses a link: `packages/scanner/src/sources/code/files.ts` (`readCodeFiles`). The read then opens the file without following a link and without blocking, checks that what it opened is a regular file, and reads to a cap: `packages/scanner/src/sources/langchain.ts` (`readRegularFileCapped`) | `packages/scanner/tests/hostile-repository.test.ts`, `packages/scanner/tests/code-files.test.ts` |
+| D | A pipe, a sparse file, deep nesting, millions of files, or input that makes a parser recurse or loop | 1 MiB per file, 20,000 files, 128 MiB in total, the source's deadline; a file that cannot be read is `UNPARSEABLE` and the rest is kept. A file is parsed in one synchronous step that the deadline cannot interrupt, so the Python reader also counts its own work: a file that costs more than a fixed multiple of its length is refused. `packages/scanner/src/sources/code/files.ts` (`MAX_FILE_BYTES`, `MAX_FILES`, `MAX_TOTAL_BYTES`), `packages/scanner/src/sources/code/python.ts` (`STEPS_PER_TOKEN`, `workBudgetFor`) | `packages/scanner/tests/hostile-repository.test.ts`, `packages/scanner/tests/fuzz-code-readers.test.ts` |
+| I | A secret written in code is reported | The name of the variable a key is read from is kept, never a value; a model or MCP endpoint written as a URL is reported as its origin (scheme, host, port), never its path, query or user information, because a key is often a path segment; a secret-shaped member refuses the report. `packages/scanner/src/sources/code/recognize.ts` (`endpointOf`, `codeLocator`) | `packages/scanner/tests/langchain-code-source.test.ts`, `packages/scanner/tests/source-secret-canary.test.ts` |
 
 ### 5. The egress proxy
 
@@ -111,7 +112,7 @@ disclosure, **D**enial of service, **E**levation of privilege.
 |---|---|---|---|
 | E | The scanner, or anything else on its network, reaches a host that is not on the list | CONNECT only, port 443 only, exact host names from `EGRESS_ALLOW`, no IP literal; an empty list refuses everything. `packages/scanner/src/egress-proxy.ts` (`decideConnect`) | `packages/scanner/tests/egress-proxy.test.ts`, `packages/scanner/tests/ssrf.test.ts`, step 11 of `deploy/smoke.sh` |
 | S | An allowed name resolves to a private or metadata address | The proxy resolves the name itself, applies the same address rules, and connects to the address it checked. `packages/scanner/src/egress-proxy.ts` (`createEgressProxy`) | `packages/scanner/tests/egress-proxy.test.ts`, `packages/scanner/tests/ssrf.test.ts` |
-| D | A client crashes or stalls the proxy (a reset at the wrong moment, a slow client, a header flood) | Every socket has an error handler; a refused client is closed. `packages/scanner/src/egress-proxy.ts` (`createEgressProxy`) | `packages/scanner/tests/egress-proxy-failures.test.ts`, `packages/scanner/tests/ssrf.test.ts` |
+| D | A client crashes or stalls the proxy (a reset at the wrong moment, a slow client, a header flood) | Every socket has an error handler; a refused client is closed; a slow client holds its own socket and no other. The proxy sets no idle timeout and no limit on connections of its own: see [Residual risks](#residual-risks), 14. `packages/scanner/src/egress-proxy.ts` (`createEgressProxy`) | `packages/scanner/tests/egress-proxy-failures.test.ts`, `packages/scanner/tests/ssrf.test.ts` |
 | R | The confinement is assumed and not there | With `egress` configured, every scan proves it (the proxy allows the tenant's host, refuses a canary, and there is no direct route) and reports the result as a criterion on the scanner's own agent. `packages/scanner/src/egress-proof.ts` (`proveEgress`) | `packages/scanner/tests/scanner-report.test.ts`, `packages/scanner/tests/read-only-proof.test.ts` |
 
 A Kubernetes NetworkPolicy alone matches addresses, not names: "TCP 443 to
@@ -122,11 +123,11 @@ by name, is what gives exact hosts (`deploy/helm/scanent/README.md`).
 
 | | Threat | Mitigation | Held by |
 |---|---|---|---|
-| T | A run is changed after it was written, or half-written and read as whole | A run is written to a temporary directory and renamed into place; a run is never replaced; `manifest.json` carries each file's SHA-256; a `runs` that is a link is refused. `packages/scanner/src/file-output.ts` (`writeRun`) | `packages/scanner/tests/file-output.test.ts`, step 6 of `deploy/smoke.sh` |
+| T | A run is half-written and read as whole, or damaged after it was written | A run is written to a temporary directory and renamed into place; a run is never replaced; `manifest.json` carries each file's SHA-256; a `runs` that is a link is refused. The manifest detects damage. It is not signed, so it does not detect a change by someone who can write the directory: see [Residual risks](#residual-risks), 11. `packages/scanner/src/file-output.ts` (`writeRun`) | `packages/scanner/tests/file-output.test.ts`, step 6 of `deploy/smoke.sh` |
 | I | Another local user reads the results | Run directories `0750`, files `0640`, owned by the user the scanner runs as. `packages/scanner/src/file-output.ts` (`RUN_DIR_MODE`, `RUN_FILE_MODE`) | `packages/scanner/tests/file-output.test.ts`, step 7 of `deploy/smoke.sh` |
 | I | A secret reaches a results file, the HTML page or a CSV | Every file is checked for a secret's shape, as data and as text, before the first byte is written; one hit refuses the whole run. `packages/scanner/src/file-output.ts` (`assertNoSecretShape`, `renderRunFiles`) | `packages/scanner/tests/output-secret-canary.test.ts` |
 | T, E | A value from the estate becomes markup or a formula when the page or the CSV is opened | The page escapes every value and loads nothing from the network; CSV cells that start with a formula character are neutralised. `packages/report/src/render/html.ts` (`renderSummaryHtml`), `packages/report/src/render/csv.ts` (`csvCell`) | `packages/report/tests/html.test.ts`, `packages/report/tests/csv.test.ts` |
-| I | A support bundle carries a credential or the estate's names | It never resolves a credential, replaces every name by a per-bundle token unless told not to, and is refused whole on a secret's shape. `packages/scanner/src/support-bundle.ts` (`buildSupportBundle`, `renderSupportBundle`) | `packages/scanner/tests/support-bundle.test.ts` |
+| I | A support bundle carries a credential or the estate's names | Without `--doctor` it resolves no credential and opens no secret file. With `--doctor` it runs the preflight, which resolves every credential and uses it exactly as `scanent doctor` does; no value is written to the bundle either way. It replaces every name by a per-bundle token unless told not to, the label inside a derived MCP token variable name included, and is refused whole on a secret's shape. `packages/scanner/src/support-bundle.ts` (`buildSupportBundle`, `renderSupportBundle`) | `packages/scanner/tests/support-bundle.test.ts` |
 
 ### 7. Scanner to a tenant
 
@@ -144,10 +145,11 @@ every example configuration.
 
 | | Threat | Mitigation | Held by |
 |---|---|---|---|
-| S, T | A client runs an image or a bundle that the release did not produce | Images are signed by digest, keyless, by the release workflow at the tag; the bundle's checksum list is signed the same way. `.github/workflows/release.yml`, `deploy/airgap/verify.sh`, `docs/verify-a-release.md` | `packages/scanner/tests/deploy-templates.test.ts`; the first tagged release for the signing itself |
+| S, T | A client runs an image or a bundle that the release did not produce | Images are signed by digest, keyless, by the release workflow at the tag; the bundle's checksum list is signed the same way, and `verify.sh` and `load.sh` refuse a bundle whose signature is missing unless told the bundle is one you built. `.github/workflows/release.yml`, `deploy/airgap/verify.sh`, `docs/verify-a-release.md` | `packages/scanner/tests/deploy-templates.test.ts`; the first tagged release for the signing itself |
+| S, T | A tag is pushed on a commit that is not on main, or that fails the tests | The release workflow first holds the tagged commit to what a commit on main is held to (the dependency gates, lint, type-check, the tests under the coverage gate, the reproducible build), and refuses a tag whose commit main does not hold. Nothing is built or signed before that passes. `.github/workflows/release.yml` | `packages/scanner/tests/deploy-templates.test.ts`; never run on GitHub |
 | T | A dependency or a base image is replaced | The lockfile's integrity hashes decide what is installed, with no install script; both base images are pinned by digest; every action is pinned by commit. `deploy/Dockerfile` | `packages/scanner/tests/image.test.ts` |
-| T | A vulnerable dependency or base ships | Trivy and Grype gate the image on fixed high and critical findings; `npm audit` gates production dependencies; a licence allowlist; CodeQL. `.github/workflows/ci.yml`, `scripts/check-licences.js` | The gates themselves; `packages/scanner/tests/supply-chain.test.ts` |
-| R | Nobody can say what is in the image | A CycloneDX SBOM per image, attached as an attestation, in the release and in the bundle; build provenance for the pushed digest | `packages/scanner/tests/deploy-templates.test.ts` |
+| T | A vulnerable dependency or base ships | Written as gates: Trivy and Grype on the image for fixed high and critical findings; `npm audit` on production dependencies; a licence allowlist; CodeQL. Of these, only Trivy and the licence allowlist have run, and only on a workstation; the others have never executed (see [What has not been done](#what-has-not-been-done)). `.github/workflows/ci.yml`, `scripts/check-licences.js` | The gates themselves, once they run; `packages/scanner/tests/supply-chain.test.ts` holds how they are written |
+| R | Nobody can say what is in the image | A CycloneDX SBOM per image, attached as an attestation, in the release and in the bundle; build provenance for the pushed manifest, for each architecture's image and for the bundle's archive | `packages/scanner/tests/deploy-templates.test.ts` |
 | E | The image gives an attacker tools | No shell, no package manager, uid 1000, and it runs with a read-only root, no capability and no privilege gain. `deploy/Dockerfile`, `deploy/compose.yaml` | `deploy/smoke.sh` (step 1), `packages/scanner/tests/image.test.ts` |
 | T | A version is replaced after release | A version already in the registry is never pushed again; no `latest` tag exists. `.github/workflows/release.yml` | `packages/scanner/tests/deploy-templates.test.ts` |
 
@@ -190,9 +192,54 @@ Stated plainly. None of these is closed by the code.
    bytes. An attacker who can change that workflow, or push a tag, in this
    repository could make a signed release. Branch protection and who may push
    tags are repository settings (`docs/release-checklist.md`).
-9. **The report's size.** A report holds at most 5 MiB and 5,000 agents. An
-   estate past that is refused locally, not truncated, and must be scanned in
-   parts (`docs/scanner.md`, "Limits and scale").
+9. **The report's size.** Two caps, which behave differently. A report over
+   5 MiB is refused locally: nothing is signed, written or posted. A report
+   of more than 5,000 agents is cut: it carries the first 5,000 by id, it is
+   signed, and every source that lost an agent is `INCOMPLETE` with
+   `BYTE_CAP`, so the agents past the cap are not in the report and the report
+   says it is not complete. Scan a larger estate in parts (`docs/scanner.md`,
+   "Limits and scale").
+10. **Deployment secrets pass through memory when `readDeployments` is on.**
+    LangSmith's deployments listing returns each deployment's secrets with
+    their values. With `readDeployments: true` the scanner receives that
+    response, keeps a deployment's id and tracing project, and drops the rest;
+    nothing of it is written, logged or reported. The values are still in the
+    process's memory for the length of the read, and in sight of any proxy
+    that inspects TLS on the path. The option is off unless the configuration
+    sets it. Leave it off unless you need deployments in the report.
+11. **Every output but the report is unsigned.** `report.signed.json` carries
+    the scanner's signature. `results.json`, `summary.html`, the CSV files and
+    `manifest.json` do not: the manifest lists each file's SHA-256 and is
+    itself an ordinary file. Anyone who can write the output directory can
+    change a file and the manifest together. Restrict who can write that
+    directory, and where a result matters, re-derive it from the signed
+    report (`scanent diff` reads one) rather than trust the files beside it.
+12. **A secret file is checked for one thing.** The scanner refuses a secret
+    file that is world-writable. It does not check the group's write bit, the
+    directory the file is in, or who owns either, and it follows a symbolic
+    link to the file. A file another user can replace through its directory
+    passes. Keep secret files in a directory only the scanner's user can
+    write, as Docker and Kubernetes secrets are mounted.
+13. **A proxy or a certificate authority you add sees every credential.** With
+    `HTTPS_PROXY` set, the scanner's own address check (boundary 3) binds this
+    machine's resolver, not the proxy's: a proxy that resolves a name
+    differently connects where it likes. The bundled egress proxy is the one
+    proxy that checks the address it dials. A certificate authority added with
+    `NODE_EXTRA_CA_CERTS`, or a proxy that inspects TLS, reads every request,
+    read credentials included. Do not route credentialed sources through a
+    proxy or a certificate authority you would not give those credentials to.
+14. **The egress proxy does not defend itself against load.** It sets no idle
+    timeout and no limit on connections. Anything that can reach its port can
+    hold sockets open. It listens for the scanner alone: keep its port
+    reachable from the scanner's network only, as the Compose overlay and the
+    chart do.
+15. **A leaked signing key, and an old report sent again.** The scanner has no
+    way to revoke its own key. If the signing key leaks, remove its public key
+    from wherever reports are accepted (the tenant's register of scanner
+    keys), generate a new one with `scanent keygen`, and register that. A
+    signed report carries the time it describes and a scan id, and nothing
+    stops a copy of an old one being presented again: refusing a stale or
+    repeated report is the consumer's job, not the scanner's.
 
 ## What has not been done
 
@@ -203,4 +250,14 @@ Stated plainly. None of these is closed by the code.
 - The 72-hour soak has not been run; a five-minute one has.
 - Keyless signing, the attestations and the cluster test run only on GitHub's
   runners. They are written and reviewed; they first run when pushed and at the
-  first tag.
+  first tag. No release exists, so nothing has been signed and no client-side
+  verification command has been run against a real signature.
+- None of the workflows has run on GitHub. The gates this page cites are
+  therefore written and tested for their shape, and most have never executed:
+  the Grype scan, the Syft SBOM step, CodeQL, Scorecard, `npm audit` as a
+  workflow step, the long-test workflow, the release workflow's own gates and
+  its on-main check, and the rootless Podman job. Of the image scans only
+  Trivy has run, on a workstation.
+- The arm64 image has been built and bundled, never started.
+- The test suite has run on Node 22 only. Node 24, the version the image runs,
+  is the other half of CI's matrix and has not run it.

@@ -1,13 +1,14 @@
 #!/bin/sh
 # Loads the scanent image for this machine from an unpacked bundle. No network.
 #
-#   ./load.sh [--require-signature | --no-signature]
+#   ./load.sh [--unsigned | --no-signature | --require-signature]
 #
 #   CONTAINER_RUNTIME   docker (default), podman or nerdctl
 #
-# It runs verify.sh first, with the same arguments, and stops if that fails
-# (a signed bundle and no `cosign` on the path is a failure: see verify.sh),
-# picks the archive for this
+# It runs verify.sh first, with the same arguments, and stops if that fails.
+# With no flag the bundle must carry a signature that verifies: a bundle with
+# no signature, and a signed one with no `cosign` on the path, both load
+# nothing (see verify.sh). Then it picks the archive for this
 # machine's architecture, loads it, and tags it ghcr.io/rodnapamet/scanent:<version>
 # so the Compose files and the chart find it without a registry.
 set -eu

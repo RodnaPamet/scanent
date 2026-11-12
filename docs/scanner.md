@@ -392,9 +392,16 @@ reader cannot see — a tool list returned by a function, a model passed in as a
 parameter, `**kwargs` — makes the source `INCOMPLETE` `UNPARSEABLE`, and the
 agent is still reported with what resolved.
 
-Each agent's model endpoints go into `/2`'s optional `models[]`: the https URL,
-the `env://` reference it is read from, or, when neither is knowable, the
-`code://` locator of the model's construction. The ingest verifies them and
+Each agent's model endpoints go into `/2`'s optional `models[]`: the endpoint's
+origin, the `env://` reference it is read from, or, when neither is knowable, the
+`code://` locator of the model's construction. A URL written in code, for a
+model or for an MCP server, is reported as its origin only: scheme, host and
+port (`https://llm-gateway.acme.example`, not `…/v1`). The path, the query, the
+fragment and any user information are left out, because a gateway or webhook
+URL often carries its key as a path segment and such a segment has no shape a
+secret scan can know. An MCP server in code is still matched to a server the
+`mcp` source read by its whole URL; that URL is held in memory for the
+comparison and is not reported. The ingest verifies them and
 keeps them on the agent's scan item, and the harness matrix lists them.
 
 **Unbound credentials.** `/2`'s `unboundCredentials[]` lists credential
@@ -595,8 +602,18 @@ its three properties:
 - It is the estate's own file. No tenant column, form or route reaches it.
 - Metadata, loopback and link-local stay refused inside it: `127.0.0.0/8`,
   `0.0.0.0/8`, `169.254.0.0/16`, `::1`, `::` and `fe80::/10` are checked before
-  the allowlist, so even `0.0.0.0/0` cannot reach `169.254.169.254`. The blocked
-  names stay refused too.
+  the allowlist, so even `0.0.0.0/0` cannot reach `169.254.169.254`. So are the
+  instance-metadata addresses that sit outside link-local, inside ranges you
+  might list whole: `fd00:ec2::254` (AWS over IPv6), `100.100.100.200`
+  (Alibaba Cloud) and `192.0.0.192` (Oracle Cloud). The blocked names stay
+  refused too. If your provider's metadata address is neither link-local nor
+  one of those, keep it out of the ranges you list.
+- Without an allowlist, an address that is not on the public internet is
+  refused whether or not it is a private range: also `192.0.0.0/24`,
+  `198.18.0.0/15`, multicast, `240.0.0.0/4`, site-local `fec0::/10`, Teredo
+  `2001::/32` and local-use NAT64 `64:ff9b:1::/48`. An IPv4 address written
+  inside an IPv6 one (v4-mapped, v4-compatible, v4-translated, NAT64, 6to4) is
+  judged as the IPv4 address too.
 - It widens which addresses are acceptable and removes no other check. The host
   is still resolved before every request with every address tested, so a name
   that resolves outside the listed ranges sends nothing.
@@ -1026,8 +1043,11 @@ scanent support-bundle --config <file> [--out <file>] [--runs <dir>] [--doctor] 
 One `scanent-support/1` document for whoever helps with a deployment: the
 versions, the shape of the configuration, which credential variables are set
 (never a value), and how the last run went. Hosts, labels, paths and agent ids
-are replaced by tokens unless `--include-identifiers` is given. It resolves no
-credential and, without `--doctor`, makes no request. Exit 0 when the document
+are replaced by tokens unless `--include-identifiers` is given. Without
+`--doctor` it resolves no credential, opens no secret file and makes no
+request; with `--doctor` it runs the preflight, which resolves and uses every
+credential as `scanent doctor` does. No credential value is written either
+way. Exit 0 when the document
 was written, also when the configuration could not be read (the document then
 says why); 1 when it was refused for holding a secret's shape or could not be
 written; 2 for wrong arguments or an existing `--out` file.
@@ -1073,9 +1093,9 @@ check when `HTTPS_PROXY` is set without it, because the requests would
 silently go direct. scanent adds no proxy library, and never logs or prints a
 proxy URL, which may carry a password.
 
-`NO_PROXY` follows Node's rules: `*`, an exact name, `.suffix` or `*.suffix`,
-and an optional `:port`. A bare name exempts that name only, not its
-subdomains.
+`NO_PROXY` follows Node's rules: entries separated by commas or by spaces;
+`*`, an exact name, `.suffix` or `*.suffix`, and an optional `:port`. A bare
+name exempts that name only, not its subdomains.
 
 **The host check and a proxy.** A host you name (a self-hosted LangSmith, an
 MCP server) is resolved and checked on this machine before every request,
@@ -1170,6 +1190,7 @@ a bound that is reached is reported, or the run is refused.
 | Unbound credentials in a report | 10,000 | The same |
 | The signed report | 5 MiB | The run is refused; nothing is written, printed or posted |
 | A code file, the files of a scan, their bytes | 1 MiB, 20,000, 128 MiB | The `code` source is `INCOMPLETE` `BYTE_CAP` |
+| The work of reading one Python file | 24 parser steps for each token of the file, plus 10,000 | That file is not read, and the `code` source is `INCOMPLETE` `UNPARSEABLE`. An ordinary file costs about one step a token; the limit stops a file written to be read over and over |
 | An input of `scanent diff` | 64 MiB | The diff is refused (exit 2) |
 
 **The agent count and the byte size are different limits, and the bytes are

@@ -31,7 +31,7 @@
 #                       `cosign sign-blob --yes --bundle`. The result is stored
 #                       as signatures/SHA256SUMS.sigstore.json, the one file
 #                       SHA256SUMS does not list. Unset: the bundle is not
-#                       signed, and verify.sh says so.
+#                       signed, and verify.sh accepts it only with --unsigned.
 #
 # This script signs nothing itself and holds no key. Without a signature,
 # SHA256SUMS detects a damaged copy, not a replaced one.
@@ -134,7 +134,7 @@ fi
 # Every file but the list itself, sorted by path.
 (
     cd "$TREE"
-    find . -type f ! -name SHA256SUMS | LC_ALL=C sort | sed 's|^\./||' | while IFS= read -r f; do
+    find . -type f ! -path ./SHA256SUMS | LC_ALL=C sort | sed 's|^\./||' | while IFS= read -r f; do
         sha256sum "$f"
     done > SHA256SUMS
 )

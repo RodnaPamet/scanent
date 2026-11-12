@@ -1027,10 +1027,75 @@ esac
         expect(fs.existsSync(path.join(work, 'silent', `scanent-${VERSION}-airgap.tar`))).toBe(false);
     });
 
+    it('sign-bundle.sh signs an unsigned bundle into the bytes build-bundle.sh makes when it signs, and signs nothing it cannot vouch for', () => {
+        const signCmd = `${signTool(SIGN)} sign-blob --yes --bundle`;
+        const sign = (archive: string, outDir: string, env: Record<string, string> = { SCANENT_SIGN_CMD: signCmd }) => sh(abs('deploy/airgap/sign-bundle.sh'), [archive, outDir], env);
+        const sha = (file: string) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+        const sboms = sbomDir('sboms');
+        expect(build(path.join(work, 'unsigned'), { SCANENT_SBOM_DIR: sboms }).status).toBe(0);
+        expect(build(path.join(work, 'direct'), { SCANENT_SBOM_DIR: sboms, SCANENT_SIGN_CMD: signCmd }).status).toBe(0);
+        const unsigned = path.join(work, 'unsigned', `scanent-${VERSION}-airgap.tar`);
+
+        // The archive's own time is used when none is given, as the release job runs it.
+        const out = spawnSync(abs('deploy/airgap/sign-bundle.sh'), [unsigned, path.join(work, 'signed-later')], {
+            encoding: 'utf8',
+            env: { PATH: `${stubs}:${process.env.PATH ?? ''}`, STUB_LOG: stubLog, SCANENT_SIGN_CMD: signCmd },
+        });
+        expect(out.stderr).toBe('');
+        expect(out.status).toBe(0);
+        const signed = path.join(work, 'signed-later', `scanent-${VERSION}-airgap.tar`);
+        expect(out.stdout).toBe(`bundle: ${signed}\nsha256: ${sha(signed)}\n`);
+        // Signed apart or signed at once: one archive, byte for byte.
+        expect(sha(signed)).toBe(sha(path.join(work, 'direct', `scanent-${VERSION}-airgap.tar`)));
+        expect(sha(signed)).not.toBe(sha(unsigned));
+        const tree = path.join(work, 'signed-later', `scanent-${VERSION}-airgap`);
+        expect(fs.readFileSync(path.join(tree, 'signatures/SHA256SUMS.sigstore.json'), 'utf8')).toBe(`signed:${sha(path.join(tree, 'SHA256SUMS'))}\n`);
+        expect(fs.readFileSync(path.join(tree, 'SHA256SUMS'))).toEqual(fs.readFileSync(path.join(work, 'unsigned', `scanent-${VERSION}-airgap`, 'SHA256SUMS')));
+
+        // No command to sign with, a missing archive, a second run into the same place: nothing is written.
+        expect(sign(unsigned, path.join(work, 'none'), {}).stderr).toMatch(/SCANENT_SIGN_CMD is not set/);
+        expect(fs.existsSync(path.join(work, 'none'))).toBe(false);
+        expect(sign(path.join(work, 'missing.tar'), path.join(work, 'none')).status).toBe(1);
+        expect(sign(unsigned, path.join(work, 'signed-later')).stderr).toMatch(/already exists/);
+        expect(sh(abs('deploy/airgap/sign-bundle.sh'), [unsigned]).status).toBe(2);
+        // A bundle that is already signed is not signed twice.
+        const twice = sign(signed, path.join(work, 'twice'));
+        expect(twice.status).toBe(1);
+        expect(twice.stderr).toMatch(/already carries a signature/);
+        // A signing command that fails, or writes nothing, leaves no archive.
+        expect(sign(unsigned, path.join(work, 'failing'), { SCANENT_SIGN_CMD: signTool('exit 3') }).stderr).toMatch(/the signing command failed/);
+        expect(fs.existsSync(path.join(work, 'failing', `scanent-${VERSION}-airgap.tar`))).toBe(false);
+        expect(sign(unsigned, path.join(work, 'silent'), { SCANENT_SIGN_CMD: signTool(': > "$1"') }).stderr).toMatch(/wrote no signature/);
+        expect(fs.existsSync(path.join(work, 'silent', `scanent-${VERSION}-airgap.tar`))).toBe(false);
+
+        // A tree whose files are not the files its list names is not signed: the signature would vouch for the list alone.
+        const changed = path.join(work, 'changed');
+        fs.mkdirSync(changed);
+        execFileSync('tar', ['-xf', unsigned, '-C', changed]);
+        fs.appendFileSync(path.join(changed, `scanent-${VERSION}-airgap`, 'load.sh'), '# changed after the list was made\n');
+        execFileSync('tar', ['-C', changed, '-cf', path.join(changed, 'changed.tar'), `scanent-${VERSION}-airgap`]);
+        fs.writeFileSync(stubLog, '');
+        const refused = sign(path.join(changed, 'changed.tar'), path.join(work, 'refused'));
+        expect(refused.status).toBe(1);
+        expect(refused.stderr).toMatch(/does not pass its own check; it is not signed/);
+        expect(fs.readFileSync(stubLog, 'utf8')).not.toContain('sign-blob');
+        // An archive that is not one bundle directory is refused before it is unpacked.
+        const stray = path.join(work, 'stray');
+        fs.mkdirSync(path.join(stray, 'other'), { recursive: true });
+        fs.writeFileSync(path.join(stray, 'other', 'x'), 'x');
+        execFileSync('tar', ['-C', stray, '-cf', path.join(stray, 'stray.tar'), 'other']);
+        const notOne = sign(path.join(stray, 'stray.tar'), path.join(work, 'stray-out'));
+        expect(notOne.status).toBe(1);
+        expect(notOne.stderr).toMatch(/does not hold one scanent-<version>-airgap directory/);
+        expect(fs.existsSync(path.join(work, 'stray-out', 'other'))).toBe(false);
+    });
+
     describe('verify.sh and load.sh, on a built bundle', () => {
         let tree: string;
-        const verify = () => sh(path.join(tree, 'verify.sh'), []);
-        const load = (machine: string) => sh(path.join(tree, 'load.sh'), [], { STUB_MACHINE: machine });
+        // This bundle was built here with no signing command, so it is checked the way
+        // one you built yourself is: `--unsigned`. With no flag it is refused (below).
+        const verify = () => sh(path.join(tree, 'verify.sh'), ['--unsigned']);
+        const load = (machine: string) => sh(path.join(tree, 'load.sh'), ['--unsigned'], { STUB_MACHINE: machine });
 
         beforeEach(() => {
             expect(build(path.join(work, 'out')).status).toBe(0);
@@ -1050,11 +1115,42 @@ esac
         });
 
         it('verify takes one flag, and refuses anything else', () => {
-            for (const args of [['--frobnicate'], ['--require-signature', '--no-signature'], ['--no-signature', '--no-signature'], ['x']]) {
+            // The usage line grew with `--unsigned`; two flags together are still refused, the new one included.
+            for (const args of [['--frobnicate'], ['--require-signature', '--no-signature'], ['--no-signature', '--no-signature'], ['x'], ['--unsigned', '--no-signature'], ['--require-signature', '--unsigned']]) {
                 const out = sh(path.join(tree, 'verify.sh'), args);
                 expect(out.status).toBe(2);
-                expect(out.stderr).toBe('usage: verify.sh [--require-signature | --no-signature]\n');
+                expect(out.stderr).toBe('usage: verify.sh [--unsigned | --no-signature | --require-signature]\n');
             }
+        });
+
+        it('with no flag, a bundle with no signature fails and loads nothing: its absence is never accepted unasked', () => {
+            const out = sh(path.join(tree, 'verify.sh'), []);
+            expect(out.status).toBe(1);
+            expect(out.stdout).toContain('files match SHA256SUMS');
+            expect(out.stderr).toBe(
+                'verify: this bundle carries no signature, so nothing shows it is the one the release made.\n' +
+                    'verify: a released bundle is signed. Pass --unsigned only for a bundle you built yourself.\n',
+            );
+            const loaded = sh(path.join(tree, 'load.sh'), [], { STUB_MACHINE: 'x86_64' });
+            expect(loaded.status).toBe(1);
+            expect(fs.readFileSync(stubLog, 'utf8')).toBe('');
+            // --no-signature accepts it too, and says the same thing --unsigned does.
+            const skipped = sh(path.join(tree, 'verify.sh'), ['--no-signature']);
+            expect(skipped.status).toBe(0);
+            expect(skipped.stdout).toContain('verify: this bundle carries no signature. The checksums detect damage, not a replaced bundle\n');
+        });
+
+        it('a file named SHA256SUMS anywhere but the top of the bundle is an added file', () => {
+            for (const at of ['images/SHA256SUMS', 'x/SHA256SUMS', 'docs/SHA256SUMS']) {
+                fs.mkdirSync(path.dirname(path.join(tree, at)), { recursive: true });
+                fs.writeFileSync(path.join(tree, at), 'evil\n');
+                const out = verify();
+                expect(out.status).toBe(1);
+                expect(out.stderr).toBe('verify: the files here are not the files SHA256SUMS lists\n');
+                fs.rmSync(path.join(tree, at));
+                if (at.startsWith('x/')) fs.rmdirSync(path.join(tree, 'x'));
+            }
+            expect(verify().status).toBe(0);
         });
 
         it('verify --require-signature fails on a bundle with no signature, and load with it loads nothing', () => {
@@ -1181,7 +1277,7 @@ esac
 
         it('load uses the runtime it is told to', () => {
             fs.copyFileSync(path.join(stubs, 'docker'), path.join(stubs, 'podman'));
-            const out = sh(path.join(tree, 'load.sh'), [], { CONTAINER_RUNTIME: 'podman' });
+            const out = sh(path.join(tree, 'load.sh'), ['--unsigned'], { CONTAINER_RUNTIME: 'podman' });
             expect(out.status).toBe(0);
             // The stub logs under the name `docker`; what matters is which file ran, and the hint names it.
             expect(out.stdout).toContain('podman run --rm');
@@ -1210,12 +1306,11 @@ while [ "$#" -gt 1 ]; do
   case "$1" in
     --bundle) bundle="$2"; shift ;;
     --certificate-identity | --certificate-oidc-issuer | --trusted-root) shift ;;
-    --offline) ;;
-    *) exit 64 ;;
+    *) echo "Error: unknown flag: $1" >&2; exit 64 ;;
   esac
   shift
 done
-[ "$(cat "$bundle")" = "signed:$(sha256sum "$1" | cut -d' ' -f1)" ]
+[ "$(cat "$bundle")" = "signed:$(sha256sum "$1" | cut -d' ' -f1)" ] || { echo "Error: none of the expected identities matched what was in the certificate" >&2; exit 1; }
 `,
                 { mode: 0o755 },
             );
@@ -1253,9 +1348,10 @@ done
                     'verify: 2 CycloneDX SBOMs, one per image\n' +
                     `verify: SHA256SUMS is signed by ${IDENTITY}\n`,
             );
-            // Exactly the check the documents give: the bundle's own signature, this identity, GitHub's issuer, no network.
+            // Exactly the check the documents give: the bundle's own signature, this identity, GitHub's issuer.
+            // No `--offline`: cosign 3 deprecates it, and the stub above refuses any flag it does not know, as a later cosign would.
             expect(fs.readFileSync(stubLog, 'utf8')).toBe(
-                `cosign verify-blob --offline --bundle ${SIGNATURE} --certificate-identity ${IDENTITY} --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS\n`,
+                `cosign verify-blob --bundle ${SIGNATURE} --certificate-identity ${IDENTITY} --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS\n`,
             );
             // Without the flag a signed bundle is checked all the same.
             expect(run('verify.sh', [], true).stdout).toContain(`verify: SHA256SUMS is signed by ${IDENTITY}\n`);
@@ -1272,7 +1368,11 @@ done
             const replaced = run('verify.sh', [], true);
             expect(replaced.status).toBe(1);
             expect(replaced.stdout).toContain('files match SHA256SUMS');
-            expect(replaced.stderr).toBe(`verify: the signature over SHA256SUMS does not verify for ${IDENTITY}\n`);
+            // cosign's own reason is shown, then ours: a failure to verify and a cosign that cannot run the check read differently.
+            expect(replaced.stderr).toBe(
+                'verify: cosign: Error: none of the expected identities matched what was in the certificate\n' +
+                    `verify: the signature over SHA256SUMS does not verify for ${IDENTITY}\n`,
+            );
             // The checksums alone would have let it through: that is what the signature is for.
             expect(run('verify.sh', ['--no-signature'], true).status).toBe(0);
             // And load stops there.
@@ -1314,6 +1414,43 @@ done
             expect(fs.readFileSync(stubLog, 'utf8')).toContain(`docker load -i images/scanent-${VERSION}-linux-amd64.tar\n`);
         });
 
+        it('a released bundle with its signature taken out and its list rewritten does not load', () => {
+            // What someone replacing a release bundle does: change the image, bring the list up to date, remove the signature.
+            const image = path.join(tree, `images/scanent-${VERSION}-linux-amd64.tar`);
+            fs.writeFileSync(image, 'a different image');
+            const sums = path.join(tree, 'SHA256SUMS');
+            const digest = createHash('sha256').update('a different image').digest('hex');
+            const listed = fs.readFileSync(sums, 'utf8');
+            const relisted = listed.replace(new RegExp(`^[0-9a-f]{64} {2}images/scanent-${VERSION.replace(/\./g, '\\.')}-linux-amd64\\.tar$`, 'm'), `${digest}  images/scanent-${VERSION}-linux-amd64.tar`);
+            expect(relisted).not.toBe(listed);
+            fs.writeFileSync(sums, relisted);
+            fs.rmSync(path.join(tree, 'signatures'), { recursive: true });
+            for (const cosign of [true, false]) {
+                const out = run('verify.sh', [], cosign);
+                expect(out.status).toBe(1);
+                expect(out.stdout).toContain('files match SHA256SUMS');
+                expect(out.stderr).toContain('verify: this bundle carries no signature, so nothing shows it is the one the release made.\n');
+                expect(run('verify.sh', ['--require-signature'], cosign).status).toBe(1);
+                expect(run('load.sh', [], cosign).status).toBe(1);
+            }
+            expect(fs.readFileSync(stubLog, 'utf8')).not.toContain('docker');
+        });
+
+        it('--unsigned does not skip a signature that is there', () => {
+            expect(run('verify.sh', ['--unsigned'], true).stdout).toContain(`verify: SHA256SUMS is signed by ${IDENTITY}\n`);
+            expect(run('verify.sh', ['--unsigned'], false).status).toBe(1);
+            fs.writeFileSync(path.join(tree, SIGNATURE), 'signed:0000\n');
+            expect(run('verify.sh', ['--unsigned'], true).status).toBe(1);
+        });
+
+        it('shows what cosign said when it cannot run the check, and fails', () => {
+            // A cosign that refuses a flag, as a version that dropped one would.
+            fs.writeFileSync(path.join(stubs, 'cosign'), '#!/bin/sh\necho "Error: unknown flag: --bundle" >&2\nexit 1\n', { mode: 0o755 });
+            const out = run('verify.sh', [], true);
+            expect(out.status).toBe(1);
+            expect(out.stderr).toBe(`verify: cosign: Error: unknown flag: --bundle\nverify: the signature over SHA256SUMS does not verify for ${IDENTITY}\n`);
+        });
+
         it('allows the signature file and nothing else outside the list', () => {
             fs.writeFileSync(path.join(tree, 'signatures/extra.json'), '{}');
             const out = run('verify.sh', [], true);
@@ -1323,7 +1460,7 @@ done
 
         it('passes a trusted root to cosign when one is named, and refuses a VERSION that is not one', () => {
             expect(run('verify.sh', [], true, { SCANENT_TRUSTED_ROOT: '/srv/trusted_root.json' }).status).toBe(0);
-            expect(fs.readFileSync(stubLog, 'utf8')).toContain('cosign verify-blob --offline --trusted-root /srv/trusted_root.json --bundle ');
+            expect(fs.readFileSync(stubLog, 'utf8')).toContain('cosign verify-blob --trusted-root /srv/trusted_root.json --bundle ');
             // The identity is built from VERSION, which is in the signed list: a changed one fails at the checksums, before it is used.
             fs.writeFileSync(path.join(tree, 'VERSION'), '9.8.7 --insecure\n');
             const out = run('verify.sh', [], true);
@@ -1382,6 +1519,13 @@ done
             .filter((line) => !line.trimStart().startsWith('#'))
             .join('\n');
         expect(code).not.toMatch(/\b(curl|wget)\b|docker (pull|push|build)|"\$RUNTIME" (pull|push|build)/);
+        // The signing script is held to the same: executable, no network tool, and no container runtime at all.
+        expect(execFileSync('git', ['ls-files', '-s', 'deploy/airgap/sign-bundle.sh'], { cwd: REPO_ROOT, encoding: 'utf8' })).toMatch(/^100755 /);
+        const signCode = read('deploy/airgap/sign-bundle.sh')
+            .split('\n')
+            .filter((line) => !line.trimStart().startsWith('#'))
+            .join('\n');
+        expect(signCode).not.toMatch(/\b(curl|wget|docker|podman|nerdctl|cosign)\b/);
     });
 });
 
@@ -1406,10 +1550,22 @@ describe('the release workflow', () => {
     it('may read the repository everywhere and write packages in the publishing job alone', () => {
         expect(release.permissions).toEqual({ contents: 'read' });
         // Phase 4: keyless signing needs the job's identity token, and the provenance attestation its own permission.
-        // `publish` gains those two; `bundle` gains the identity token alone, to sign the list of checksums.
         expect(release.jobs.publish.permissions).toEqual({ contents: 'read', packages: 'write', 'id-token': 'write', attestations: 'write' });
         expect(release.jobs.build.permissions).toBeUndefined();
-        expect(release.jobs.bundle.permissions).toEqual({ contents: 'read', 'id-token': 'write' });
+        // The Phase 4 review: `bundle` runs the repository's scripts on a manual run from any branch, so it holds no
+        // identity token at all. The list of checksums is signed by `sign-bundle`, which exists for that and runs
+        // for a pushed tag only. (`bundle` held `id-token: write` here before, with step conditions keeping it unused.)
+        expect(release.jobs.bundle.permissions).toEqual({ contents: 'read' });
+        expect(release.jobs['sign-bundle'].permissions).toEqual({ contents: 'read', 'id-token': 'write', attestations: 'write' });
+        expect(release.jobs.gates.permissions).toBeUndefined();
+        // The identity token exists only in jobs that run for a pushed tag and for nothing else.
+        for (const [name, job] of Object.entries(release.jobs as Record<string, Json>)) {
+            const granted = (job.permissions ?? {}) as Record<string, string>;
+            if (granted['id-token'] !== undefined || granted.attestations !== undefined) {
+                expect(['publish', 'sign-bundle']).toContain(name);
+                expect(job.if).toBe("github.event_name == 'push' && github.ref_type == 'tag'");
+            }
+        }
         // No job but `publish` may write a package, and none may write the repository's contents but `release`.
         for (const [name, job] of Object.entries(release.jobs as Record<string, Json>)) {
             const granted = (job.permissions ?? {}) as Record<string, string>;
@@ -1418,7 +1574,8 @@ describe('the release workflow', () => {
             for (const scope of Object.keys(granted)) expect(['contents', 'packages', 'id-token', 'attestations']).toContain(scope);
         }
         // `release` is new with the review: the one job that may write a release, and it may write nothing else.
-        expect(Object.keys(release.jobs)).toEqual(['build', 'publish', 'bundle', 'release']);
+        // The Phase 4 review added `gates` (what main is held to, before anything is built) and `sign-bundle`.
+        expect(Object.keys(release.jobs)).toEqual(['gates', 'build', 'publish', 'bundle', 'sign-bundle', 'release']);
         expect(release.jobs.release.permissions).toEqual({ contents: 'write' });
         expect(ci.permissions).toEqual({ contents: 'read' });
     });
@@ -1464,7 +1621,8 @@ describe('the release workflow', () => {
     });
 
     it('never pushes a version twice, and publishes only once the bundle check has passed', () => {
-        expect(release.jobs.publish.needs).toEqual(['build', 'bundle']);
+        // `sign-bundle` joined the list with the Phase 4 review: it is the job that checks the bundle a site receives.
+        expect(release.jobs.publish.needs).toEqual(['build', 'bundle', 'sign-bundle']);
         const names = steps(release.jobs.publish).map((s) => (s.name as string | undefined) ?? '');
         const at = (needle: string) => names.findIndex((n) => n.includes(needle));
         expect(at('already published')).toBeGreaterThan(at('Log in'));
@@ -1476,16 +1634,21 @@ describe('the release workflow', () => {
 
     it('releases the bundle and the checksum the documents tell a site to compare', () => {
         const job = release.jobs.release;
-        expect(job.needs).toEqual(['build', 'bundle', 'publish']);
-        // The artifact it attaches is the one the bundle job checked and uploaded.
-        const upload = steps(release.jobs.bundle).find((s) => String(s.uses ?? '').startsWith('actions/upload-artifact'));
+        expect(job.needs).toEqual(['build', 'bundle', 'sign-bundle', 'publish']);
+        // The artifact it attaches is the one the signing job checked and uploaded: the signed bundle, never the unsigned one.
+        const upload = steps(release.jobs['sign-bundle']).find((s) => String(s.name ?? '') === 'Upload the bundle');
+        expect(upload?.with.name).toBe('scanent-${{ needs.build.outputs.version }}-airgap');
+        const unsigned = steps(release.jobs.bundle).find((s) => String(s.uses ?? '').startsWith('actions/upload-artifact'));
+        expect(unsigned?.with.name).toBe('scanent-${{ needs.build.outputs.version }}-airgap-unsigned');
         const download = steps(job).find((s) => String(s.uses ?? '').startsWith('actions/download-artifact'));
         expect(download?.with.name).toBe(upload?.with.name);
         const text = scripts(job);
         expect(text).toContain('sha256sum "scanent-${VERSION}-airgap.tar" > "scanent-${VERSION}-airgap.tar.sha256"');
         expect(text).toMatch(/gh release create "\$REF_NAME" --verify-tag[\s\S]*"scanent-\$\{VERSION\}-airgap\.tar" "scanent-\$\{VERSION\}-airgap\.tar\.sha256"/);
-        // No third-party action, and the token is the job's own. (Three downloads since Phase 4: the bundle, its signed checksums, the SBOMs.)
+        // No third-party action, and the token is the job's own. (Four downloads: the bundle, its signed checksums, the SBOMs,
+        // and, since the Phase 4 review, the provenance attestations.)
         expect(steps(job).filter((s) => s.uses !== undefined).map((s) => String(s.uses).split('@')[0])).toEqual([
+            'actions/download-artifact',
             'actions/download-artifact',
             'actions/download-artifact',
             'actions/download-artifact',
@@ -1497,9 +1660,15 @@ describe('the release workflow', () => {
             '"scanent-${VERSION}-linux-arm64.cdx.json"',
             '"scanent-${VERSION}-airgap.SHA256SUMS"',
             '"scanent-${VERSION}-airgap.SHA256SUMS.sigstore.json"',
+            // Provenance for everything a client runs or loads: the manifest, each architecture's image, the bundle.
+            '"provenance/scanent-${VERSION}-image.provenance.jsonl"',
+            '"provenance/scanent-${VERSION}-linux-amd64.provenance.jsonl"',
+            '"provenance/scanent-${VERSION}-linux-arm64.provenance.jsonl"',
+            '"provenance/scanent-${VERSION}-airgap.provenance.jsonl"',
         ]) {
             expect(create).toContain(file);
         }
+        expect(text).toContain('for name in image linux-amd64 linux-arm64 airgap; do\n  test -s "provenance/scanent-${VERSION}-${name}.provenance.jsonl"');
         expect(create).not.toMatch(/not signed|signed yet/i);
         expect(create).toContain('docs/verify-a-release.md');
         // Both documents now say where that checksum is.
@@ -1513,6 +1682,100 @@ describe('the release workflow', () => {
         const positions = order.map((needle) => bundle.indexOf(needle));
         expect(positions.every((p) => p >= 0)).toBe(true);
         expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+        // And the signed one, in the job that signs it: the same order, from the archive that is released.
+        const signed = scripts(release.jobs['sign-bundle']);
+        const signedOrder = ['deploy/airgap/sign-bundle.sh', 'tar -xf', './verify.sh --require-signature', './load.sh --require-signature', 'deploy/smoke.sh "${IMAGE_REPOSITORY}:${VERSION}"'];
+        const signedAt = signedOrder.map((needle) => signed.indexOf(needle));
+        expect(signedAt.every((p) => p >= 0)).toBe(true);
+        expect([...signedAt].sort((a, b) => a - b)).toEqual(signedAt);
+    });
+
+    it('holds the released commit to what main is held to, before anything is built, and refuses a tag that is not on main', () => {
+        const gates = release.jobs.gates as Json;
+        // Nothing is built, signed or pushed unless it passes: every other job needs it, directly or through `build`.
+        expect(release.jobs.build.needs).toBe('gates');
+        for (const [name, job] of Object.entries(release.jobs as Record<string, Json>)) {
+            if (name === 'gates') continue;
+            const needs = ([] as string[]).concat(job.needs as string | string[]);
+            expect(needs.includes('gates') || needs.includes('build')).toBe(true);
+        }
+        expect(gates.if).toBeUndefined();
+        expect(gates.needs).toBeUndefined();
+        // Each gate of ci.yml's `checks` job is here, with the same command, word for word.
+        const ciSteps = steps(ci.jobs.checks);
+        const run = (job: Json[], name: string): string => {
+            const found = job.filter((s) => s.name === name);
+            expect(found).toHaveLength(1);
+            return String(found[0].run);
+        };
+        const GATES = [
+            'Install',
+            'Gate: npm audit of the production dependencies (moderate and above)',
+            'Gate: licences of the production dependencies',
+            'Lint',
+            'Type-check',
+            'Build',
+            'Test with coverage (gate)',
+            'Reproducible build',
+        ];
+        for (const name of GATES) expect(run(steps(gates), name)).toBe(run(ciSteps, name));
+        // In ci.yml's order, none skipped by a condition, none allowed to fail.
+        const names = steps(gates).map((s) => String(s.name ?? ''));
+        const at = GATES.map((name) => names.indexOf(name));
+        expect([...at].sort((a, b) => a - b)).toEqual(at);
+        for (const name of GATES) {
+            const step = steps(gates).find((s) => s.name === name) as Json;
+            expect(step.if).toBeUndefined();
+            expect(step['continue-on-error']).toBeUndefined();
+        }
+        // ci.yml has no gate this job leaves out: every step of `checks` that runs a command is one of these, or its plain-test twin.
+        const ciRuns = ciSteps.filter((s) => s.run !== undefined).map((s) => String(s.name));
+        expect(ciRuns.filter((n) => !GATES.includes(n))).toEqual(['Test']);
+        expect(run(ciSteps, 'Test')).toBe('npm test');
+        expect(run(steps(gates), 'Test with coverage (gate)')).toBe('npm run test:coverage');
+
+        // The commit is on main, asked of the whole history, on a pushed tag, before anything is installed.
+        const checkout = steps(gates)[0];
+        expect(String(checkout.uses)).toMatch(/^actions\/checkout@[0-9a-f]{40}$/);
+        expect(checkout.with).toEqual({ 'persist-credentials': false, 'fetch-depth': 0 });
+        const onMain = steps(gates).find((s) => s.name === 'The tagged commit is on main') as Json;
+        expect(onMain.if).toBe("github.event_name == 'push' && github.ref_type == 'tag'");
+        expect(onMain.run).toContain('git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main');
+        // A main that could not be read is a failure, never a pass.
+        expect(onMain.run).toContain('git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {');
+        expect(names.indexOf('The tagged commit is on main')).toBeLessThan(names.indexOf('Install'));
+        expect(names.indexOf('The tagged commit is on main')).toBeGreaterThan(0);
+    });
+
+    it('the on-main check passes a commit main holds and refuses one it does not, in a real repository', () => {
+        const onMain = steps(release.jobs.gates).find((s) => s.name === 'The tagged commit is on main') as Json;
+        const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'scanent-on-main-'));
+        try {
+            const git = (...args: string[]): string =>
+                execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...args], { cwd: repo, encoding: 'utf8' }).trim();
+            git('init', '-q', '-b', 'main');
+            git('commit', '-q', '--allow-empty', '-m', 'one');
+            const first = git('rev-parse', 'HEAD');
+            git('commit', '-q', '--allow-empty', '-m', 'two');
+            const head = git('rev-parse', 'HEAD');
+            git('update-ref', 'refs/remotes/origin/main', head);
+            git('checkout', '-q', '-b', 'side', first);
+            git('commit', '-q', '--allow-empty', '-m', 'not on main');
+            const side = git('rev-parse', 'HEAD');
+            const check = (sha: string) => spawnSync('bash', ['-c', String(onMain.run)], { cwd: repo, encoding: 'utf8', env: { PATH: process.env.PATH ?? '', GITHUB_SHA: sha } });
+            expect(check(head).status).toBe(0);
+            expect(check(first).status).toBe(0);
+            const refused = check(side);
+            expect(refused.status).toBe(1);
+            expect(refused.stderr).toContain('is not on main; a release is cut from main');
+            // With no main to ask, the check fails closed.
+            git('update-ref', '-d', 'refs/remotes/origin/main');
+            const blind = check(head);
+            expect(blind.status).toBe(1);
+            expect(blind.stderr).toContain('the check cannot be made');
+        } finally {
+            fs.rmSync(repo, { recursive: true, force: true });
+        }
     });
 
     it('uses only the actions ci.yml already pins, and one more from the same publisher', () => {
@@ -1590,10 +1853,12 @@ describe('what a release signs and attests', () => {
         // The tools are named by version, in one place.
         expect(release.env.COSIGN_VERSION).toMatch(/^v\d+\.\d+\.\d+$/);
         expect(release.env.SYFT_VERSION).toMatch(/^v\d+\.\d+\.\d+$/);
-        for (const job of [release.jobs.publish, release.jobs.bundle] as Json[]) {
+        // (`sign-bundle` took `bundle`'s place here with the Phase 4 review: `bundle` no longer installs cosign.)
+        for (const job of [release.jobs.publish, release.jobs['sign-bundle']] as Json[]) {
             const installer = steps(job).find((s) => String(s.uses ?? '').startsWith('sigstore/cosign-installer@'));
             expect(installer?.with).toEqual({ 'cosign-release': '${{ env.COSIGN_VERSION }}' });
         }
+        expect(steps(release.jobs.bundle).some((s) => String(s.uses ?? '').startsWith('sigstore/cosign-installer@'))).toBe(false);
     });
 
     it('attests provenance for the pushed manifest, and the images stay plain manifests', () => {
@@ -1601,6 +1866,27 @@ describe('what a release signs and attests', () => {
         expect(String(provenance.uses)).toMatch(/^actions\/attest-build-provenance@[0-9a-f]{40}$/);
         expect(provenance.with).toEqual({ 'subject-name': '${{ env.IMAGE_REPOSITORY }}', 'subject-digest': '${{ steps.digests.outputs.index }}', 'push-to-registry': true });
         expect(text).toContain('docker build --provenance=false --sbom=false');
+    });
+
+    it('attests provenance for each architecture\'s image and for the bundle too, and keeps each attestation for the release', () => {
+        const publish = release.jobs.publish as Json;
+        for (const arch of ['amd64', 'arm64']) {
+            const step = named(publish, `Attest the ${arch} image's provenance`);
+            expect(String(step.uses)).toBe(String(named(publish, 'Attest the build').uses));
+            expect(step.with).toEqual({ 'subject-name': '${{ env.IMAGE_REPOSITORY }}', 'subject-digest': `\${{ steps.digests.outputs.${arch} }}`, 'push-to-registry': true });
+        }
+        order(publish, ['Sign the manifest', 'Attest the build', 'Attest the amd64', 'Attest the arm64', 'Keep the provenance', 'Upload the provenance', 'Verify the signatures']);
+        const keep = named(publish, 'Keep the provenance attestations');
+        // Three files, each from its own step's output, and a missing one stops the release.
+        for (const id of ['provenance-index', 'provenance-amd64', 'provenance-arm64']) expect(JSON.stringify(keep.env)).toContain(`steps.${id}.outputs.bundle-path`);
+        expect(keep.run).toContain('[ "$(find provenance -type f -size +0 | wc -l)" -eq 3 ]');
+
+        const sign = release.jobs['sign-bundle'] as Json;
+        const bundleProvenance = named(sign, "Attest the bundle's provenance");
+        expect(String(bundleProvenance.uses)).toBe(String(named(publish, 'Attest the build').uses));
+        // The subject is the archive that is released: the signed one, after it was checked.
+        expect(bundleProvenance.with).toEqual({ 'subject-path': 'bundle-out/scanent-${{ needs.build.outputs.version }}-airgap.tar' });
+        order(sign, ['Sign the bundle', 'Unpack, verify and load', "Attest the bundle's provenance", 'Keep the provenance', 'Upload the bundle']);
     });
 
     it('verifies its own signatures with the identity the documents give, before it logs out', () => {
@@ -1612,19 +1898,37 @@ describe('what a release signs and attests', () => {
     });
 
     it('signs the bundle\'s list of checksums on a pushed tag only, and requires the signature when it checks that bundle', () => {
+        // What this held of the `bundle` job's tag-only steps, it now holds of the `sign-bundle` job, which is tag-only
+        // as a whole: the same signing command, the same test that a signature was written, the same required check.
         const bundle = release.jobs.bundle as Json;
-        expect(bundle.env.SIGN).toBe(`\${{ ${TAG_ONLY} }}`);
-        const installer = steps(bundle).find((s) => String(s.uses ?? '').startsWith('sigstore/cosign-installer@'));
-        expect(installer?.if).toBe(TAG_ONLY);
+        const sign = release.jobs['sign-bundle'] as Json;
+        expect(sign.if).toBe(TAG_ONLY);
+        expect(sign.needs).toEqual(['build', 'bundle']);
+        const installer = steps(sign).find((s) => String(s.uses ?? '').startsWith('sigstore/cosign-installer@'));
+        expect(installer?.if).toBeUndefined();
         const build = named(bundle, 'Build the bundle');
         expect(build.run).toContain('export SCANENT_SBOM_DIR="$PWD/sboms"');
-        expect(build.run).toMatch(/if \[ "\$SIGN" = "true" \]; then\n\s*export SCANENT_SIGN_CMD="cosign sign-blob --yes --bundle"\n\s*fi/);
-        expect(build.run).toContain('test -s "bundle-out/scanent-${VERSION}-airgap/signatures/SHA256SUMS.sigstore.json"');
-        const check = named(bundle, 'Unpack, verify and load');
-        expect(check.run).toMatch(/if \[ "\$SIGN" = "true" \]; then\n\s*\.\/verify\.sh --require-signature\n\s*\.\/load\.sh --require-signature\n\s*else\n\s*\.\/verify\.sh\n\s*\.\/load\.sh\n\s*fi/);
-        expect(named(bundle, 'Upload the signed checksums').if).toBe(TAG_ONLY);
-        // A manual run signs nothing: every use of cosign is in a job or a step that runs on a pushed tag only.
+        // The job with no identity signs nothing, and says the bundle it made carries no signature.
+        expect(JSON.stringify(bundle)).not.toMatch(/cosign|SCANENT_SIGN_CMD|id-token/);
+        expect(build.run).toContain('test ! -e "bundle-out/scanent-${VERSION}-airgap/signatures"');
+        expect(named(bundle, 'Unpack, verify and load').run).toMatch(/\.\/verify\.sh --unsigned\n\s*\.\/load\.sh --unsigned\n/);
+        const signing = named(sign, 'Sign the bundle');
+        expect(signing.run).toContain('export SCANENT_SIGN_CMD="cosign sign-blob --yes --bundle"');
+        expect(signing.run).toContain('deploy/airgap/sign-bundle.sh "unsigned/scanent-${VERSION}-airgap.tar" bundle-out');
+        expect(signing.run).toContain('test -s "bundle-out/scanent-${VERSION}-airgap/signatures/SHA256SUMS.sigstore.json"');
+        const check = named(sign, 'Unpack, verify and load');
+        expect(check.run).toMatch(/\.\/verify\.sh --require-signature\n\s*\.\/load\.sh --require-signature\n/);
+        expect(check.run).not.toMatch(/--unsigned|--no-signature/);
+        expect(named(sign, 'Upload the signed checksums').if).toBeUndefined();
+        // What it signs is what `bundle` checked and uploaded.
+        const unsigned = steps(bundle).find((s) => String(s.uses ?? '').startsWith('actions/upload-artifact')) as Json;
+        const download = steps(sign).find((s) => String(s.uses ?? '').startsWith('actions/download-artifact')) as Json;
+        expect(download.with.name).toBe(unsigned.with.name);
+        // A manual run signs nothing: every use of cosign is in a job that runs on a pushed tag only.
         expect(release.jobs.publish.if).toBe(TAG_ONLY);
+        for (const [name, job] of Object.entries(release.jobs as Record<string, Json>)) {
+            if (JSON.stringify(job).includes('cosign')) expect([name, job.if]).toEqual([name, TAG_ONLY]);
+        }
     });
 
     it('verify.sh, the workflow and the document name one identity', () => {

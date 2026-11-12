@@ -11,7 +11,7 @@ controller's assessment.
 
 - [In short](#in-short)
 - [Personal data the scanner reads](#personal-data-the-scanner-reads)
-- [What it never reads](#what-it-never-reads)
+- [What it never requests or keeps](#what-it-never-requests-or-keeps)
 - [What it writes, and where](#what-it-writes-and-where)
 - [Transfers](#transfers)
 - [Retention](#retention)
@@ -50,26 +50,72 @@ estate writes in the Okta profile property and the Key Vault tag, and by what
 you write in the inventory. Writing an id or a team there keeps names out.
 
 **Indirectly.** A service principal, a token or an agent may itself be named
-after a person (`jane-test-token`). The scanner reports an identity by the
-provider's id, not by its display name, so such names are not carried. Agent
-ids from code are a file path and a variable name, and a path may contain a
-person's name if your repository is laid out that way.
+after a person (`jane-test-token`). Whether such a name reaches the outputs
+depends on the source:
 
-## What it never reads
+- **Reported by the provider's id, so a display name is not carried:** Entra
+  service principals and applications (object ids), Okta apps and API tokens
+  (Okta ids), Google service accounts and their keys (numeric ids, with the
+  project id), LangSmith deployments and projects (ids).
+- **Reported as your estate wrote them, so a person's name in one is
+  carried:**
+  - Azure Key Vault: the name of each secret and certificate (in the
+    credential's reference), and the value of the tag that names the
+    principal a credential belongs to, which becomes that principal's id.
+  - GitHub Actions: the repository's owner and name, each workflow file's
+    name, and each secret's name. A secret's value is never read.
+  - MCP servers: each server's URL as you configured it and each tool's
+    name. A server's label is not reported; it is written to the log.
+  - Code: a file's path, the variable an agent is assigned to, tool names,
+    model names, and the host of a model or MCP endpoint written in code.
 
-The scanner makes no request that returns any of these, and
-`docs/network-and-permissions.md` lists every request it does make:
+If people's names appear in secret names, workflow file names, repository
+names, tool names or paths in your estate, they are in the report and in the
+results files. The log holds labels and host names, not agent ids.
 
-- A credential's value: a Key Vault secret, an Okta client secret, a GitHub
-  secret, private key material.
+
+## What it never requests or keeps
+
+Two different things, kept apart here. `docs/network-and-permissions.md` lists
+every request the scanner makes.
+
+**Never requested.** The scanner makes no request that returns any of these:
+
+- A credential's value from a vault or an identity provider: a Key Vault
+  secret's value, an Okta client secret, a GitHub secret's value, private key
+  material. (One listing does return secret values, and is off by default:
+  see LangSmith deployments, below.)
 - User profiles: names, e-mail addresses, phone numbers, group memberships,
   sign-in logs, of anyone.
 - Mail, files, chats, calendars.
 - What an agent was asked or answered: prompts, completions, run inputs and
   outputs, traces' contents, tool call arguments and results.
-- Source code's meaning beyond the agent definitions it recognises. Comments
-  and string contents are not reported.
-- Anything from an MCP server but its list of tools. No tool is called.
+- A call of any tool on an MCP server. Only its list of tools is asked for.
+
+**Received or read, and dropped.** These reach the scanner's memory because
+the answer or the file that holds what it needs also holds them. None is
+written, logged or reported, and a report or an output file that held a
+secret's shape would be refused whole:
+
+- **The contents of source files.** The code source reads every source file
+  under a root in full, up to 1 MiB each: comments, strings, and any secret or
+  personal data written in them. It keeps the agent definitions it recognises.
+  A key written in code is reported as the place it is written (file and
+  line), never its value; a URL written in code is reported as its host.
+- **LangSmith project descriptions and metadata.** The projects listing
+  carries each project's description, free-form metadata and run tags. The
+  scanner keeps a project's id and the tool names in its run statistics.
+- **LangSmith deployment secrets, only with `readDeployments: true`.** The
+  deployments listing carries each deployment's secrets, names and values.
+  With the option on, the scanner receives them and keeps a deployment's id
+  and tracing project. The option is off unless you set it; leave it off
+  unless you need deployments in the report.
+- **Okta app profiles.** An app's profile is returned whole. The scanner keeps
+  the one property you name as the owner.
+- **An MCP server's tool descriptions and instructions.** They arrive with the
+  list of tools. Names and hashes are kept.
+- **A Google service account's e-mail address**, read to tell the scanner's
+  own account apart.
 
 Special categories of data (health, beliefs, and so on) and data about
 criminal convictions are not read.
@@ -80,9 +126,9 @@ criminal convictions are not read.
 |---|---|---|
 | The signed report (`report.signed.json`, or stdout, or posted to a tenant) | Your output directory; a tenant only if you configure one | Owner ids, as above. No declared inventory fields |
 | `results.json`, `agents.csv`, `summary.html` | Your output directory | Owner ids, and the inventory's declared `name`, `owner` and `purpose` |
-| `findings.csv` | Your output directory | Agent ids. A finding's text names an agent or a credential id, not a person |
+| `findings.csv` | Your output directory | Agent ids and credential references. A finding names an agent or a credential by its id; for the sources listed under "Indirectly" above, that id holds names your estate chose (a secret's name, a workflow file, a path), and a person's name written there is carried |
 | The log (stderr) | Wherever your platform sends a container's stderr | None by design: kinds, counts, scan ids, host names. No owner, no agent id (`docs/operations.md`) |
-| A support bundle | Where you write it, if you run the command | None by default: every name and id is replaced by a token. With `--include-identifiers`, agent ids |
+| A support bundle | Where you write it, if you run the command | None by default: every name and id is replaced by a token. With `--include-identifiers`: agent ids, the estate's name, the tenant's host and slug, configured hosts, labels, paths, and the text of each doctor check |
 
 Files are written `0640` in directories `0750`, owned by the user the scanner
 runs as. Nothing is written outside the output directory.
