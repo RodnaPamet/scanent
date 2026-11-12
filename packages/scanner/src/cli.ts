@@ -10,6 +10,7 @@
  *   schedule    --config <file> [--out <dir>]               scan now, then every `schedule.everyHours`
  *   public-key  --config <file>                             print the raw public key to register in the tenant
  *   diff        <old> <new> [...]                           what changed between two runs (`diff-command.ts`)
+ *   support-bundle --config <file> [--out <file>] [...]     how this deployment is set up and how its last run went, for support (`support-bundle.ts`)
  *   help                                                    the commands
  *
  * Exit codes are `exit-codes.ts`'s table: 0 done, 1 failed, 2 usage, 3
@@ -26,7 +27,7 @@
  * from the file `<NAME>_FILE` names (`secrets.ts`).
  * The CLI passes no `fetchImpl`: that seam belongs to the tests.
  */
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { isAbsolute, resolve as resolvePath } from 'path';
 import { createInterface } from 'readline';
 
@@ -37,6 +38,7 @@ import { runDiff } from './diff-command';
 import { renderDoctorJson, renderDoctorText } from './doctor/render';
 import { runDoctor } from './doctor/run';
 import { EXIT } from './exit-codes';
+import { OutputRefusedLocally } from './file-output';
 import { HOSTS_FORMATS, hostsFor, renderHosts, type HostsFormat } from './hosts';
 import { renderAccessText } from './init/access-guide';
 import { InitError, parseInitAnswers, type InitAnswers } from './init/answers';
@@ -51,6 +53,7 @@ import { loadSigningKey } from './scan';
 import { runOnSchedule } from './schedule';
 import { resolveSecretEnv, SecretFileError } from './secrets';
 import type { SourceKind } from './source';
+import { buildSupportBundle, renderSupportBundle } from './support-bundle';
 
 /** The value of `--name <value>` or `--name=<value>`; null when the flag is absent or has no value. */
 function arg(argv: readonly string[], name: string): string | null {
@@ -82,6 +85,7 @@ const FLAGS: Readonly<Record<string, { readonly value: readonly string[]; readon
     hosts: { value: ['--config', '--format'], bare: [] },
     init: { value: ['--dir', '--answers'], bare: ['--force', '--no-keygen', '--print-access'] },
     keygen: { value: ['--out'], bare: [] },
+    'support-bundle': { value: ['--config', '--out', '--runs'], bare: ['--include-identifiers', '--doctor'] },
 };
 
 /**
@@ -106,10 +110,11 @@ function unknownArgument(command: string, rest: readonly string[]): string | nul
  * commands, so a second line points to `help` and names every command.
  */
 const USAGE_LINE = 'usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n';
-export const USAGE_HINT = "run 'scanent help' for every command: init, keygen, doctor, hosts, scan, schedule, public-key, diff\n";
+export const USAGE_HINT = "run 'scanent help' for every command: init, keygen, doctor, hosts, scan, schedule, public-key, diff, support-bundle\n";
 const USAGE = `${USAGE_LINE}${USAGE_HINT}`;
 const DOCTOR_USAGE = `usage: scanent doctor --config <file> [--json] [--out <absolute dir>] [--source <kind>]...\n`;
 const HOSTS_USAGE = 'usage: scanent hosts --config <file> [--format lines|json|egress-allow]\n';
+const SUPPORT_USAGE = 'usage: scanent support-bundle --config <file> [--out <file>] [--runs <absolute dir>] [--doctor] [--include-identifiers]\n';
 
 export const HELP = `scanent, the Agent Estate Scanner (alias: aes)
 
@@ -121,6 +126,7 @@ export const HELP = `scanent, the Agent Estate Scanner (alias: aes)
   scanent schedule   --config <file> [--out <dir>]
   scanent public-key --config <file>
   scanent diff <old> <new> [--format text|json] [--trust-key <hex>] [--allow-different-scanner]
+  scanent support-bundle --config <file> [--out <file>] [--runs <dir>] [--doctor] [--include-identifiers]
   scanent help        (also --help or -h, alone or after any command but diff)
 
   init         Write a configuration, an env template of credential NAMES and a
@@ -155,6 +161,18 @@ export const HELP = `scanent, the Agent Estate Scanner (alias: aes)
   diff         Compare two runs: results.json files or signed reports.
                Exit 0 no difference, 1 a difference, 2 an error,
                3 no difference found but not everything could be compared.
+  support-bundle
+               One scanent-support/1 document for whoever helps with this
+               deployment: versions, the shape of the configuration, which
+               credential variables are set (never a value), and how the last
+               run went. Hosts, labels, paths and agent ids are replaced by
+               tokens. Read it before you send it.
+               --out <file>           write it to a new file (mode 0600);
+                                      without it, to stdout
+               --runs <dir>           read the last run from this output directory
+               --doctor               include the checks of 'scanent doctor'
+                                      (makes the requests doctor makes)
+               --include-identifiers  keep the names instead of tokens
 
 Credentials are read from the environment variables the configuration names.
 For each such NAME, NAME_FILE may instead name a file holding the value.
@@ -407,6 +425,56 @@ async function runInit(argv: readonly string[], io: CliIo): Promise<number> {
     return EXIT.OK;
 }
 
+/**
+ * `scanent support-bundle`. Reads the configuration, the environment's
+ * variable names and the last run's files. It resolves no credential, and it
+ * makes no request unless `--doctor` is given.
+ */
+async function runSupportBundle(argv: readonly string[], file: string, env: NodeJS.ProcessEnv, cwd: string): Promise<number> {
+    const out = arg(argv, '--out');
+    const runs = arg(argv, '--runs');
+    const badOut = named(argv, '--out') && (out === null || !isCleanPath(out));
+    const badRuns = named(argv, '--runs') && (runs === null || !runs.startsWith('/') || !isCleanPath(runs));
+    if (badOut || badRuns) {
+        stderr(SUPPORT_USAGE);
+        return EXIT.USAGE;
+    }
+    const bundle = await buildSupportBundle({
+        configPath: file,
+        env,
+        runsDir: runs,
+        includeIdentifiers: argv.includes('--include-identifiers'),
+        doctor: argv.includes('--doctor') ? () => runDoctor({ configPath: file, env }) : undefined,
+    });
+    let text: string;
+    try {
+        text = renderSupportBundle(bundle);
+    } catch (err) {
+        if (!(err instanceof OutputRefusedLocally)) throw err;
+        stderr(`${err.message}\n`);
+        return EXIT.FAILED;
+    }
+    if (out === null) {
+        stdout(text);
+    } else {
+        const path = isAbsolute(out) ? out : resolvePath(cwd, out);
+        try {
+            // A new file, private to its owner. An existing one is never replaced.
+            writeFileSync(path, text, { flag: 'wx', mode: 0o600 });
+        } catch (err) {
+            const code = (err as NodeJS.ErrnoException | null)?.code;
+            stderr(`the support bundle was not written (${typeof code === 'string' && /^[A-Z0-9_]{1,32}$/.test(code) ? code : 'error'}); an existing file is never replaced\n`);
+            return code === 'EEXIST' ? EXIT.USAGE : EXIT.FAILED;
+        }
+    }
+    stderr(
+        bundle.identifiers === 'REPLACED'
+            ? 'support bundle written. Hosts, labels, paths and agent ids are replaced by tokens; credential variable NAMES are kept. Read it before you send it.\n'
+            : 'support bundle written WITH the estate\'s hosts, labels, paths and agent ids (--include-identifiers). Read it before you send it.\n',
+    );
+    return EXIT.OK;
+}
+
 const TLS_OFF = 'NODE_TLS_REJECT_UNAUTHORIZED=0 turns certificate verification off; scanent does not send credentials over an unverified connection. Remove it; add your CA with NODE_EXTRA_CA_CERTS.\n';
 
 const DOCTOR_KINDS: readonly SourceKind[] = ['entra-sp', 'okta-app', 'vault', 'mcp', 'runtime', 'cicd', 'code', 'inflect-register', 'gcp-sa'];
@@ -432,7 +500,7 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: 
     const file = arg(argv, '--config');
     if (!command || !file) {
         // A command with usage of its own says that; everything else gets the line scripts know, and where to look.
-        process.stderr.write(command === 'doctor' ? DOCTOR_USAGE : command === 'hosts' ? HOSTS_USAGE : USAGE);
+        process.stderr.write(command === 'doctor' ? DOCTOR_USAGE : command === 'hosts' ? HOSTS_USAGE : command === 'support-bundle' ? SUPPORT_USAGE : USAGE);
         return 2;
     }
     if (!(command in FLAGS)) {
@@ -475,6 +543,9 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: 
         process.stdout.write(argv.includes('--json') ? renderDoctorJson(report) : renderDoctorText(report));
         return report.exitCode;
     }
+
+    // Before the configuration is loaded: a bundle is most wanted when it cannot be.
+    if (command === 'support-bundle') return runSupportBundle(argv.slice(1), file, env, io.cwd ?? process.cwd());
 
     // A scanner that sends an estate's read credentials must not do it over an
     // unverified connection because a variable was left in a shell profile.

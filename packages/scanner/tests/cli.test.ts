@@ -66,7 +66,8 @@ describe('1. usage', () => {
         expect(await main(argv, ENV)).toBe(2);
         // The first line is the one scripts have always matched; the second (Phase 3 review) says where every command is listed.
         expect(err.join('')).toBe(`usage: scanent <scan|schedule|public-key> --config <file> [--dry-run]\n${USAGE_HINT}`);
-        expect(USAGE_HINT).toBe("run 'scanent help' for every command: init, keygen, doctor, hosts, scan, schedule, public-key, diff\n");
+        // The list grew by one with Phase 4's `support-bundle`; the first line, which scripts match on, is unchanged.
+        expect(USAGE_HINT).toBe("run 'scanent help' for every command: init, keygen, doctor, hosts, scan, schedule, public-key, diff, support-bundle\n");
         expect(out).toEqual([]);
     });
 
