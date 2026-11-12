@@ -74,8 +74,8 @@ a machine that has never had network access.
 
 ## Other runtimes
 
-- Podman: `CONTAINER_RUNTIME=podman ./load.sh`. Run with `--userns=keep-id` in
-  place of `--user`.
+- Podman: `CONTAINER_RUNTIME=podman ./load.sh`. Run with `--userns=keep-id`
+  beside `--user "$(id -u):$(id -g)"`.
 - containerd, on each node of a cluster. The archive holds the image under its
   per-architecture name (the third column of `images/IMAGES`), and the chart
   asks for `ghcr.io/rodnapamet/scanent:<version>`, so import it and then give

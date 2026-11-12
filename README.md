@@ -206,7 +206,7 @@ Without `--user` the image runs as uid 1000, and the run's directories (`0750`)
 and files (`0640`) are readable by uid 1000 and root only: give it a directory
 owned by uid 1000 (`chown 1000`), never one that every user can write. Rootless
 Docker and Podman map users differently; there, run it as the user that maps to
-you (Podman: `--userns=keep-id`).
+you (Podman: `--userns=keep-id --user "$(id -u):$(id -g)"`).
 
 Each run is one new directory, written whole or not at all, and nothing that
 exists is ever overwritten except the `latest.json` pointer:
