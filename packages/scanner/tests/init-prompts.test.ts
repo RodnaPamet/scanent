@@ -369,4 +369,18 @@ describe('the terminal', () => {
         await expect(terminal.io.ask('anything')).rejects.toThrow('the input ended before the questions did');
         terminal.close();
     });
+
+    it('a line that arrived before the input ended still answers a question asked after it', async () => {
+        // Node 24 throws from prompt() on a closed interface; the queued line
+        // must be handed over without prompting, on every supported Node.
+        const input = new PassThrough();
+        const terminal = terminalPrompt(input, new PassThrough());
+        const closed = new Promise((resolve) => input.once('close', resolve));
+        input.end('acme\n');
+        await closed;
+        await new Promise((resolve) => setImmediate(resolve));
+        expect(await terminal.io.ask('Estate name:')).toBe('acme');
+        await expect(terminal.io.ask('next')).rejects.toThrow('the input ended before the questions did');
+        terminal.close();
+    });
 });

@@ -279,8 +279,14 @@ export function terminalPrompt(
     return {
         io: {
             async ask(question) {
-                rl.setPrompt(question);
-                rl.prompt();
+                // A closed interface cannot prompt: Node 24 throws "readline was
+                // closed" from prompt() where Node 22 wrote nothing. Lines that
+                // arrived before the end are still answers; after them the
+                // wizard ends with its own message.
+                if (!ended) {
+                    rl.setPrompt(question);
+                    rl.prompt();
+                }
                 const line = await next();
                 if (line === null) throw new InitAborted('the input ended before the questions did; nothing was written');
                 return line;
