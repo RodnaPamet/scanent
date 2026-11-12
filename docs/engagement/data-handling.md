@@ -27,11 +27,18 @@ authors and does not check for updates.
 | Source code, as text | A file that defines an agent | Nothing in the code is run |
 | Automation workflow files and secret names | The names of secrets a GitHub workflow uses | Secret values, run logs |
 
-Three things reach the scanner's memory because the answer it needs comes
-bundled with them. They are discarded and are not written, logged or reported:
+Five things always reach the scanner's memory when their system is scanned,
+because the answer it needs comes bundled with them, and a sixth only if you
+switch an option on. They are discarded and are not written, logged or
+reported:
 
 - the full contents of each source file it reads (it keeps the agent
   definitions it recognises);
+- the full contents of each GitHub workflow file (it keeps the permissions
+  the file states and the names of the secrets it refers to);
+- from Microsoft Entra ID, for each application password: a hint (the first
+  few characters of the password) and the label somebody gave it. The
+  scanner keeps the password's identifier and dates only;
 - descriptions attached to LangSmith projects, Okta app profiles and MCP tools;
 - the e-mail-style address of each Google service account (an address of a
   piece of software, not of a person);

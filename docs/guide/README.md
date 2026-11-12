@@ -22,6 +22,14 @@ The result is a page you open in a browser, two spreadsheets, and a signed
 report file. All of it is written to a folder you choose, on a machine you
 choose.
 
+One name comes up throughout this guide: **an Inflect tenant**. Inflect is a
+separate compliance product from Inflect Ltd., the company that licenses this
+scanner. An Inflect tenant is one organisation's own account on that product.
+Among other things it keeps a register of that organisation's agents, and the
+scanner can read that register and send its report there. You do not need
+one. The scanner works without it, and this guide assumes you have none
+unless it says otherwise.
+
 ## What it is not
 
 - **It does not change anything.** It reads. It cannot create, edit, disable

@@ -39,8 +39,10 @@ For the people arranging a scan, not reviewing the software, there is the
 
 ## Five facts to hold on to
 
-1. **It reads and does not write.** A source is handed an HTTP client whose
-   only verb is GET. Every request the scanner can make is declared in one
+1. **It reads and does not write.** A source's general HTTP client has one
+   verb, GET. The few requests that are not GET (token exchanges, the MCP
+   listing, the register read, the optional post of the report) are fixed in
+   the code. Every request the scanner can make is declared in one
    file, and the hash of that declaration is in every signed report.
 2. **It does not ask for secret values.** Credentials are reported by
    reference. One listing that carries secret values (LangSmith deployments)

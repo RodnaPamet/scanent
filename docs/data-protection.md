@@ -110,12 +110,22 @@ secret's shape would be refused whole:
   With the option on, the scanner receives them and keeps a deployment's id
   and tracing project. The option is off unless you set it; leave it off
   unless you need deployments in the report.
-- **Okta app profiles.** An app's profile is returned whole. The scanner keeps
-  the one property you name as the owner.
+- **Okta app objects.** The apps listing is asked for whole, with no field
+  selection. The scanner keeps an app's id, its type and the one profile
+  property you name as the owner. Whether the listing carries an app's
+  client secret for a Read-only Administrator has not been confirmed against
+  a live Okta organisation; if it does, it is dropped with the page.
 - **An MCP server's tool descriptions and instructions.** They arrive with the
   list of tools. Names and hashes are kept.
 - **A Google service account's e-mail address**, read to tell the scanner's
   own account apart.
+- **Entra password hints and display names.** Microsoft Graph returns each
+  password credential's `hint` (the first characters of the secret) and
+  free-text `displayName`s with the members the scanner selects. The scanner
+  keeps each credential's id and dates.
+- **The contents of GitHub workflow files.** Each workflow file on the
+  default branch is read whole, as text, for its permissions and the secret
+  names it refers to. Anything else written in it is dropped.
 
 Special categories of data (health, beliefs, and so on) and data about
 criminal convictions are not read.

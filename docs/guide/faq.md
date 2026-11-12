@@ -38,12 +38,17 @@ make.
 
 It never asks a system for the value of one. It reads names and dates.
 
-Two cases where a secret can pass through the scanner's memory, without being
-kept, written or reported:
+Three cases where a secret, or part of one, can pass through the scanner's
+memory, without being kept, written or reported:
 
-- **Agent code.** The scanner reads code files in full. If somebody wrote a
-  key directly into a file, the scanner reads past it. The report then names
-  the file and the line, never the key.
+- **Agent code and GitHub workflow files.** The scanner reads these files in
+  full. If somebody wrote a key directly into a file, the scanner reads past
+  it. For agent code, the report then names the file and the line, never the
+  key.
+- **Microsoft Entra ID.** For each application password, Microsoft sends a
+  hint (the first few characters of the password) and the label somebody
+  gave it, together with the id and dates the scanner asks for. The scanner
+  drops the hint and the label and keeps only the id and the dates.
 - **LangSmith deployments**, only if somebody turns that option on. It is off
   unless you set it. See [what-it-reads.md](what-it-reads.md#langsmith).
 
@@ -212,8 +217,11 @@ and tells you what to confirm in that system's own administration.
 
 It reads each list once, page by page. It does not retry a request that
 failed. If a system tells it to slow down, it stops reading that system and
-reports it as incomplete, with the reason `RATE_LIMITED`. Each system has a
-time limit and a size limit, and reaching one is reported the same way.
+reports it as incomplete, with the reason `RATE_LIMITED`. The whole scan is
+given ten minutes unless the set-up changes it. Systems are read side by
+side, and one that is not finished by then is marked incomplete, with the
+reason `TIME_BOX`. Each system also has a size limit, and reaching it is
+reported the same way.
 
 We have not measured it against a real organisation's systems.
 
@@ -246,6 +254,10 @@ Then, on the computer that ran the scanner:
 ```bash
 docker image rm "$IMAGE"
 ```
+
+A checklist for the whole clean-up, to tick and keep as a record, is in the
+engagement kit:
+[../engagement/data-handling.md](../engagement/data-handling.md#how-to-delete-everything-afterwards).
 
 To confirm that access is gone, look in each system's own administration.
 Running the check step again with the old credentials file would also show

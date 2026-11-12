@@ -3,6 +3,18 @@
 The engagement from start to finish: before, on the day, and after. It tells
 you what to do and in which order. The exact commands are in the
 [quick start](../quick-start.md); this page points to the step you need.
+The same commands, explained for a reader who is not an engineer, are in the
+client guide's [Run it](../guide/run-it.md) page. Its steps are numbered
+differently: the table below matches them up.
+
+| What | Quick start | Client guide, Run it |
+|---|---|---|
+| Get the scanner | Step 0 | Steps 1 and 2 |
+| Set up | Step 1 | Step 3 |
+| Fill in the credentials | Step 2 | Step 4 |
+| Check | Step 3 | Step 5 |
+| Scan | Step 4 | Step 6 |
+| Open the results | Step 5 | Step 7 |
 
 Words used on this page:
 
@@ -21,6 +33,9 @@ Words used on this page:
 - [ ] Tell the client what has and has not been proven about the scanner. Use
       [Assurance status](../security-pack/assurance-status.md). Do not soften
       it.
+- [ ] Give the client's IT or security lead the
+      [client guide](../guide/README.md). It explains the scan, the access,
+      the report and each finding in plain words.
 - [ ] Give the client's security reviewer the
       [security pack](../security-pack/README.md).
 - [ ] Give the client's data protection contact
@@ -74,8 +89,10 @@ says "Ready" or the only remaining items are understood and written down.
 ### 5. Scan
 
 - [ ] The operator runs one scan (quick start, step 4). The offline example
-      takes a few seconds. How long a real estate takes has not been measured;
-      each system is given up to ten minutes unless the set-up changes it.
+      takes a few seconds. How long a real estate takes has not been measured.
+      The whole scan is given ten minutes unless the set-up changes it.
+      Systems are read side by side, and one that is not finished by then is
+      marked incomplete, with the reason `TIME_BOX`.
 - [ ] The last line of output should say "results written". That line alone
       does not mean everything was read. See the next step.
 
@@ -108,6 +125,11 @@ the first run:
       maintainers. It is the most useful thing a first engagement can produce.
 
 ### 8. Walk through the results with the client
+
+The client guide has a page for this:
+[Read the report](../guide/read-the-report.md) explains the page section by
+section, and [Findings](../guide/findings.md) explains each kind of finding
+and what to do about it.
 
 - [ ] How many agents were found, and through which systems.
 - [ ] Which agents nobody had registered or claimed.

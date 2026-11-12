@@ -40,6 +40,13 @@ What follows from that:
   documentation says a Read-only Administrator sees only its own API tokens.
   If so, a scan misses other users' tokens and still reports the Okta source
   as complete (threat model, residual risk 3; issue 16).
+- A second Okta question is also unconfirmed. The scanner asks for Okta's
+  applications listing whole, with no field selection. Whether that listing
+  carries an application's client secret for a Read-only Administrator has
+  not been checked against a live organisation. A test holds that a secret
+  planted in the listing is dropped and not reported
+  (`packages/scanner/tests/okta-source.test.ts`); no test can show what a
+  real Okta sends.
 - The scale figures in `docs/scanner.md` ("Limits and scale") were measured
   with imitations in place of the network. They are the scanner's own cost,
   not a measurement on a real estate.
@@ -134,7 +141,9 @@ and the [threat model](../threat-model.md).
 
 - **Read-only proof.** Every source and every preflight is run against a
   recorder; a request that is not declared, or a declared request that
-  nothing makes, fails.
+  nothing makes, fails. Two parts of the declaration are outside that check:
+  the five OpenShell gateway calls, which are declared and cannot be reached,
+  and the egress proof's probes, which have a test of their own.
 - **Secret canaries.** Secret-shaped values are planted in provider responses
   and in outputs; the tests fail if one reaches a report, a file or the
   process's output.
@@ -147,8 +156,9 @@ and the [threat model](../threat-model.md).
 - **Partial failure.** Rate limits, outages and expired credentials, per
   source: none makes a finding disappear.
 - **Scale**, at 500 agents in every run.
-- **Compatibility.** Files written by version 0.12.0 are read by the current
-  code.
+- **Compatibility.** Files written by an earlier commit of the code
+  (`190f3fb`, the same unreleased version 0.12.0) are read by the current
+  code. No released version exists to compare with.
 - **The deployment templates.** Compose, the chart, the air-gapped bundle's
   scripts (against stand-ins for the container runtime and `cosign`).
 - **The documents.** Several pages are generated from the code or checked

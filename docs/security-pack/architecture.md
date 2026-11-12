@@ -6,8 +6,11 @@ threats at each boundary, their mitigations and the residual risks are in the
 
 ## What it is
 
-One process, started by hand or by a schedule, inside the estate it scans. It
-listens on no port and accepts no inbound connection. It reads the configured
+One process, started by hand or by a schedule, inside the estate it scans.
+The scanner listens on no port and accepts no inbound connection. (The
+optional egress proxy, a second container started from the same image,
+listens on one port, 3128, for the scanner; in the Compose overlay that
+port is on an internal network the two containers share.) It reads the configured
 sources with read-only credentials, builds one report, signs it, and writes
 the results to a directory. It keeps no state between runs other than the
 files it wrote.
@@ -128,7 +131,9 @@ administrator (threat model, residual risk 7).
 
 ## What is deliberately absent
 
-- No inbound listener, no web interface, no database.
+- No inbound listener in the scanner, no web interface, no database. The
+  optional egress proxy is the one part of the image that listens, and it
+  accepts CONNECT only.
 - No update check, no telemetry, no call to the authors.
 - No plug-in loading: a source is compiled in, and lint refuses dynamic
   import and `require` in the scanner.

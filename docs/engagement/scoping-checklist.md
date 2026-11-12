@@ -6,8 +6,10 @@ where to install, who may open the results.
 
 Words used on this page:
 
-- **Agent**: a piece of software that acts with some independence, often
-  using an AI model, and the accounts and keys it acts with.
+- **Agent**: a program that acts with its own account or key: a service
+  account, an API token, an automated workflow, a tool server, or agent code
+  in a repository. Many use an AI model; the scanner also lists accounts that
+  behave like agents.
 - **Source**: one system the scanner reads to find agents, for example Okta
   or GitHub.
 - **Read-only access**: access that can look and cannot change anything.

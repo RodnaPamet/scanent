@@ -61,6 +61,10 @@ In practice the waiting is in your own approval process:
 
 Ask for these early. The scan itself takes little time once the access exists.
 
+A ready-to-send request for each administrator, with the same access and the
+same "do not grant" list, is in the engagement kit:
+[../engagement/access-request-templates.md](../engagement/access-request-templates.md).
+
 ## System by system
 
 Each section says what is looked at, what is never asked for, and what must
@@ -71,7 +75,7 @@ no use for more, and should not be handed more.
 
 **Looks at.** The applications registered in your directory and their service
 principals (the accounts those applications sign in as), and managed
-identities. For each: its id, whether it is enabled, the ids and dates of its
+identities (accounts that Azure creates for its own services). For each: its id, whether it is enabled, the ids and dates of its
 passwords and certificates, and the id of its owner.
 
 **Never asks for.** The list of people in your directory: an owner is kept as
@@ -87,7 +91,8 @@ password or changes an application.
 4. Certificates and secrets: New client secret.
 
 **Do not grant.** Any permission with "ReadWrite" in its name. Any
-`Directory.` permission. Any delegated permission. Any directory role.
+`Directory.` permission. Any delegated permission (one that acts on behalf of
+a signed-in person). Any directory role.
 
 ### Azure Key Vault
 
@@ -95,6 +100,13 @@ password or changes an application.
 each vault you list, and whether each is enabled.
 
 **Never asks for.** The value of any secret. Keys are not read at all.
+
+**Before you start.** Key Vault access is given to an application registered
+in Microsoft Entra ID. If you also scan Entra ID, use the application you
+registered there. If you do not, register one first (Entra admin centre: App
+registrations, New registration; then Certificates and secrets, New client
+secret). It needs no API permission for Key Vault. Its client secret is the
+value that goes in `AZURE_CLIENT_SECRET`.
 
 **How to grant it.**
 
@@ -109,8 +121,16 @@ secrets. Each of these can read or change secret values.
 **Looks at.** Service apps (applications that sign in as themselves, with no
 person). API tokens: the id, which user each belongs to, and its dates.
 
-**Never asks for.** The secret of any application. The list of your users.
+**Never asks for.** An application's secret by itself: Okta has a separate
+request for that, and the scanner never makes it. The list of your users.
 Okta does not return the value of an API token, and the scanner does not ask.
+
+**One thing not yet confirmed.** The scanner asks Okta for its list of
+applications whole, and keeps only each application's id, its type and the
+owner field. Whether Okta puts an application's client secret into that list
+for a Read-only Administrator has not been confirmed against a live Okta
+organisation. If it does, the secret reaches the scanner's memory and is
+dropped there: it is not kept, written or reported.
 
 **How to grant it.**
 
@@ -176,7 +196,8 @@ file, which is why the setting is called `GCP_SCANNER_KEY_FILE`.
 
 LangSmith is a product that records what AI agents do.
 
-**Looks at.** The list of tracing projects, with **counts** of how often each
+**Looks at.** The list of tracing projects (a project is where LangSmith
+keeps the records of one agent or application), with **counts** of how often each
 tool was called in a recent period. Optionally, the list of deployments.
 
 **Never asks for.** Any single run, with what the agent was asked and what it
@@ -198,7 +219,8 @@ the option off unless you need deployments in the report.
 
 **Looks at.** For each server you list: the names of the tools it offers, and
 whether each tool says it only reads. The scanner keeps a fingerprint of each
-tool's description, not the description.
+tool's description (a short code worked out from the text; if the text
+changes, so does the code), not the description.
 
 **Never asks for.** It never calls a tool. It asks only for the list.
 
@@ -238,6 +260,7 @@ tenant. Both are off unless you set them up.
 **How to grant it.**
 
 1. On the tenant's API keys page, create a key for the scanner with the scope
+   (a named permission that a key carries)
    `admin:harness_ingest`, and `mcp:read` if the list of agents is to be read.
 
 **Do not grant.** Any other scope.
@@ -260,7 +283,9 @@ the systems you chose, and looks up their addresses by name (DNS):
 | An Inflect tenant | The tenant's address |
 
 One command prints the exact list for your own setup, so the people who look
-after your firewall can be given it. It makes no connection itself:
+after your firewall can be given it. It makes no connection itself. If you
+scan only agent code in folders, it prints nothing: there is no address to
+open.
 
 ```bash
 scanent --network none -v "$PWD/scanent:/etc/scanent:ro" "$IMAGE" hosts --config /etc/scanent/config.json

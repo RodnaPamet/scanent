@@ -23,8 +23,10 @@ Everything in it is invented. No real organisation, person or system appears.
 
 ## Make the sample
 
-You need Node.js 22 or later and a copy of the repository. Run these from the
-top folder of the copy.
+You need Node.js 22 or later, `openssl`, a Linux or macOS terminal, and a
+copy of the repository. If that is not you, ask an engineer to run these
+once and send you the folder they produce. Run these from the top folder of
+the copy.
 
 ```bash
 npm ci
@@ -57,12 +59,12 @@ internet, so it can be shown offline, attached to a message or printed.
 |---|---|
 | One source, "code", read in full | The page starts with completeness: which systems were read, and whether each was read in full |
 | One agent, found in `support/agent.py` | Each agent is identified by where it was found |
-| Name "Support order lookup", owner "support-operations" | These come from the declared list. The page labels them as declared by the operator, not observed by the scan |
+| Name "Support order lookup" on the page; owner "support-operations" and the purpose in `agents.csv` | These come from the declared list. The page labels the name as declared by the operator, not observed by the scan. The page does not show the declared owner or purpose; the spreadsheet does |
 | Level **H1**, with a note that on what the scan observed alone it is H0 | A level that rests on a declaration is kept apart from what the scan saw for itself |
-| A finding: an unpinned write-capable tool, `lookup_order` | The agent can call a tool whose definition nobody has reviewed and fixed in place |
+| A finding: an unpinned write-capable tool, `lookup_order` | The agent can call a tool whose definition nobody has reviewed and fixed in place. For a tool written in code the scanner always reports this, and a later scan does not close it: the [client guide's findings page](../guide/findings.md#unpinned_write_tool) says what to do with it |
 | A finding: the agent is below the bar for what it can reach (H1, bar H3) | The scale sets a minimum level by how much an agent can do. The finding names the checks that block the next step |
 | Many checks marked as not readable in this run | Nothing in a code-only scan could have seen them. The page says so, so that "nobody looked" is not read as "it failed" |
-| One declared agent, "Billing reconciliation", that the scan did not find | What it looks like when the organisation's own list names an agent the scan cannot see |
+| One declared agent that the scan did not find. The page lists it by its id, `code:example/billing/agent.py#billing_executor`; its declared name, "Billing reconciliation", is in no output file | What it looks like when the organisation's own list names an agent the scan cannot see |
 
 The same run folder holds `agents.csv` and `findings.csv` for a spreadsheet,
 `results.json` for tools, the signed report and a list of checksums.

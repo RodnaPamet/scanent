@@ -84,6 +84,11 @@ A read-only credential can still read. Treat it as confidential.
 >   **List on secrets** and **List on certificates**, and nothing else.
 > - One client secret for that app registration.
 >
+> **If no app registration exists for the scan yet** (it exists already if
+> Microsoft Entra ID is also being scanned): create one first. Entra admin
+> centre: App registrations, New registration; then Certificates and secrets,
+> New client secret. It needs no API permission for Key Vault.
+>
 > **Steps:** on each vault, Access control (IAM), Add role assignment, Key
 > Vault Reader, to the app registration's service principal.
 >

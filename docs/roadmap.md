@@ -116,8 +116,9 @@ to add sources that evidence H4 and H5 is an open product decision (issue 15).
 
 ## Hardening follow-ups
 
-From the internal hardening review (issue 20), each a documented residual
-risk in the [threat model](threat-model.md#residual-risks):
+From the internal hardening review (issue 20). The first two are documented
+residual risks in the [threat model](threat-model.md#residual-risks)
+(risks 14 and 12). The other two are recorded in issue 20 only:
 
 - The bundled egress proxy has no idle timeout and no connection limit.
 - A secret file is checked for the world-writable bit only.

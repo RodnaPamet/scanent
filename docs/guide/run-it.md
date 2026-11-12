@@ -7,6 +7,9 @@ scanner is delivered as such a box, called an image.
 You need:
 
 - a computer with Docker, that can reach the systems you want scanned;
+- a Linux or macOS terminal. On Windows, use WSL (Windows Subsystem for
+  Linux, which gives you a Linux terminal). The commands are written for the
+  `bash` or `zsh` shell, which is what those terminals run;
 - `git`, for step 1 only;
 - the read-only access for each system you want scanned. Asking for it is
   usually the slow part: see [what-it-reads.md](what-it-reads.md).
@@ -49,8 +52,9 @@ In plain words, it runs the scanner:
 - in a box whose own files cannot be changed;
 - with every special permission removed, and no way to gain one.
 
-If you close the terminal, type steps 1 (first line only) and 2 again before
-you continue.
+If you close the terminal, open a new one in the same folder and type the
+first line of step 1 and all of step 2 again before you continue. If you had
+already done step 3, also type `cd site`.
 
 ## 3. Set up
 
@@ -69,6 +73,10 @@ The set-up asks questions and you type the answers:
 - a short name for what is being scanned, such as `acme-prod`;
 - for each kind of system, whether you have it, and then which one: a
   directory id, an address, the names of repositories;
+- for agent code in folders: a short label, then the path at which **the
+  scanner** will see the folder. This is not the folder's place on your
+  computer. Type `/estate` (for a second folder, `/estate2`, and so on).
+  Step 5 connects your real folder to that path;
 - where results go. Press Enter to accept `/out`;
 - how often to scan when it runs on a schedule. Press Enter to accept 24
   hours;
@@ -109,6 +117,19 @@ Keep this file private. It now holds credentials that can read your systems.
 
 ## 5. Check
 
+**If you scan agent code in folders**, first give each folder to the scanner
+as read-only. Add one piece like this to the command below and to the one in
+step 6, just before `"$IMAGE"`. Your own folder goes on the left of the
+colon, and the path you typed in step 3 goes on the right:
+
+```
+-v /srv/agents:/estate:ro
+```
+
+Here `/srv/agents` stands for your folder, and `/estate` is the path from
+step 3. Without this piece the check fails at `read.permitted`, because the
+scanner cannot see the folder.
+
 ```bash
 scanent --env-file scanent/scanent.env \
   -v "$PWD/scanent:/etc/scanent:ro" -v "$PWD/scanent-out:/out" \
@@ -116,8 +137,9 @@ scanent --env-file scanent/scanent.env \
 ```
 
 This is a rehearsal. It tries each access with the smallest read it can, and
-prints one line for each check: `PASS`, `WARN`, `FAIL` or `SKIPPED`. A line
-that fails says what to fix. It writes nothing and changes nothing.
+prints one line for each check: `PASS`, `WARN`, `FAIL` or `SKIPPED`.
+`SKIPPED` means not checked, and the line says why. A line that fails says
+what to fix. It writes nothing and changes nothing.
 
 When everything is ready, the last line looks like this. The numbers are your
 own:
@@ -137,16 +159,8 @@ The most common lines that need action:
 | `FAIL credential.present` | A value is missing in `scanent.env` |
 | `FAIL host.resolves` or `FAIL reachable` | The computer cannot reach that system. Ask for the address to be opened in the firewall, on port 443 |
 | `FAIL authenticated` | The system refused the credential. Check it is the right one and has not expired |
-| `FAIL read.permitted` | The credential works but lacks the read-only role the line names |
+| `FAIL read.permitted` | The credential works but lacks the read-only role the line names. For agent code in folders: the folder was not given to the scanner, or cannot be read. See the note at the top of this step |
 | `WARN write.absent` | The credential can change things. Replace it with one that cannot |
-
-**If you scan agent code in folders**, give each folder to the scanner as
-read-only, at the path you typed in step 3. Add this to the command above and
-to the one in step 6, before `"$IMAGE"`, with your own folder on the left:
-
-```
--v /srv/agents:/estate:ro
-```
 
 ## 6. Scan
 
@@ -197,8 +211,8 @@ entra:sp:00000000-0000-0000-0000-000000000000,Invoice triage,finance-operations,
 - `discoveredId` must be copied exactly.
 - `name`, `owner` and `purpose` are required. `owner` can be a team: you do
   not have to write a person's name.
-- The last five are optional, and an agent reaches level H1 only with all of
-  them: how independent it is (`human-approves`, `human-reviews` or
+- The last five are optional, but an agent reaches level H1 only with all of
+  them. Without them it stays at level H0, even though it is on your list: how independent it is (`human-approves`, `human-reviews` or
   `autonomous`), how sensitive its data is (`public`, `internal`,
   `confidential` or `restricted`), what it can reach (`read-only`, `write` or
   `external`), its risk rating (`LOW`, `MEDIUM`, `HIGH` or `CRITICAL`) and the

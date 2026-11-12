@@ -115,15 +115,33 @@ priorities:
 
 1. In `agents.csv`, look at the columns for the individual checks. Start with
    the cells that say `NOT_MET`: a system saw that control fail. Those are
-   real, whatever else the scan could not see.
+   real, whatever else the scan could not see. (One exception: on
+   `H1.axes_declared` and `H1.tier_scored_fresh`, `NOT_MET` can mean only
+   that your inventory leaves out the descriptions or the risk rating for
+   that agent, or that the rating is not dated within the 365 days before
+   the scan. The fix for those is to complete the inventory.)
+
+   The page and the spreadsheet say only that a check failed. To see what
+   was looked at, ask whoever ran the scan: the data file `results.json`
+   holds, for each answer, a reference to where it was seen, such as a file
+   and a place in it. Then take the check's plain-word meaning from
+   [read-the-report.md](read-the-report.md#the-checks-on-each-level) to the
+   agent's owner, and ask for that control to be put in place.
 2. Next, the agents that can change things and that nobody owns.
 3. The cells that say `NOT_READABLE` or `UNANSWERED` mean that nobody looked.
-   Decide with the engagement team whether to look by other means.
+   Decide with the engagement team whether to look by other means. For
+   example, ask the agent's owner to show you the written policy, or the
+   approval step, by hand.
 
 If the level rests partly on your inventory, the finding says so, and gives
 the level that the systems alone support.
 
 **When it closes.** When a later scan shows the agent at its bar.
+
+The finding's own text also mentions "a time-limited acceptance by the
+agent's owner". An acceptance is recorded in an Inflect tenant. A scan on its
+own has no way to record one, so here the finding stays open until the agent
+is at its bar.
 
 **Who usually owns it.** The owner of the agent, for the agent. Whoever is
 responsible for how AI agents are governed, for the picture as a whole.

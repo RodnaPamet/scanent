@@ -9,7 +9,7 @@ Each scan writes one folder with six files:
 | `findings.csv` | One line for each finding, for a spreadsheet |
 | `results.json` | Everything above, as data for another program |
 | `report.signed.json` | The signed record of what the scanner read. The other files are worked out from it |
-| `manifest.json` | The size and a checksum of each of the other five files, to check that a copy of the folder is whole |
+| `manifest.json` | The size and a checksum of each of the other five files, to check that a copy of the folder is whole. A checksum is a short code worked out from a file; if the file changes, so does the code |
 
 This page explains `summary.html` from top to bottom, then the two
 spreadsheets, then how to compare two scans.
@@ -39,13 +39,20 @@ evidence.
 |---|---|---|---|
 | H0 | Shadow | It exists. Nothing more is established | A service account found in Google Cloud that is on nobody's list. The scan can say it exists and which keys it holds. Nobody has said who owns it |
 | H1 | Registered | Your organisation knows it: it is on a list, has an owner, is described, and has a recent risk rating | Your inventory has a line for "Invoice triage". It names finance operations as the owner, says the agent needs a person's approval, handles confidential data and can write, and carries a risk rating dated two months ago |
-| H2 | Bounded | What it can use is limited and known: its own credential, an explicit list of what it may touch | A GitHub Actions workflow that uses only the token GitHub gives each run, and states the permissions of every job explicitly, meets three of the five checks on this level |
+| H2 | Bounded | What it can use is limited and known: its own credential, an explicit list of what it may touch | A GitHub Actions workflow that uses only the token GitHub gives each run, and states the permissions of every job explicitly, meets three of the five checks on this level: it has a credential of its own, the kind of credential is known, and what it may use is an explicit list. The other two can be checked only through an Inflect tenant |
 | H3 | Guarded | What it does is checked before it takes effect | An agent whose changes are put to a person as proposals, whose tool descriptions are locked so they cannot change unnoticed, and whose outgoing connections are held to a list. The opposite: an agent whose code tells it to approve all of its own actions fails this level |
 | H4 | Observed and stoppable | Going by the names of its checks: what it does is recorded, it has a spending limit, and stopping it has been practised | An agent with a record of every action, and a stop switch that was tried in a drill |
 | H5 | Evidenced | Going by the names of its checks: the controls are backed by evidence and by somebody independent | An agent whose controls were audited by somebody outside the team that runs it |
 <!-- /guide:levels -->
 
 A level never stops an agent. It is a statement in a report.
+
+The name of level H0, "Shadow", is not the same thing as a "shadow agent".
+A shadow agent is an agent that is on no list. An agent can be on your list
+and still be at level H0, for example when your inventory gives no risk
+rating for it, or a rating older than a year. So the page can show agents at
+"H0 Shadow" in its chart and "Shadow agents: 0" beside it, and both are
+right.
 
 ### The checks on each level
 
@@ -62,10 +69,10 @@ engagement team can get it for you.
 | `H1.axes_declared` | Three things are written down: how independent it is, how sensitive its data is, and what it can reach |
 | `H1.tier_scored_fresh` | It has a risk rating, and the rating is recent. For an inventory: dated within the 365 days before the scan |
 | `H2.credential_bound` | It acts with a credential of its own. A token that acts as a person does not count; nor does a workflow that is handed a stored secret |
-| `H2.grant_kind_declared` | It is known whether its credential acts for the agent itself or on behalf of a person |
-| `H2.tools_allowlisted` | What it may use is an explicit list. "Everything", or a wildcard, is not a list |
+| `H2.grant_kind_declared` | It is known which kind of credential it has: one that acts for the agent itself, or one that acts on behalf of a person |
+| `H2.tools_allowlisted` | What it may use (its tools, or for a workflow its permissions) is an explicit list. "Everything", or a wildcard (a `*` that means "all"), is not a list |
 | `H2.audience_tokens` | Its keys work only through short-lived tokens limited to named tools. Checked only through an Inflect tenant |
-| `H2.policy_card` | By its name: a written policy exists for it. Checked only through an Inflect tenant |
+| `H2.policy_card` | By its name: a written policy for the agent (a "policy card") exists. Checked only through an Inflect tenant |
 | `H3.manifests_pinned` | The descriptions of its tools are locked ("pinned"), so a changed tool is noticed |
 | `H3.payloads_guarded` | Something inspects a call before it runs |
 | `H3.propose_not_commit` | It proposes changes for approval. It does not apply them by itself |
@@ -87,7 +94,10 @@ engagement team can get it for you.
 ## What a scan on its own can show
 
 This is the most important limit to understand. A scan "on its own" is one
-with no Inflect tenant: the normal case in this guide.
+with no Inflect tenant: the normal case in this guide. (An Inflect tenant is
+an organisation's own account on Inflect, a separate compliance product from
+the company that licenses this scanner. It keeps a register of the
+organisation's agents. You do not need one.)
 
 Many checks can only be confirmed by a system that holds an organisation's
 own register of agents. The scanner reads one such system, an Inflect tenant.
@@ -147,10 +157,10 @@ When a system is "Incomplete", the reason is one of these:
 | `AUTH_FAILED` | The credential was missing, refused or unusable | Check the credential and its role. Run the check step again |
 | `UNREACHABLE` | The system did not answer, or answered with an error | Check the network path and the firewall |
 | `RATE_LIMITED` | The system said the scanner was asking too fast | Scan again later |
-| `TIME_BOX` | Reading took longer than the time allowed for one system | Scan again, or ask for the time limit to be raised |
+| `TIME_BOX` | The scan ran out of time before this system was read in full. The whole scan is given ten minutes unless the set-up changes it; systems are read side by side, and one that is not finished by then is marked incomplete | Scan again, or ask for the time limit to be raised |
 | `BYTE_CAP` | A size limit was reached: there was more than one scan may hold | Split the scan into smaller ones. The engagement team can advise |
 | `PAGINATION_TORN` | A list came back broken, or its next page could not be followed | Scan again. If it repeats, report it |
-| `UNPARSEABLE` | A piece of agent code was read but part of it could not be worked out | Tell the engagement team. The agent is in the report, but what it holds may be incomplete, so it is given no level |
+| `UNPARSEABLE` | A piece of agent code was read but part of it could not be worked out | Tell the engagement team. An agent the scanner could make out is in the report, with no level, because what it holds may be incomplete. An agent in a file the scanner could not read at all is missing from the report |
 
 **An incomplete scan is never a clean result.** A system that was read only in
 part may hold agents, tools and failed checks that the page does not show. So
@@ -166,6 +176,11 @@ scan could have confirmed, and why:
 - "No reader in scanent reports this criterion": no scan can confirm it today.
 - "A reader exists; this run did not configure it": a system that could
   confirm it was not part of this scan.
+
+A "criterion" is a check, and a "reader" is the part of the scanner that
+reads one kind of system. The page uses several words like these where this
+guide uses plainer ones:
+[Words the results use](#words-the-results-use) lists them.
 
 ### Estate summary
 
@@ -208,12 +223,19 @@ Then one small cell for each check:
 | E | `EVIDENCED` | Met. A system showed it |
 | D | `DECLARED` | Met on what your inventory says. The scanner did not see it for itself |
 | M | `MET_UNEVIDENCED` | Reported as met, with nothing to show for it. Counts as not met |
-| N | `NOT_MET` | Not met. A system showed it failing |
+| N | `NOT_MET` | Not met. A system showed it failing. On two of the H1 checks it can also come from your inventory: see below the table |
 | · | `UNANSWERED` | Nobody answered, although something in this scan could have. Counts as not met |
 | – | `NOT_READABLE` | Nothing in this scan could have answered. Counts as not met |
 
 The difference between N and the last two matters. N is a failure somebody
 saw. The dot and the dash mean nobody looked.
+
+One exception, on the H1 checks only. When you give an inventory, an N on
+`H1.axes_declared` or `H1.tier_scored_fresh` can come from the inventory and
+not from a system: the line for that agent leaves out the three descriptions
+or the risk rating, or its rating is not dated within the 365 days before
+the scan. The page's own pop-up text for an N cell says "a source saw it fail"
+in that case too. Read it as "your inventory does not say so".
 
 **Reach** is what the agent can do. A tool that does not state that it only
 reads is treated as able to change things. An agent is shown as "Read only"
@@ -223,7 +245,8 @@ picture, and the reach is "Unknown".
 
 **The bar** is the level expected of an agent: H2 for an agent that only
 reads, and H3 for one that can write, can reach outside, or whose reach is
-unknown.
+unknown. An agent that can only read can do less harm, so less is expected
+of it.
 
 On a large scan this table shows the 500 agents that most need attention, and
 says so. The spreadsheet always has all of them.
@@ -261,6 +284,18 @@ the signing key, and a checksum of the signed report. Keep this section with
 any copy of the report you pass on. It lets somebody else check that the
 files belong together.
 
+Two lines here are easy to misread:
+
+- **"Signer key fingerprint"** is a checksum of the public half of the
+  signing key. It is not the key itself, so it does not look like the value
+  the set-up step and the check step printed for the key. That value is in
+  the signed report file.
+- **"Register claims: Read by this run"** means that this page was made by
+  the same run that read your systems, and not later from somebody else's
+  report. It does not mean that an Inflect register was read. Whether one
+  was read is stated in the Estate summary, in the line that starts
+  "Registration is taken from".
+
 ## Words the results use
 
 | Word | Meaning |
@@ -270,9 +305,17 @@ files belong together.
 | Declared by the operator | It comes from your inventory. The scanner did not observe it. It counts for level H1 only, it is labelled in every file, and it is never put in the signed report |
 | Not checked | Used by the check step (`doctor`), for a check it did not make. It always gives the cause: "not applicable" (there was nothing to check), "blocked" (an earlier check failed, so this one could not be made) or "not observable" (nothing the scanner reads can answer it, and the line says what to confirm by hand). It is never counted as passed |
 | Not concluded | Something is no longer reported, and the scan cannot say that it is gone |
-| Shadow agent | An agent that is on no list |
+| Shadow agent | An agent that is on no list. Not the same as level H0, which is also named "Shadow": see [The six levels](#the-six-levels) |
 | Orphan credential | A key or secret that no agent uses |
 | Pinned | A tool's description has been locked to a known version, so a later change is noticed |
+| Criterion (plural: criteria) | A check. This guide says "check" |
+| Rung | A level. "The next rung" is the next level up |
+| Harness | The set of controls around an agent. "Below the harness bar" means below the level expected of the agent |
+| Estate | Everything you asked the scanner to read |
+| Operator | Whoever supplied the inventory and runs the scanner: normally your organisation |
+| Source, source kind | One kind of system that was read, such as Okta or agent code |
+| Reader | The part of the scanner that reads one kind of system |
+| Fingerprint | A short code worked out from something longer, such as a key or a list. If the thing changes, so does the code |
 
 When an agent is not judged, the page gives a code and a sentence for each
 reason:
@@ -344,23 +387,38 @@ It starts with one of three sentences:
 | "The two runs differ." | Something changed, listed below |
 | "No difference was found, but not every comparison could be made." | Do not read this as "nothing changed". Something could not be compared, and the end of the report says what |
 
-What to look at, in this order:
+The report then has up to ten headed parts, printed in this order. A part
+with nothing to say is left out.
 
-1. **Completeness.** Did a system that was read in full before come back
+1. **Warnings.** Read these first: they change how to read the rest. For
+   example `INVENTORY_DIFFERS` says that the two scans used different
+   inventories, or that one had none. Then what you declared shows up as a
+   change, although nothing in your systems moved.
+2. **Completeness.** Did a system that was read in full before come back
    incomplete? If so, treat the rest with care.
-2. **Agents.** "new" is an agent that was not there before. "gone" is used
+3. **Agents.** "new" is an agent that was not there before. "gone" is used
    only when every system the agent was found in was read in full this time.
    Otherwise the word is "not seen", with the reason, and nothing is
    concluded.
-3. **Levels.** "level up" or "level down". Levels are compared only for
+4. **Levels.** "level up" or "level down". Levels are compared only for
    agents that both scans judged.
-4. **Findings.** "opened" is new. "closed" is used only when the newer scan
-   has the evidence to close it. Otherwise the line reads "no longer reported,
-   not concluded".
-5. **Orphan credentials.** The same three words.
-6. **Warnings.** For example, that the two scans used different inventories.
-   Then what you declared shows up as a change, although nothing in your
-   systems moved.
+5. **Criteria.** One line for each check whose answer changed, written as
+   "before -> after". Each side is a state, sometimes followed by a slash and
+   where the answer came from. `EVIDENCED/DECLARED` is what the spreadsheet
+   calls `DECLARED`: met on what your inventory says. `EVIDENCED/OBSERVED` is
+   the spreadsheet's `EVIDENCED`. The comparison writes `UNANSWERED` both
+   where the spreadsheet says `UNANSWERED` and where it says `NOT_READABLE`.
+6. **Criteria reported, not concluded.** The same lines, for an agent that
+   one of the two scans did not judge. Nothing is concluded from them.
+7. **Reach, bar, shortfall and registration.** One line for each of these
+   that changed for an agent, for example
+   `registration: NONE -> DECLARED_INVENTORY` when you add an agent to your
+   inventory.
+8. **Orphan credentials.** "opened" is new. "closed" is used only when the
+   newer scan has the evidence to close it. Otherwise the line reads "no
+   longer reported, not concluded".
+9. **Findings.** The same three words.
+10. **Not concluded.** Every comparison that could not be made, and why.
 
 The rule is the same as for one scan: **something missing counts as gone only
 when the place it would be in was read in full.**
