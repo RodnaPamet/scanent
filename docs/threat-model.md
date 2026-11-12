@@ -112,7 +112,7 @@ disclosure, **D**enial of service, **E**levation of privilege.
 |---|---|---|---|
 | E | The scanner, or anything else on its network, reaches a host that is not on the list | CONNECT only, port 443 only, exact host names from `EGRESS_ALLOW`, no IP literal; an empty list refuses everything. `packages/scanner/src/egress-proxy.ts` (`decideConnect`) | `packages/scanner/tests/egress-proxy.test.ts`, `packages/scanner/tests/ssrf.test.ts`, step 11 of `deploy/smoke.sh` |
 | S | An allowed name resolves to a private or metadata address | The proxy resolves the name itself, applies the same address rules, and connects to the address it checked. `packages/scanner/src/egress-proxy.ts` (`createEgressProxy`) | `packages/scanner/tests/egress-proxy.test.ts`, `packages/scanner/tests/ssrf.test.ts` |
-| D | A client crashes or stalls the proxy (a reset at the wrong moment, a slow client, a header flood) | Every socket has an error handler; a refused client is closed; a slow client holds its own socket and no other. The proxy sets no idle timeout and no limit on connections of its own: see [Residual risks](#residual-risks), 14. `packages/scanner/src/egress-proxy.ts` (`createEgressProxy`) | `packages/scanner/tests/egress-proxy-failures.test.ts`, `packages/scanner/tests/ssrf.test.ts` |
+| D | A client crashes or stalls the proxy (a reset at the wrong moment, a slow client, a header flood) | Every socket has an error handler; a refused client is closed; a slow client holds its own socket and no other. A connection that carries nothing for two minutes is closed, and at most 256 are held at once (`EGRESS_IDLE_TIMEOUT_MS`, `EGRESS_MAX_CONNECTIONS`): see [Residual risks](#residual-risks), 14. `packages/scanner/src/egress-proxy.ts` (`createEgressProxy`) | `packages/scanner/tests/egress-proxy-failures.test.ts`, `packages/scanner/tests/egress-proxy.test.ts` (3a), `packages/scanner/tests/ssrf.test.ts` |
 | R | The confinement is assumed and not there | With `egress` configured, every scan proves it (the proxy allows the tenant's host, refuses a canary, and there is no direct route) and reports the result as a criterion on the scanner's own agent. `packages/scanner/src/egress-proof.ts` (`proveEgress`) | `packages/scanner/tests/scanner-report.test.ts`, `packages/scanner/tests/read-only-proof.test.ts` |
 
 A Kubernetes NetworkPolicy alone matches addresses, not names: "TCP 443 to
@@ -228,11 +228,14 @@ Stated plainly. None of these is closed by the code.
     `NODE_EXTRA_CA_CERTS`, or a proxy that inspects TLS, reads every request,
     read credentials included. Do not route credentialed sources through a
     proxy or a certificate authority you would not give those credentials to.
-14. **The egress proxy does not defend itself against load.** It sets no idle
-    timeout and no limit on connections. Anything that can reach its port can
-    hold sockets open. It listens for the scanner alone: keep its port
-    reachable from the scanner's network only, as the Compose overlay and the
-    chart do.
+14. **The egress proxy bounds what a peer can hold, and no more.** It closes
+    a connection that carries nothing for two minutes and holds at most 256
+    at once; one over is dropped. Anything that can reach its port can still
+    fill those 256 and keep them busy, and the scanner's own reads would then
+    be refused. It listens for the scanner alone: keep its port reachable
+    from the scanner's network only, as the Compose overlay and the chart do.
+    The idle limit also ends a read whose server sends nothing for two
+    minutes; that source is reported incomplete.
 15. **A leaked signing key, and an old report sent again.** The scanner has no
     way to revoke its own key. If the signing key leaks, remove its public key
     from wherever reports are accepted (the tenant's register of scanner

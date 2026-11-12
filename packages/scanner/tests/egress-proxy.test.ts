@@ -9,11 +9,13 @@
  *      the proxy admits the Inflect host, refuses the canary, and there is no
  *      way around it — and the production probe reads the real proxy's answers.
  */
-import { createServer as createTcpServer, connect, type AddressInfo, type Server as TcpServer, type Socket } from 'node:net';
+import { createServer as createTcpServer, connect, Socket, type AddressInfo, type Server as TcpServer } from 'node:net';
 import type { Server } from 'node:http';
 
 import {
     createEgressProxy,
+    EGRESS_IDLE_TIMEOUT_MS,
+    EGRESS_MAX_CONNECTIONS,
     parseEgressPrivateCidrs,
     decideConnect,
     parseEgressAllowlist,
@@ -159,6 +161,173 @@ describe('3. a real proxy', () => {
         const port = (free.address() as AddressInfo).port;
         await new Promise((r) => free.close(r));
         expect(await nodeEgressProbe.dialDirect('127.0.0.1', port, 2_000)).toBe(false);
+    });
+});
+
+describe('3a. what a peer can hold open', () => {
+    /** A proxy with small bounds, an echo upstream, and a count of what was logged. */
+    async function bounded(opts: { idleTimeoutMs?: number; maxConnections?: number; hang?: boolean }) {
+        const logged: string[] = [];
+        const log: ScannerLog = {
+            info: () => undefined,
+            warn: (_msg, fields) => void logged.push(String(fields?.reason ?? '')),
+            error: () => undefined,
+        };
+        const upstreams: Socket[] = [];
+        // `hang`: an upstream that accepts and never answers.
+        const upstream: TcpServer = createTcpServer((s) => {
+            upstreams.push(s);
+            if (opts.hang !== true) s.pipe(s);
+        });
+        await new Promise<void>((r) => upstream.listen(0, '127.0.0.1', r));
+        const upstreamPort = (upstream.address() as AddressInfo).port;
+        const proxy: Server = createEgressProxy({
+            allow: ALLOW,
+            log,
+            idleTimeoutMs: opts.idleTimeoutMs,
+            maxConnections: opts.maxConnections,
+            dial: () => connect({ host: '127.0.0.1', port: upstreamPort }),
+        });
+        await new Promise<void>((r) => proxy.listen(0, '127.0.0.1', r));
+        const port = (proxy.address() as AddressInfo).port;
+        const close = async () => {
+            for (const s of upstreams) s.destroy();
+            await new Promise((r) => proxy.close(r));
+            await new Promise((r) => upstream.close(r));
+        };
+        return { port, logged, upstreams, close };
+    }
+    const CONNECT = 'CONNECT inflect.example.com:443 HTTP/1.1\r\nHost: inflect.example.com:443\r\n\r\n';
+    /** Open a socket, optionally send bytes, and resolve with what it received when the PROXY closes it. */
+    const untilClosed = (port: number, bytes: string | null): Promise<{ got: string; ms: number }> =>
+        new Promise((resolve, reject) => {
+            const started = Date.now();
+            const s = connect({ host: '127.0.0.1', port });
+            let got = '';
+            s.on('data', (d) => (got += d.toString('latin1')));
+            s.on('close', () => resolve({ got, ms: Date.now() - started }));
+            s.on('error', (err: NodeJS.ErrnoException) => (err.code === 'ECONNRESET' ? resolve({ got, ms: Date.now() - started }) : reject(err)));
+            if (bytes !== null) s.write(bytes);
+        });
+
+    it('the defaults are two minutes and 256 connections, and a proxy made with none uses them', () => {
+        expect(EGRESS_IDLE_TIMEOUT_MS).toBe(120_000);
+        expect(EGRESS_MAX_CONNECTIONS).toBe(256);
+        const proxy = createEgressProxy({ allow: ALLOW, log: quiet });
+        expect(proxy.maxConnections).toBe(EGRESS_MAX_CONNECTIONS);
+        expect(proxy.timeout).toBe(EGRESS_IDLE_TIMEOUT_MS);
+        expect(proxy.headersTimeout).toBeLessThanOrEqual(EGRESS_IDLE_TIMEOUT_MS);
+        expect(proxy.requestTimeout).toBeLessThanOrEqual(EGRESS_IDLE_TIMEOUT_MS);
+    });
+
+    it('an open tunnel that carries nothing is closed, by the proxy, and its upstream with it', async () => {
+        const h = await bounded({ idleTimeoutMs: 150 });
+        try {
+            const { got, ms } = await untilClosed(h.port, CONNECT);
+            expect(got).toBe('HTTP/1.1 200 Connection Established\r\n\r\n');
+            expect(ms).toBeGreaterThanOrEqual(140);
+            expect(h.logged).toContain('IDLE');
+            // The upstream was closed too: nothing is left dialled for a client that is gone.
+            await new Promise((r) => setTimeout(r, 50));
+            expect(h.upstreams.every((s) => s.destroyed || s.readableEnded)).toBe(true);
+        } finally {
+            await h.close();
+        }
+    });
+
+    it('a tunnel that keeps carrying bytes is not closed by the idle limit', async () => {
+        const h = await bounded({ idleTimeoutMs: 200 });
+        try {
+            const s = connect({ host: '127.0.0.1', port: h.port });
+            let got = '';
+            let closed = false;
+            s.on('data', (d) => (got += d.toString('latin1')));
+            s.on('close', () => (closed = true));
+            s.on('error', () => undefined);
+            s.write(CONNECT);
+            // Six pings 80 ms apart: 480 ms of life, more than twice the limit.
+            for (let i = 0; i < 6; i += 1) {
+                await new Promise((r) => setTimeout(r, 80));
+                s.write('p');
+            }
+            await new Promise((r) => setTimeout(r, 40));
+            expect(closed).toBe(false);
+            expect(got).toBe(`HTTP/1.1 200 Connection Established\r\n\r\n${'p'.repeat(6)}`);
+            s.destroy();
+        } finally {
+            await h.close();
+        }
+    });
+
+    it('a connection that asks for nothing is closed', async () => {
+        const h = await bounded({ idleTimeoutMs: 150 });
+        try {
+            const { got } = await untilClosed(h.port, null);
+            expect(got).not.toContain('200');
+        } finally {
+            await h.close();
+        }
+    });
+
+    it('an upstream that never connects is given up on, and the client is told 502', async () => {
+        const logged: string[] = [];
+        const proxy: Server = createEgressProxy({
+            allow: ALLOW,
+            log: { info: () => undefined, warn: (_m, f) => void logged.push(String(f?.reason ?? '')), error: () => undefined },
+            idleTimeoutMs: 150,
+            // A socket that is never connected: the dial hangs.
+            dial: () => new Socket(),
+        });
+        await new Promise<void>((r) => proxy.listen(0, '127.0.0.1', r));
+        try {
+            const { got } = await untilClosed((proxy.address() as AddressInfo).port, CONNECT);
+            expect(got).toMatch(/^HTTP\/1\.1 502 Bad Gateway/);
+            expect(logged).toContain('UPSTREAM_DID_NOT_CONNECT');
+        } finally {
+            await new Promise((r) => proxy.close(r));
+        }
+    });
+
+    it('a connection over the limit is dropped as it arrives, and those under it are served', async () => {
+        const h = await bounded({ maxConnections: 2, idleTimeoutMs: 5_000 });
+        const held: Socket[] = [];
+        try {
+            // Two tunnels, held open.
+            for (let i = 0; i < 2; i += 1) {
+                const s = connect({ host: '127.0.0.1', port: h.port });
+                s.on('error', () => undefined);
+                held.push(s);
+                await new Promise<void>((resolve) => {
+                    s.once('data', () => resolve());
+                    s.write(CONNECT);
+                });
+            }
+            // The third is closed without an answer.
+            const third = await untilClosed(h.port, CONNECT);
+            expect(third.got).toBe('');
+            expect(third.ms).toBeLessThan(2_000);
+            expect(h.logged).toContain('TOO_MANY_CONNECTIONS');
+            // The two that were open still carry bytes.
+            const echoed = await new Promise<string>((resolve) => {
+                held[0].once('data', (d) => resolve(d.toString('latin1')));
+                held[0].write('still here');
+            });
+            expect(echoed).toBe('still here');
+            // And when one goes, there is room again.
+            held[0].destroy();
+            await new Promise((r) => setTimeout(r, 50));
+            const again = connect({ host: '127.0.0.1', port: h.port });
+            again.on('error', () => undefined);
+            held.push(again);
+            const answer = await new Promise<string>((resolve) => {
+                again.once('data', (d) => resolve(d.toString('latin1')));
+                again.write(CONNECT);
+            });
+            expect(answer).toBe('HTTP/1.1 200 Connection Established\r\n\r\n');
+        } finally {
+            for (const s of held) s.destroy();
+            await h.close();
+        }
     });
 });
 

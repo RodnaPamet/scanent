@@ -99,7 +99,29 @@ export interface EgressProxyOptions {
     readonly connectAddress?: (address: string, port: number) => Socket;
     /** Private ranges the proxy may dial (`EGRESS_PRIVATE_CIDR_ALLOWLIST`). Loopback, link-local and metadata are refused inside them too. */
     readonly privateCidrs?: PrivateCidrAllowlist;
+    /** How long a connection may carry nothing before it is closed. Absent, `EGRESS_IDLE_TIMEOUT_MS`. */
+    readonly idleTimeoutMs?: number;
+    /** How many connections may be open at once. Absent, `EGRESS_MAX_CONNECTIONS`. */
+    readonly maxConnections?: number;
 }
+
+/**
+ * A connection that carries nothing for this long is closed: one that asked
+ * for nothing, one whose upstream never answered, and an open tunnel gone
+ * quiet. Without it, anything that can reach the port could hold sockets open
+ * for as long as it liked. It counts silence, not duration: a long download
+ * keeps its tunnel for as long as bytes move. What it does cut is a read whose
+ * server sends nothing for two minutes; the scanner reports that source
+ * incomplete, as it does any read that fails.
+ */
+export const EGRESS_IDLE_TIMEOUT_MS = 120_000;
+
+/**
+ * How many connections the proxy holds at once; one over is dropped by the
+ * server as it arrives. A scan reads its sources one request after another per
+ * source, so a few dozen is a busy scan and this is several times that.
+ */
+export const EGRESS_MAX_CONNECTIONS = 256;
 
 /** `EGRESS_PRIVATE_CIDR_ALLOWLIST` (comma-separated CIDRs) parsed. An entry that is not a CIDR is refused: the proxy does not start. */
 export function parseEgressPrivateCidrs(value: string | undefined): PrivateCidrAllowlist {
@@ -119,11 +141,21 @@ export function createEgressProxy(opts: EgressProxyOptions): Server {
     // The name is resolved and its addresses checked whenever the production path runs, or a test asks for it.
     const resolve = opts.resolve ?? (opts.dial === undefined ? resolveWithDns : null);
     const connectAddress = opts.connectAddress ?? ((address: string, port: number) => connect({ host: address, port }));
+    const idleTimeoutMs = opts.idleTimeoutMs ?? EGRESS_IDLE_TIMEOUT_MS;
     const server = createServer((req, res) => {
         // Cleartext forwarding is never offered.
         log.warn('egress refused', { reason: 'NOT_CONNECT', method: String(req.method ?? '') });
         res.writeHead(405, { Connection: 'close', 'Content-Length': '0' }).end();
     });
+    // The two bounds on what a peer can hold. The count is the server's own:
+    // a connection over it is closed as it arrives, before anything is read.
+    // The idle limit covers a connection that has asked for nothing yet; a
+    // tunnel is no longer the HTTP server's socket, and is given its own below.
+    server.maxConnections = opts.maxConnections ?? EGRESS_MAX_CONNECTIONS;
+    server.on('drop', () => log.warn('egress refused', { reason: 'TOO_MANY_CONNECTIONS' }));
+    server.timeout = idleTimeoutMs;
+    server.headersTimeout = Math.min(server.headersTimeout, idleTimeoutMs);
+    server.requestTimeout = Math.min(server.requestTimeout, idleTimeoutMs);
     server.on('connect', (req: IncomingMessage, client: Duplex, head: Buffer) => {
         // From here the socket is this handler's: Node's own listeners are gone.
         // A client that resets while it is being refused, or twice, would
@@ -137,8 +169,24 @@ export function createEgressProxy(opts: EgressProxyOptions): Server {
             refuse(client, decision.status, decision.status === 400 ? 'Bad Request' : 'Forbidden');
             return;
         }
+        // One limit, on both sockets. Before the tunnel opens it is the limit on
+        // getting one (the name resolved, the upstream connected), and the
+        // client is owed an answer; after, it is the limit on the tunnel's
+        // silence. Bytes one way are a write on the other socket, so traffic
+        // resets both timers. Whichever fires first ends both ends: the client
+        // closing destroys the upstream, below.
+        let established = false;
+        const giveUp = (): void => {
+            log.warn('egress closed', { reason: established ? 'IDLE' : 'UPSTREAM_DID_NOT_CONNECT', host: decision.host });
+            if (!established && client.writable) refuse(client, 502, 'Bad Gateway');
+            else client.destroy();
+        };
+        (client as Socket).setTimeout(idleTimeoutMs, giveUp);
         const open = (upstream: Socket): void => {
-            let established = false;
+            upstream.setTimeout(idleTimeoutMs, () => {
+                giveUp();
+                upstream.destroy();
+            });
             upstream.once('connect', () => {
                 established = true;
                 log.info('egress allowed', { host: decision.host, port: decision.port });
