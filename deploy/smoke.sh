@@ -24,7 +24,7 @@
 #   6. `scan --dry-run --out /out`, with the root filesystem still read-only
 #      and one writable mount, writes one directory per run holding the six
 #      files, and a second run leaves the first run's files as they were;
-#   7. run as the invoking user (`--user`, or `--userns=keep-id` under Podman)
+#   7. run as the invoking user (`--user`, with `--userns=keep-id` under Podman)
 #      into an output directory that user owns with mode 0700, a scan writes
 #      runs the invoking user can read without the container: the run
 #      directory 0750, its files 0640, all owned by that user;
@@ -264,7 +264,10 @@ echo "== 7. scan --out as the invoking user, into a directory only that user can
 # The way the quick start says to run it: the scanner is the person running it,
 # so the runs are theirs to read, and the directory needs no opening up.
 if [ "$RUNTIME" = "podman" ]; then
-    AS_ME=(--userns=keep-id)
+    # Both: `keep-id` maps the invoking user to the same uid inside, and
+    # `--user` runs as it. Alone, `keep-id` leaves the image's own user (uid
+    # 1000), which is the invoking user only on a machine where that is 1000.
+    AS_ME=(--userns=keep-id --user "$(id -u):$(id -g)")
 else
     AS_ME=(--user "$(id -u):$(id -g)")
 fi

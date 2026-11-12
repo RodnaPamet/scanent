@@ -45,7 +45,8 @@ docker run --rm --user "$(id -u):$(id -g)" \
   sub-uid, so files written to a bind mount are owned by a sub-uid on the host.
   Leave `--user` out to run as the namespace's uid 1000, or use Podman's
   `keep-id`.
-- Podman: `--userns=keep-id` in place of `--user`. On SELinux hosts add `:Z`
+- Podman: `--userns=keep-id` beside `--user "$(id -u):$(id -g)"`. Alone,
+  `keep-id` leaves the image's uid 1000. On SELinux hosts add `:Z`
   (or `:ro,Z`) to each volume.
 
 ## On a schedule, with Compose
@@ -200,7 +201,7 @@ by others. One trailing line break is removed.
 | Variable | Meaning |
 |---|---|
 | `HTTPS_PROXY` | The forward proxy every request goes through |
-| `NO_PROXY` | Hosts reached directly. A bare name exempts that name only; `.example.com` exempts its subdomains |
+| `NO_PROXY` | Hosts reached directly, separated by commas. In the image, `example.com` exempts that name and its subdomains. Node versions differ here: see "Proxy and certificate authority" in `docs/scanner.md` |
 | `NODE_EXTRA_CA_CERTS` | A PEM file of certificate authorities, added to the public ones |
 
 The image sets `NODE_USE_ENV_PROXY=1`, which is what makes Node honour the
