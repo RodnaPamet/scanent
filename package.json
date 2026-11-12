@@ -19,7 +19,8 @@
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "docs:access": "node scripts/render-access.js"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

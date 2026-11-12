@@ -716,8 +716,22 @@ node packages/scanner/dist/cli.js scan --config estate.json
 node packages/scanner/dist/cli.js scan --config estate.json --out /var/lib/scanent
 node packages/scanner/dist/cli.js schedule --config estate.json [--out /var/lib/scanent]
 node packages/scanner/dist/cli.js diff <old> <new>
+node packages/scanner/dist/cli.js init [--dir <dir>] [--answers <file>]
+node packages/scanner/dist/cli.js keygen --out <file>
+node packages/scanner/dist/cli.js doctor --config estate.json [--json]
+node packages/scanner/dist/cli.js hosts --config estate.json
 node packages/scanner/dist/cli.js help
 ```
+
+`init`, `keygen`, `doctor` and `hosts` are described under
+[Setting up an estate](#setting-up-an-estate) below.
+
+`scan --strict` changes the exit code and nothing else: a run that was
+delivered exits 3 when a source was `INCOMPLETE` or the scan found no agent,
+so a scheduler can tell a full run from a partial one. Without it a delivered
+run exits 0, complete or not, as it always has; the report and the local
+results say what was incomplete either way. `schedule` does not take the flag,
+because a schedule does not exit.
 
 `@scanent/scanner` declares that file as two commands, `scanent` and its alias
 `aes`; wherever the package is installed they are the same program.
@@ -733,6 +747,345 @@ string with a secret's shape is replaced before it is written.
 On `SIGTERM` or `SIGINT` the scanner stops at once. A scan cut short posts
 nothing, and a run that was being written is left under a temporary name that
 no reader takes for a run; the next run after a day removes it.
+
+## Setting up an estate
+
+Three commands take an estate from nothing to a first scan, and none of them
+needs a second tool: `init` writes the files, `doctor` checks them, `scan`
+runs.
+
+### `init`
+
+```
+scanent init [--dir <dir>] [--answers <file>] [--force] [--no-keygen] [--print-access]
+```
+
+`init` writes three files under `<dir>` (default `./scanent`, created with
+mode 0700):
+
+| File | Mode | What it holds |
+|---|---|---|
+| `config.json` | 0600 | The configuration for the sources you chose. It parses under the strict schema, by construction |
+| `scanent.env` | 0600 | One line per credential the configuration names: the NAME and nothing after the `=`. The one value it ever holds is the path of the signing key `init` created |
+| `signing-key.pem` | 0600 | An Ed25519 signing key, unless `--no-keygen` |
+
+It then prints the public half of the key, the read-only access each chosen
+source needs ([access.md](access.md) is the same tables), and the next steps.
+It makes no network request and reads no credential.
+
+**It never asks for a secret value.** No question is about one; where a source
+has a credential, the wizard names the variable it goes in and moves on. Every
+answer is checked for a secret's shape before anything else looks at it: a hit
+is refused, is not stored, written or repeated back, and the question is asked
+again. Three refusals of one question end the wizard with nothing written. A
+terminal has already shown what was typed, which is why the refusal says to
+rotate the credential if it was real.
+
+Two ways to answer:
+
+- **At a terminal.** `init` asks for the estate's name, then whether you have
+  each kind of source and that source's facts (a directory id, an org URL, a
+  repository), then the output directory, the schedule, an optional inventory
+  and whether to post to an Inflect tenant (default: no).
+- **From a file**, `--answers <file>`, for automation. Without it, and when
+  stdin is not a terminal, `init` exits 2 and says so.
+
+The answers file is strict JSON, schema `scanent-init-answers/1`:
+
+```json
+{
+  "answers": "scanent-init-answers/1",
+  "estate": "acme-prod",
+  "everyHours": 24,
+  "outputDir": "/out",
+  "retainRuns": 90,
+  "inventoryPath": "/etc/scanent/inventory.json",
+  "sources": [
+    { "kind": "entra-sp", "directoryId": "<guid>", "clientId": "<guid>" },
+    { "kind": "okta-app", "orgUrl": "https://acme.okta.com" },
+    { "kind": "cicd", "repositories": ["acme/payments-api"] },
+    { "kind": "code", "roots": [{ "label": "support-bot", "path": "/estate/support-bot" }] },
+    { "kind": "mcp", "servers": [{ "label": "crm", "url": "https://mcp.acme.example/crm/mcp", "readToken": true }] }
+  ],
+  "inflect": null
+}
+```
+
+A source is the configuration's source without `product` (each kind has one)
+and without its variable name, which gets the documented default
+(`ENTRA_CLIENT_SECRET`, `OKTA_API_TOKEN`, `AZURE_CLIENT_SECRET`,
+`GITHUB_READ_TOKEN`, `GCP_SCANNER_KEY`, `LANGSMITH_API_KEY`,
+`MCP_<LABEL>_TOKEN`). Its other fields carry the configuration's own names,
+optional ones included, and are held to the configuration's own rules. To
+choose a variable's name, give the configuration's field (`"apiTokenEnv":
+"ACME_OKTA_TOKEN"`). `inflect` is `null`, or `{ "baseUrl", "tenantSlug",
+"agentId", "readRegister" }`; without it the configuration names no tenant and
+writes files only.
+
+What it will not do:
+
+- Replace `config.json` or `scanent.env` without `--force`. Both are looked
+  for before either is written, so a refused run writes nothing.
+- Replace a signing key, with or without `--force`: every earlier report was
+  signed with it. An existing `signing-key.pem` is kept, and `init` says so.
+- Write into a directory that is a symbolic link.
+
+`--print-access` prints the access tables for the chosen sources on stdout and
+writes nothing.
+
+`scanent.env` names the signing key by the path `init` wrote it to. Run
+`doctor` and `scan` where that path is the same: in a container, run `init`
+with the directory mounted where it will be mounted for the scan.
+
+Exit codes: 0 written; 2 a usage error, a refused overwrite, three refusals,
+or no terminal and no `--answers`; 4 the answers file is unreadable, not JSON,
+fails its schema, plans a configuration that is refused, or holds a
+secret-shaped string (named by path, never repeated).
+
+### `keygen`
+
+```
+scanent keygen --out <file>
+```
+
+Creates an Ed25519 signing key in a new file, mode 0600, and prints its raw
+public key in hex on stdout (what `public-key` prints). The private key goes
+to the file and nowhere else. An existing file is refused with exit 2; there
+is no overwrite. `init` calls the same function.
+
+A run with no tenant still signs: the signature is what lets `diff` and a
+later reader show that a report was not altered. The public half needs
+registering only with a tenant.
+
+`openssl genpkey -algorithm ed25519` makes an equally good key. `keygen`
+exists so a first run needs no second tool, and so the key lands in a file
+(`SCANNER_SIGNING_KEY_FILE`), which survives an env file where a PEM's line
+breaks do not.
+
+### `doctor`
+
+```
+scanent doctor --config <file> [--json] [--out <dir>] [--source <kind>]...
+```
+
+`doctor` answers one question, "is this estate ready to be scanned?", by
+trying it: it reads what `scan` would read, with the same credentials, through
+the same wire. Three rules:
+
+- **It writes nothing, anywhere.** No report, no file, no post. It never sends
+  a write to a system to learn whether a write would be allowed. "Writable" for
+  the output directory is read from permissions, and the detail says so.
+- **It adds no request.** Each source's probe is the first, smallest page of
+  the reads that source already makes, so the declared surface and its hash are
+  unchanged, and the tests hold every request `doctor` makes to that surface.
+- **Absence is never a pass.** A check passes only on something observed.
+
+Every check has one of four statuses:
+
+| Status | Meaning |
+|---|---|
+| `PASS` | What the check names was observed |
+| `WARN` | It works, and something should be fixed. A fix is given |
+| `FAIL` | It does not work. A fix is given, and the failure's class decides the exit code |
+| `SKIPPED` | Not checked, and always with the cause: `not applicable` (nothing to check), `blocked` (something before it failed, so this could not be checked; never read it as a pass), or `not observable` (no read the scanner makes can answer it; the detail says what to confirm by hand) |
+
+Each source gets the same six checks:
+
+| Check | Passes when |
+|---|---|
+| `credential.present` | The variable, or its `_FILE`, holds a value |
+| `host.resolves` | The source's hosts resolve. A host you name (a self-hosted LangSmith, an MCP server) must also resolve to an address the scanner may reach, exactly as before each request of a scan. A fixed host behind a proxy is resolved by the proxy and is `not applicable` |
+| `reachable` | A request was answered. No answer names the host; an untrusted certificate is told apart, with `NODE_EXTRA_CA_CERTS` as the fix |
+| `authenticated` | The token exchange succeeded, or the first read was not refused as unauthenticated |
+| `read.permitted` | Every probe read succeeded. A 403 fails with the grant the source needs; a 429 is `blocked`, to be run again |
+| `write.absent` | A read showed the credential's grant, and it is read-only |
+
+`write.absent` is where honesty costs the most. Only two sources reveal a
+credential's grant through a read the scanner already makes:
+
+| Source | What shows it | Result |
+|---|---|---|
+| `entra-sp` | The access token's `roles` claim lists the application permissions | `PASS` naming the roles when none writes; `WARN` naming each role that does (`ReadWrite`, `Write`, `FullControl`, `Manage`, `AccessAsUser`) |
+| `cicd` | GitHub's `X-OAuth-Scopes` header lists a classic token's scopes | `WARN` for `repo`, `public_repo`, `workflow`, `delete_repo`, `admin:…` or `write:…`; `PASS` naming the scopes otherwise. A fine-grained or installation token gets no such header: `not observable` |
+| `code` | The file permissions of each root | `WARN` when the scanner could write a root (mount it read-only) |
+| every other source | Nothing the scanner reads | `not observable`, with what to confirm in the product's own console |
+
+Okta's administrator role, a Key Vault role assignment and Google's
+`testIamPermissions` would each need a request the scanner does not declare
+(one of them a POST), so `doctor` does not make them and does not guess.
+
+The `inflect` output's key is used only to post, which is a write, so `doctor`
+checks that the key is present and reports whether it may post as `not
+observable`: the first `scan` shows it.
+
+The local checks, under the scope `local`:
+
+| Check | What it looks at |
+|---|---|
+| `config.valid` | The file parses under the strict schema. If it does not, every other check is `blocked` |
+| `config.mode` | The file is not writable by group or others |
+| `signing-key` | The key resolves and is Ed25519 in PKCS#8 PEM; the detail is its public half |
+| `secret-files` | Every `_FILE` in use passes the rules below. A file readable by group or others outside `/run/secrets/` and `/var/run/secrets/` is a warning |
+| `output.dir` | The file output's directory (or `--out`) exists, is a directory and not a link, and is writable by this user, or does not exist and can be created. Writable by other users is a warning |
+| `inventory` | The inventory, when one is configured, loads; the detail is its row count |
+| `tls.verification` | `NODE_TLS_REJECT_UNAUTHORIZED` is not `0`. When it is, no source is contacted |
+| `tls.extra-ca` | `NODE_EXTRA_CA_CERTS`, when set, names a readable file holding a certificate |
+| `proxy` | `HTTPS_PROXY`, when set, is a URL, and `NODE_USE_ENV_PROXY=1` on a Node that honours it. Otherwise requests would not use the proxy, which is a failure. The detail is the proxy's host and port, never its userinfo |
+| `proxy.customer-hosts` | A host you name is not reached through the proxy (see below) |
+| `clock` | The largest difference between this machine's clock and the `Date` header of the probe responses: under 60 seconds passes, up to 300 warns, more fails. No header seen is `not observable` |
+| `egress` | The egress proof, when the configuration has an `egress` block |
+
+`--source <kind>` limits the source checks to the kinds named, and may repeat;
+the local checks always run. `--out <dir>` checks that directory in place of
+the configuration's file output.
+
+The default output is a table on stdout, with a last line that counts each
+status and says how many checks were not checked and why. It says "all checks
+passed" only when every check did. `--json` prints one document instead:
+
+```json
+{
+  "doctor": "scanent-doctor/1",
+  "estate": "acme-prod",
+  "at": "2026-11-12T09:00:00.000Z",
+  "scanner": { "version": "0.12.0", "manifestHash": "sha256:…" },
+  "ready": false,
+  "counts": { "PASS": 14, "WARN": 2, "FAIL": 0, "SKIPPED": 5 },
+  "exitCode": 3,
+  "checks": [{ "scope": "local", "id": "config.valid", "status": "PASS", "detail": "9 sources" }]
+}
+```
+
+No detail or fix holds a credential, a response body or a URL: they are built
+from fixed sentences, the configuration's own names, status codes, counts and
+role or scope names.
+
+`doctor` exits by the first row that applies:
+
+| Code | When |
+|---|---|
+| 2 | A usage error |
+| 4 | The configuration could not be read or parsed, or any other configuration failure |
+| 5 | A credential is missing or was refused |
+| 6 | A host could not be resolved or reached |
+| 3 | Nothing failed, and there is a warning or a blocked check |
+| 0 | Every check passed, or was `not applicable` or `not observable` |
+
+`not observable` does not change the exit code, because no rerun can turn it
+into a pass. It is always shown and always counted as not checked.
+
+### `hosts`
+
+```
+scanent hosts --config <file> [--format lines|json|egress-allow]
+```
+
+Prints the hosts the configuration makes the scanner reach, each on port 443.
+It is offline: it needs no credential and makes no request. The list is
+derived from the same constants the declared surface is built from, and a test
+holds it equal to the hosts a full scan contacts.
+
+| Source | Hosts |
+|---|---|
+| `entra-sp` | `login.microsoftonline.com`, `graph.microsoft.com` |
+| `vault` | `login.microsoftonline.com`, each vault's host |
+| `okta-app` | The org's host |
+| `cicd` | `api.github.com` |
+| `gcp-sa` | `oauth2.googleapis.com`, `iam.googleapis.com` |
+| `runtime` | `api.smith.langchain.com` or `eu.api.smith.langchain.com`, or the self-hosted host |
+| `mcp` | Each server's host |
+| `inflect-register`, and the `inflect` output | The tenant's host |
+| `code` | None |
+
+`lines` (the default) prints `host:443`, sorted, one per line. `egress-allow`
+prints the comma-separated value the bundled proxy's `EGRESS_ALLOW` takes.
+`json` prints each entry with its source and purpose.
+
+## Secrets from files
+
+For each variable the configuration names, and for no other, `<NAME>_FILE`
+may name a file holding the value instead:
+
+| `NAME` | `NAME_FILE` | Result |
+|---|---|---|
+| set | unset | The variable's value |
+| unset or empty | set | The file's content |
+| set | set | Refused. A precedence rule would silently ignore one of two credentials, and the one ignored may be the one just rotated |
+| unset or empty | unset | Absent: a source reports `AUTH_FAILED`, and a missing signing key stops the run |
+
+The file's path is absolute. The file is a regular file (a link to one is
+followed, as a Kubernetes secret is one), at most 64 KiB, UTF-8 text, and not
+writable by other users: a world-writable file would let any local user
+replace the signing key. One trailing line break is removed. A world-readable
+file is accepted, because Docker mounts a secret 0444 and Kubernetes 0644
+inside a mount only that container sees; `doctor` warns about one outside
+such a mount.
+
+A refusal names the variable and a reason code (`BOTH_SET`, `FILE_PATH`,
+`NOT_A_FILE`, `TOO_LARGE`, `WORLD_WRITABLE`, `EMPTY`, `NOT_TEXT`,
+`UNREADABLE`), never anything of the file's content, and the command exits 4.
+Files are read once, at start: under `schedule`, a rotated file takes effect
+at the next start.
+
+Use the file form for the signing key and a Google key file. Both have line
+breaks, which an env file cannot carry.
+
+## Proxy and certificate authority
+
+**Proxy.** The scanner's requests are Node's own `fetch`, which honours
+`HTTPS_PROXY` and `NO_PROXY` when `NODE_USE_ENV_PROXY=1` (Node 24, and 22.21
+or later). The container image sets that variable; with no proxy variable it
+changes nothing. From source, set it yourself: `doctor` fails the `proxy`
+check when `HTTPS_PROXY` is set without it, because the requests would
+silently go direct. scanent adds no proxy library, and never logs or prints a
+proxy URL, which may carry a password.
+
+`NO_PROXY` follows Node's rules: `*`, an exact name, `.suffix` or `*.suffix`,
+and an optional `:port`. A bare name exempts that name only, not its
+subdomains.
+
+**The host check is not weakened by a proxy.** A host you name (a self-hosted
+LangSmith, an MCP server) is resolved and checked before every request,
+proxied or not. Two consequences:
+
+- A host on your own network belongs in `NO_PROXY`. It is then reached
+  directly, and the check is about the connection that is made.
+- A host reached through the proxy is still resolved here first. If this
+  machine cannot resolve it, the read is `UNREACHABLE`: add it to `NO_PROXY`,
+  or give this machine a resolver that can. If it does resolve, the check
+  passes on this machine's answer while the proxy resolves again on its own.
+  `doctor` raises that as `proxy.customer-hosts`.
+
+**Certificate authority.** To trust a private authority, for example behind
+TLS inspection, mount its certificate as a PEM file and set
+`NODE_EXTRA_CA_CERTS` to its path. Node reads it at start and adds it to its
+own authorities. That is the whole mechanism: there is no configuration key,
+and nothing turns verification off. `scan` and `schedule` refuse to run with
+`NODE_TLS_REJECT_UNAUTHORIZED=0` (exit 4, before the configuration is read),
+and `doctor` fails `tls.verification` and contacts no source: a scanner that
+carries an estate's read credentials does not send them over an unverified
+connection.
+
+A certificate that is not trusted reaches the report as `UNREACHABLE`, like
+any host that could not be reached. `doctor` tells it apart and names the fix.
+
+## Exit codes
+
+| Code | Name | Meaning |
+|---|---|---|
+| 0 | OK | The command did what it was asked. `scan`: every output delivered. `diff`: no difference. `doctor`: ready |
+| 1 | FAILED | The command failed: an output was not delivered, the ingest refused the report, the signing key is missing, or an error with no class of its own. `diff`: a difference |
+| 2 | USAGE | Wrong arguments, an unknown flag, nowhere to deliver, a refused overwrite. Nothing was read or written |
+| 3 | INCOMPLETE | Nothing failed, and not everything could be established. `scan --strict`: delivered, but a source was `INCOMPLETE` or no agent was found. `diff`: could not compare everything. `doctor`: warnings or blocked checks |
+| 4 | CONFIG | The configuration, the answers file, the inventory or a secret file was refused; `NODE_TLS_REJECT_UNAUTHORIZED=0` |
+| 5 | CREDENTIAL | `doctor`: a credential is missing or refused |
+| 6 | NETWORK | `doctor`: a host could not be resolved or reached |
+| 130 | SIGINT | Interrupted |
+| 143 | SIGTERM | Terminated |
+
+0, 1 and 2 mean what they did before the other codes existed. In particular
+`scan` without `--strict` exits 0 for a delivered run whether or not it was
+complete, and a missing signing key is 1.
 
 ## Local results
 
@@ -893,7 +1246,11 @@ docker run --rm \
 
 Mount the configuration directory read-only, and each `code` root read-only at
 the path the configuration names. Secrets are passed as environment variables
-whose names the configuration gives; none is in the image.
+whose names the configuration gives, or as mounted files named by
+`<NAME>_FILE` ([Secrets from files](#secrets-from-files)); none is in the
+image. The image sets `NODE_USE_ENV_PROXY=1`, so `HTTPS_PROXY` and `NO_PROXY`
+take effect when they are set
+([Proxy and certificate authority](#proxy-and-certificate-authority)).
 
 `deploy/smoke.sh <image>` is the image's smoke test. It builds nothing. It
 runs the image with those flags and no network, and checks the user, the

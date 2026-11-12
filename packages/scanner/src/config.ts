@@ -434,7 +434,7 @@ export type InflectConfig = NonNullable<ScannerConfig['inflect']>;
 export type ScannerConfigWithInflect = ScannerConfig & { readonly inflect: InflectConfig };
 
 /** The path of the first secret-shaped string in an untrusted JSON tree, or null. */
-function firstSecretShaped(node: unknown, path: string): string | null {
+export function firstSecretShaped(node: unknown, path: string): string | null {
     if (typeof node === 'string') return looksLikeSecret(node) ? path || '(root)' : null;
     if (Array.isArray(node)) {
         for (let i = 0; i < node.length; i++) {
