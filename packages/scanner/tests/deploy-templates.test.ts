@@ -2205,7 +2205,9 @@ describe('deploy/smoke.sh', () => {
 
     it('scans as the invoking user into a 0700 directory and reads the run back without the container', () => {
         expect(smoke).toContain('AS_ME=(--user "$(id -u):$(id -g)")');
-        expect(smoke).toContain('AS_ME=(--userns=keep-id)');
+        // Podman needs both: `keep-id` alone leaves the image's uid 1000, which failed on a runner whose user is 1001.
+        expect(smoke).toContain('AS_ME=(--userns=keep-id --user "$(id -u):$(id -g)")');
+        expect(smoke).not.toContain('AS_ME=(--userns=keep-id)');
         expect(smoke).toContain('mkdir -m 0700 "$WORK/mine"');
         expect(smoke).toContain('= "750 $(id -u)"');
         expect(smoke).toContain('= "640 $(id -u)"');

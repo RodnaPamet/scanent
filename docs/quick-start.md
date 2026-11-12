@@ -180,18 +180,21 @@ other platforms.
 
 ## Podman
 
-Replace `--user "$(id -u):$(id -g)"` with `--userns=keep-id`, and `docker`
-with `podman`:
+Add `--userns=keep-id` beside `--user "$(id -u):$(id -g)"`, and replace
+`docker` with `podman`:
 
 ```bash
 scanent() {
-  podman run --rm --userns=keep-id \
+  podman run --rm --userns=keep-id --user "$(id -u):$(id -g)" \
     --read-only --cap-drop ALL --security-opt no-new-privileges "$@"
 }
 ```
 
-Rootless Podman maps your user to the container's, so the files in
-`./scanent` are readable and the runs are yours. On a host with SELinux add
+`--userns=keep-id` gives your user the same number inside the container, and
+`--user` runs the scanner as it, so the files in `./scanent` are readable and
+the runs are yours. Both are needed: with `--userns=keep-id` alone the scanner
+runs as the image's own user (number 1000), which is you only if your user
+number is 1000. On a host with SELinux add
 `:Z` to each volume (`-v "$PWD/scanent:/etc/scanent:ro,Z"`). The Compose file
 works with `podman compose`.
 

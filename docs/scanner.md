@@ -1093,9 +1093,24 @@ check when `HTTPS_PROXY` is set without it, because the requests would
 silently go direct. scanent adds no proxy library, and never logs or prints a
 proxy URL, which may carry a password.
 
-`NO_PROXY` follows Node's rules: entries separated by commas or by spaces;
-`*`, an exact name, `.suffix` or `*.suffix`, and an optional `:port`. A bare
-name exempts that name only, not its subdomains.
+`NO_PROXY` follows the rules of the Node that runs, and they are not the same
+in every Node: `fetch` takes them from the undici library inside Node, which
+has changed them twice. Entries are separated by commas or by spaces, and may
+end in `:port`. Three things differ:
+
+| Entry | Node 22, and Node 24 before undici 7.22 | The image's Node 24 (undici 7.22 and later) | undici 8.11 and later (Node 26) |
+|---|---|---|---|
+| `example.com` | that name only | the name and its subdomains | the name and its subdomains |
+| `.example.com` | its subdomains only | the name and its subdomains | the name and its subdomains |
+| `*.example.com` | its subdomains only | the name and its subdomains | its subdomains only |
+| `*` | every host | every host, but only when it is the whole value | every host |
+
+`node -p process.versions.undici` prints the version. `doctor` and the host
+check read the list by the rules of the Node they run on
+(`packages/scanner/src/proxy-env.ts`); a test asks a second Node process which
+hosts its own `fetch` sends to the proxy and holds them to the answer. If both
+`NO_PROXY` and `no_proxy` are set, Node reads the lower-case one, even when it
+is empty.
 
 **The host check and a proxy.** A host you name (a self-hosted LangSmith, an
 MCP server) is resolved and checked on this machine before every request,
@@ -1462,7 +1477,7 @@ contract module (`deploy/smoke-verify.js`), that a scan with nowhere to
 post exits non-zero, and that `scan --dry-run --out /out` on the read-only
 root with one writable mount writes the six files of a run and that a second
 run leaves the first as it was. It then runs as the invoking user (`--user`,
-or `--userns=keep-id` with `CONTAINER_RUNTIME=podman`) into an output
+with `--userns=keep-id` beside it when `CONTAINER_RUNTIME=podman`) into an output
 directory of mode 0700 and reads the run back without the container, gives the
 signing key as a mounted file, runs `init --answers` and `doctor` on what it
 wrote, and `hosts` on a code-only configuration. CI runs it, followed by a

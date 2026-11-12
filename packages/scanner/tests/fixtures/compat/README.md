@@ -1,6 +1,7 @@
 # Compatibility fixtures
 
-One directory per released version. Each holds what that version wrote and
+One directory per version; from the first release on, one per released
+version. No version has been released yet. Each holds what that version wrote and
 read, made once from a checkout of that version, and never changed afterwards.
 `../../compat.test.ts` reads every directory here with the current code.
 
@@ -12,7 +13,8 @@ read, made once from a checkout of that version, and never changed afterwards.
 | `inventory.example.json`, `inventory.example.csv` | The example inventory, and the same rows as CSV. That version scored both the same |
 | `configs/` | Every example configuration and answers file of that version (`deploy/examples`, `examples/code-only`) |
 
-`0.12.0` was made from commit `190f3fb`, the last one before the results file
+`0.12.0` was made from commit `190f3fb`, an earlier commit of the current,
+unreleased version: the last one before the results file
 gained `toolEvidenceSources`. It is the proof that the member is an addition.
 
 A release adds a directory. None is removed while that version is supported
