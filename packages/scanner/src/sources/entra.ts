@@ -56,14 +56,17 @@ import { MAX_AGENTS } from '@scanent/contract/harness-contract';
 import {
     ageInDays,
     isPlainId,
+    ProbeLog,
     readPages,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
     type ObservedCredential,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
+    type WriteObservation,
 } from '../source';
 import { AZURE_LOGIN_ORIGIN } from './azure-key-vault';
 
@@ -184,6 +187,50 @@ function firstUserOwner(owners: unknown): string | null {
     return users[0] ?? null;
 }
 
+/** The one application permission the source needs. */
+export const ENTRA_REQUIRED_ROLE = 'Application.Read.All';
+/** An application permission whose name says it can change something. */
+const WRITING_ROLE = /ReadWrite|Write|FullControl|Manage|AccessAsUser/;
+const ROLE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
+/**
+ * The application permissions an access token carries, from its `roles`
+ * claim, or null when the token is not a JWT that says. The payload is
+ * decoded and NOT verified: it is the scanner's own token, just issued to it,
+ * and what is read from it is advice to the operator. Only role names leave
+ * this function; the token does not.
+ */
+export function entraTokenRoles(token: string): string[] | null {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    let payload: unknown;
+    try {
+        payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    } catch {
+        return null;
+    }
+    const roles = (payload as { roles?: unknown } | null)?.roles;
+    if (!Array.isArray(roles) || roles.length === 0 || roles.length > 200) return null;
+    if (!roles.every((r): r is string => typeof r === 'string' && ROLE_NAME.test(r))) return null;
+    return [...new Set(roles)].sort();
+}
+
+/** What a Graph token's roles say about write access. */
+export function entraWriteObservation(token: string): WriteObservation {
+    const roles = entraTokenRoles(token);
+    if (roles === null) {
+        return {
+            state: 'NOT_OBSERVABLE',
+            verify: `the access token did not list its permissions; confirm in the app registration's API permissions that it holds ${ENTRA_REQUIRED_ROLE} only`,
+        };
+    }
+    const writing = roles.filter((r) => WRITING_ROLE.test(r));
+    if (writing.length > 0) {
+        return { state: 'WRITE', names: writing, fix: `Remove ${writing.join(', ')}; the scanner needs ${ENTRA_REQUIRED_ROLE} only.` };
+    }
+    return { state: 'READ_ONLY', detail: `the token holds ${roles.join(', ')}` };
+}
+
 export function entraSource(opts: EntraSourceOptions): HarnessSource {
     const directoryId = opts.directoryId.toLowerCase();
 
@@ -289,6 +336,30 @@ export function entraSource(opts: EntraSourceOptions): HarnessSource {
             } catch (err) {
                 return { ...sourceResult('entra-sp', rows, observations, err), unboundCredentials: unbound };
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            const graphHost = new URL(GRAPH_ORIGIN).hostname;
+            await ProbeLog.run(async () => {
+                const token = await log.exchange('token', new URL(AZURE_LOGIN_ORIGIN).hostname, () =>
+                    ctx.tokens.clientCredentials({
+                        tokenUrl: `${AZURE_LOGIN_ORIGIN}/${directoryId}/oauth2/v2.0/token`,
+                        origin: AZURE_LOGIN_ORIGIN,
+                        clientId: opts.clientId,
+                        clientSecret: opts.clientSecret,
+                        scope: GRAPH_SCOPE,
+                    }),
+                );
+                const headers = { Authorization: `Bearer ${token}` };
+                // The two listings `read` makes, one row each.
+                for (const path of ENTRA_READ_PATHS) {
+                    await log.read(path.slice('/v1.0/'.length), graphHost, () =>
+                        ctx.http.getJson(`${GRAPH_ORIGIN}${path}?$top=1&$select=id`, { origin: GRAPH_ORIGIN, headers }),
+                    );
+                }
+                log.write(entraWriteObservation(token));
+            });
+            return log.steps;
         },
     };
 }

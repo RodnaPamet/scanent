@@ -100,6 +100,11 @@ LABEL org.opencontainers.image.title="scanent" \
 
 WORKDIR /app
 ENV NODE_ENV=production
+# Node's own fetch honours HTTPS_PROXY and NO_PROXY only when told to. With no
+# proxy variable set this changes nothing; with one, the scanner's requests go
+# through it (`scanent doctor` reports which). A private certificate authority
+# is added with NODE_EXTRA_CA_CERTS, a mounted file; nothing turns verification off.
+ENV NODE_USE_ENV_PROXY=1
 
 COPY --from=build /src/LICENSE ./LICENSE
 COPY --from=build /src/NOTICE ./NOTICE

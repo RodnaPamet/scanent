@@ -48,11 +48,13 @@ import { MAX_AGENTS, MAX_CREDENTIALS_PER_AGENT } from '@scanent/contract/harness
 import {
     ageInDays,
     readPages,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
     type ObservedCredential,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -280,6 +282,33 @@ export function gcpServiceAccountSource(opts: GcpServiceAccountSourceOptions): H
             } catch (err) {
                 return sourceResult('gcp-sa', rows, observations, err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            const iamHost = new URL(GCP_IAM_ORIGIN).hostname;
+            await ProbeLog.run(async () => {
+                // The key file parses and signs (local), then the exchange.
+                const token = await log.exchange('token', new URL(GOOGLE_OAUTH_ORIGIN).hostname, async () =>
+                    ctx.tokens.jwtBearer({
+                        tokenUrl: `${GOOGLE_OAUTH_ORIGIN}${GOOGLE_TOKEN_PATH}`,
+                        origin: GOOGLE_OAUTH_ORIGIN,
+                        assertion: signedAssertion(parseServiceAccountKey(opts.keyJson), ctx.now()),
+                    }),
+                );
+                const headers = { Authorization: `Bearer ${token}` };
+                for (const project of opts.projects) {
+                    await log.read('service accounts', iamHost, async () => {
+                        if (!GCP_PROJECT_ID.test(project)) throw new SourceReadError('UNPARSEABLE', 'a project that is not a project id');
+                        return ctx.http.getJson(`${GCP_IAM_ORIGIN}/v1/projects/${project}/serviceAccounts?pageSize=1`, { origin: GCP_IAM_ORIGIN, headers });
+                    });
+                }
+                // Google answers what an identity may do through testIamPermissions, a POST this scanner cannot send.
+                log.write({
+                    state: 'NOT_OBSERVABLE',
+                    verify: 'confirm in IAM that the service account holds roles/iam.serviceAccountViewer on each project and nothing else',
+                });
+            });
+            return log.steps;
         },
     };
 }

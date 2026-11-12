@@ -188,6 +188,14 @@ export interface HarnessSource {
     /** The product behind the kind, e.g. `okta` or `azure-key-vault`. Not reported. */
     readonly product: string;
     read(ctx: SourceContext): Promise<SourceRead>;
+    /**
+     * The preflight (`scanent doctor`): the smallest reads that show the
+     * source can be read, each one a request `read` already makes. Required,
+     * so a new source cannot ship without one. It returns what it tried, in
+     * order, and stops at the first step that failed; it never throws for a
+     * read that went wrong, and it never writes.
+     */
+    preflight(ctx: SourceContext): Promise<readonly ProbeStep[]>;
 }
 
 /** A source read that stopped, with the contract's reason. */
@@ -195,9 +203,102 @@ export class SourceReadError extends Error {
     constructor(
         readonly reason: IncompleteReason,
         message: string,
+        /** The HTTP status the source answered with, where the wire knows one. Not reported. */
+        readonly status?: number,
     ) {
         super(message);
         this.name = 'SourceReadError';
+    }
+}
+
+/**
+ * What a preflight saw of whether the credential can WRITE. Only a declared
+ * read can reveal it: nothing is ever written to find out.
+ */
+export type WriteObservation =
+    /** The read showed the grant, and it is read-only. `detail` names what was seen (role or scope names). */
+    | { readonly state: 'READ_ONLY'; readonly detail: string }
+    /** The read showed a grant that writes. `names` are the roles or scopes, as the product spells them. */
+    | { readonly state: 'WRITE'; readonly names: readonly string[]; readonly fix: string }
+    /** No declared read shows it. `verify` says what to confirm by hand. */
+    | { readonly state: 'NOT_OBSERVABLE'; readonly verify: string };
+
+/** One thing a preflight tried. */
+export interface ProbeStep {
+    /** `exchange`: a token exchange. `read`: one declared read. `write`: what the reads showed about write access. */
+    readonly id: 'exchange' | 'read' | 'write';
+    /** A sub-scope, for a source that reads several independent targets: an MCP server's label. */
+    readonly scope?: string;
+    /** What was asked for, in fixed words: `applications`, `secrets`. Never a URL or a value. */
+    readonly what: string;
+    /** The host asked, when the step is a request. */
+    readonly host?: string;
+    readonly outcome: 'ok' | SourceReadError;
+    readonly observed?: {
+        /** The response's `Date` header, when the read returned one. */
+        readonly date?: string | null;
+        readonly write?: WriteObservation;
+    };
+}
+
+/**
+ * Collects a preflight's steps. `exchange` and `read` run one request each and
+ * record how it went; a failure is recorded and then ends the preflight (or
+ * the sub-scope), by throwing `ProbeStopped` for `run` to catch.
+ */
+export class ProbeLog {
+    readonly steps: ProbeStep[] = [];
+
+    constructor(private readonly scope?: string) {}
+
+    private async attempt<T>(id: 'exchange' | 'read', what: string, host: string, fn: () => Promise<T>, dateOf: (value: T) => string | null | undefined): Promise<T> {
+        const base = { id, what, host, ...(this.scope === undefined ? {} : { scope: this.scope }) };
+        let value: T;
+        try {
+            value = await fn();
+        } catch (err) {
+            const outcome = err instanceof SourceReadError ? err : new SourceReadError('UNREACHABLE', 'the probe did not complete');
+            this.steps.push({ ...base, outcome });
+            throw new ProbeStopped();
+        }
+        const date = dateOf(value);
+        this.steps.push({ ...base, outcome: 'ok', ...(date === undefined ? {} : { observed: { date } }) });
+        return value;
+    }
+
+    /** One token exchange. */
+    exchange<T>(what: string, host: string, fn: () => Promise<T>): Promise<T> {
+        return this.attempt('exchange', what, host, fn, () => undefined);
+    }
+
+    /** One declared read. The response's `Date` header is kept when `fn` returns headers. */
+    read<T>(what: string, host: string, fn: () => Promise<T>): Promise<T> {
+        return this.attempt('read', what, host, fn, (value) => {
+            const headers = (value as { headers?: unknown } | null)?.headers;
+            return headers instanceof Headers ? headers.get('date') : undefined;
+        });
+    }
+
+    /** What the reads showed about write access. Recorded only after every read succeeded. */
+    write(observation: WriteObservation): void {
+        this.steps.push({ id: 'write', what: 'write access', outcome: 'ok', observed: { write: observation }, ...(this.scope === undefined ? {} : { scope: this.scope }) });
+    }
+
+    /** Run a preflight body; a recorded failure ends it quietly, anything else is the reader's own fault and propagates. */
+    static async run(body: () => Promise<void>): Promise<void> {
+        try {
+            await body();
+        } catch (err) {
+            if (!(err instanceof ProbeStopped)) throw err;
+        }
+    }
+}
+
+/** Thrown by `ProbeLog` after it recorded a failed step: there is nothing further to try. */
+export class ProbeStopped extends Error {
+    constructor() {
+        super('the preflight stopped at a failed step');
+        this.name = 'ProbeStopped';
     }
 }
 

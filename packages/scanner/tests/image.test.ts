@@ -119,6 +119,13 @@ describe('deploy/Dockerfile', () => {
         }
     });
 
+    it('sets exactly these environment variables: production, and Node\'s own proxy support', () => {
+        // NODE_USE_ENV_PROXY=1 is what makes HTTPS_PROXY and NO_PROXY take effect (Phase 3); it changes nothing without them.
+        expect(runtime.lines.filter((line) => line.startsWith('ENV '))).toEqual(['ENV NODE_ENV=production', 'ENV NODE_USE_ENV_PROXY=1']);
+        // Nothing in the image turns certificate verification off, or carries a proxy or a credential of its own.
+        expect(dockerfile).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED|ENV HTTPS?_PROXY/);
+    });
+
     it('runs as the non-root node user, set after the last file is copied', () => {
         const user = runtime.lines.filter((line) => line.startsWith('USER '));
         expect(user).toEqual(['USER node']);

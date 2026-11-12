@@ -55,12 +55,14 @@ import {
 import type { McpSession } from '../http';
 import {
     MAX_PAGES_PER_SOURCE,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type McpServerRead,
     type Observation,
     type ObservedTool,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -202,6 +204,34 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
             }
 
             return { ...sourceResult('mcp', rows, observations, stoppedBy), mcpServers: fullyRead };
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const steps: ProbeStep[] = [];
+            // Each server is its own scope, so one failing server does not hide the others.
+            for (const server of opts.servers) {
+                // A server whose token is configured and missing is reported by the caller, which knows the variable.
+                if (server.token === 'MISSING') continue;
+                const log = new ProbeLog(server.label);
+                const allowlist: PrivateCidrAllowlist = parsePrivateCidrAllowlist(server.egressPrivateCidrAllowlist) ?? [];
+                const hostname = new URL(server.url).hostname;
+                const guard = () => assertResolvesReachable(hostname, resolve, allowlist);
+                const headers: Record<string, string> = server.token === null ? {} : { Authorization: `Bearer ${server.token.value}` };
+                await ProbeLog.run(async () => {
+                    const session = await log.read('the handshake', hostname, async () => {
+                        await guard();
+                        return ctx.mcp.open({ url: server.url, headers });
+                    });
+                    if (session.offersTools) {
+                        await log.read('the tool listing', hostname, async () => {
+                            await guard();
+                            return ctx.mcp.listTools(session, null);
+                        });
+                    }
+                    log.write({ state: 'NOT_OBSERVABLE', verify: "confirm with the server's administrator that the token can list tools and cannot call one" });
+                });
+                steps.push(...log.steps);
+            }
+            return steps;
         },
     };
 }

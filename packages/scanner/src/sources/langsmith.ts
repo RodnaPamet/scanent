@@ -92,11 +92,13 @@ import type { ReadOnlyHttp } from '../http';
 import {
     isPlainId,
     readPages,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
     type ObservedToolUse,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -212,7 +214,7 @@ export function toolUsageOf(project: Pick<LsProject, 'run_count' | 'run_facets'>
 }
 
 /** The query that asks for every non-experiment project with its tool-run stats since `since`. */
-function projectsQuery(since: string, offset: number): string {
+function projectsQuery(since: string, offset: number, limit: number = LANGSMITH_PAGE_SIZE): string {
     const params: [string, string][] = [
         ['reference_free', 'true'],
         ['include_stats', 'true'],
@@ -225,7 +227,7 @@ function projectsQuery(since: string, offset: number): string {
         // a place, and the repeat that causes is caught as a torn listing.
         ['sort_by', 'start_time'],
         ['sort_by_desc', 'true'],
-        ['limit', String(LANGSMITH_PAGE_SIZE)],
+        ['limit', String(limit)],
         ['offset', String(offset)],
     ];
     // `%20`, never the `+` of form encoding: the filter grammar has spaces.
@@ -369,6 +371,21 @@ export function langSmithSource(opts: LangSmithSourceOptions): HarnessSource {
             } catch (err) {
                 return sourceResult('runtime', rows, observations(), err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            // The same guard as `read`: a self-hosted host is re-resolved before each request.
+            const http = selfHosted ? guarded(ctx.http, resolve, allowlist) : ctx.http;
+            const hostname = new URL(origin).hostname;
+            const since = new Date(ctx.asOf.getTime() - opts.windowDays * DAY_MS).toISOString();
+            await ProbeLog.run(async () => {
+                await log.read('tracing projects', hostname, () => http.getJson(`${origin}${paths.projects}?${projectsQuery(since, 0, 1)}`, { origin, headers }));
+                if (opts.readDeployments) {
+                    await log.read('deployments', hostname, () => http.getJson(`${origin}${paths.deployments}?limit=1&offset=0`, { origin, headers }));
+                }
+                log.write({ state: 'NOT_OBSERVABLE', verify: "confirm in LangSmith's API keys settings that the key is a service key holding the workspace Viewer role" });
+            });
+            return log.steps;
         },
     };
 }

@@ -66,10 +66,12 @@ import type { EgressProof } from '../egress-proof';
 import {
     ageInDays,
     isPlainId,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -260,6 +262,20 @@ export function inflectRegisterSource(opts: InflectRegisterSourceOptions): Harne
             } catch (err) {
                 return sourceResult('inflect-register', rows, observations, err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            await ProbeLog.run(async () => {
+                // The exchange, the handshake and the one tool call: the read itself, once.
+                await log.read('the register', new URL(origin).hostname, () =>
+                    ctx.register.read({ url: `${origin}${INFLECT_MCP_PATH}`, tokenUrl: `${origin}${INFLECT_TOKEN_PATH}`, apiKey: opts.apiKey }),
+                );
+                log.write({
+                    state: 'NOT_OBSERVABLE',
+                    verify: "confirm on the tenant's API keys page that the key holds admin:harness_ingest and mcp:read and no other scope",
+                });
+            });
+            return log.steps;
         },
     };
 }

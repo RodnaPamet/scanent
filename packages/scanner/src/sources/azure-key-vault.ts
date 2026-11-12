@@ -42,10 +42,12 @@ import { MAX_AGENTS } from '@scanent/contract/harness-contract';
 import {
     ageInDays,
     readPages,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -182,6 +184,38 @@ export function azureKeyVaultSource(opts: AzureKeyVaultSourceOptions): HarnessSo
             } catch (err) {
                 return sourceResult('vault', rows, observations, err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            await ProbeLog.run(async () => {
+                const token = await log.exchange('token', new URL(AZURE_LOGIN_ORIGIN).hostname, () =>
+                    ctx.tokens.clientCredentials({
+                        tokenUrl: `${AZURE_LOGIN_ORIGIN}/${encodeURIComponent(opts.directoryTenantId)}/oauth2/v2.0/token`,
+                        origin: AZURE_LOGIN_ORIGIN,
+                        clientId: opts.clientId,
+                        clientSecret: opts.clientSecret,
+                        scope: 'https://vault.azure.net/.default',
+                    }),
+                );
+                const headers = { Authorization: `Bearer ${token}` };
+                for (const vault of vaults) {
+                    for (const collection of AZURE_KEY_VAULT_COLLECTIONS) {
+                        await log.read(collection, new URL(vault.origin).hostname, () =>
+                            ctx.http.getJson(`${vault.origin}/${collection}?api-version=${AZURE_KEY_VAULT_API_VERSION}&maxresults=1`, {
+                                origin: vault.origin,
+                                headers,
+                            }),
+                        );
+                    }
+                }
+                // The data-plane token carries no role, and reading role
+                // assignments is a management-plane request this scanner does not declare.
+                log.write({
+                    state: 'NOT_OBSERVABLE',
+                    verify: "confirm in each vault's Access control (IAM) that the application holds Key Vault Reader only",
+                });
+            });
+            return log.steps;
         },
     };
 }

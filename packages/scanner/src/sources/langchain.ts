@@ -53,7 +53,16 @@
  */
 import { lstat, readdir, readFile } from 'fs/promises';
 
-import { sourceResult, type HarnessSource, type IncompleteReason, type Observation, type SourceRead } from '../source';
+import {
+    ProbeLog,
+    sourceResult,
+    SourceReadError,
+    type HarnessSource,
+    type IncompleteReason,
+    type Observation,
+    type ProbeStep,
+    type SourceRead,
+} from '../source';
 import type { CodeFs, CodeRoot, FileProblem } from './code/files';
 import { readCodeFiles } from './code/files';
 import { JavaScriptReadError, readJavaScript } from './code/javascript';
@@ -136,6 +145,28 @@ export function langchainCodeSource(options: LangChainCodeSourceOptions): Harnes
             const reason = REASON_ORDER.find((r) => scan.problems.some((p) => p.reason === r));
             if (reason === undefined) return sourceResult('code', scan.rows, observations, null);
             return { kind: 'code', status: 'INCOMPLETE', reason, rows: scan.rows, observations };
+        },
+        async preflight(): Promise<readonly ProbeStep[]> {
+            const steps: ProbeStep[] = [];
+            // Each root on its own: `lstat` and one `readdir`, the operations `read` starts with. No file is opened.
+            for (const root of options.roots) {
+                const log = new ProbeLog(root.label);
+                await ProbeLog.run(async () => {
+                    await log.read('the root', '', async () => {
+                        try {
+                            const st = await fs.lstat(root.path);
+                            if (st.isSymbolicLink() || !st.isDirectory()) throw new SourceReadError('UNREACHABLE', 'the root is not a directory');
+                            return { entries: (await fs.readdir(root.path)).length };
+                        } catch (err) {
+                            if (err instanceof SourceReadError) throw err;
+                            const code = (err as { code?: unknown } | null)?.code;
+                            throw new SourceReadError(code === 'EACCES' || code === 'EPERM' ? 'AUTH_FAILED' : 'UNREACHABLE', 'the root could not be listed');
+                        }
+                    });
+                });
+                steps.push(...log.steps);
+            }
+            return steps;
         },
     };
 }

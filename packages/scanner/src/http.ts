@@ -304,7 +304,33 @@ function classifyThrow(err: unknown): SourceReadError {
     if (err instanceof SourceReadError) return err;
     const name = err instanceof Error ? err.name : '';
     if (name === 'TimeoutError' || name === 'AbortError') return new SourceReadError('TIME_BOX', 'the read ran past its time box');
+    // A certificate the process does not trust: the reason is still
+    // UNREACHABLE (the report does not change), and the message says why, so
+    // `doctor` can name the fix. The usual cause is a TLS-inspecting proxy
+    // whose authority has not been added with NODE_EXTRA_CA_CERTS.
+    if (isCertificateFailure(err)) return new SourceReadError('UNREACHABLE', TLS_NOT_TRUSTED);
     return new SourceReadError('UNREACHABLE', 'the request did not complete');
+}
+
+/** The message of a read that failed on an untrusted certificate. `doctor` matches on it. */
+export const TLS_NOT_TRUSTED = 'the TLS certificate was not trusted';
+
+/** Node's codes for a certificate chain it would not accept. */
+export const CERTIFICATE_ERROR_CODES: readonly string[] = [
+    'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'CERT_HAS_EXPIRED',
+];
+
+/** Whether a thrown fetch error, or its cause, carries one of Node's certificate codes. */
+function isCertificateFailure(err: unknown): boolean {
+    for (let e: unknown = err, depth = 0; e !== null && typeof e === 'object' && depth < 4; e = (e as { cause?: unknown }).cause, depth++) {
+        const code = (e as { code?: unknown }).code;
+        if (typeof code === 'string' && CERTIFICATE_ERROR_CODES.includes(code)) return true;
+    }
+    return false;
 }
 
 function reasonForStatus(status: number): IncompleteReason {
@@ -450,7 +476,7 @@ export function createSourceWire(
                 }
                 if (!res.ok) {
                     await res.body?.cancel();
-                    throw new SourceReadError(reasonForStatus(res.status), `the source answered HTTP ${res.status}`);
+                    throw new SourceReadError(reasonForStatus(res.status), `the source answered HTTP ${res.status}`, res.status);
                 }
                 return { body: parseJson(await readCapped(res, responseCap, charge)), headers: res.headers };
             } catch (err) {
@@ -476,7 +502,7 @@ export function createSourceWire(
                 await res.body?.cancel();
                 // Any refusal of the exchange is a credential the source could not use.
                 const reason = res.status === 429 ? 'RATE_LIMITED' : res.status >= 500 ? 'UNREACHABLE' : 'AUTH_FAILED';
-                throw new SourceReadError(reason, `the token endpoint answered HTTP ${res.status}`);
+                throw new SourceReadError(reason, `the token endpoint answered HTTP ${res.status}`, res.status);
             }
             const body = parseJson(await readCapped(res, 64 * 1024, charge)) as { access_token?: unknown };
             if (typeof body.access_token !== 'string' || body.access_token === '') {
@@ -538,7 +564,7 @@ export function createSourceWire(
             });
             if (!res.ok) {
                 await res.body?.cancel();
-                throw new SourceReadError(reasonForStatus(res.status), `the MCP server answered HTTP ${res.status}`);
+                throw new SourceReadError(reasonForStatus(res.status), `the MCP server answered HTTP ${res.status}`, res.status);
             }
             return { res, id };
         } catch (err) {
@@ -559,7 +585,7 @@ export function createSourceWire(
         } catch (err) {
             throw classifyThrow(err);
         }
-        if ('error' in answer) throw new SourceReadError('UNREACHABLE', `the MCP server refused ${method}`);
+        if ('error' in answer) throw new SourceReadError('UNREACHABLE', `the MCP server refused ${method}`, res.status);
         const result = answer.result;
         if (result === null || typeof result !== 'object' || Array.isArray(result)) {
             throw new SourceReadError('PAGINATION_TORN', `the MCP server's ${method} result was not an object`);
@@ -679,7 +705,7 @@ export function createSourceWire(
             if (!res.ok) {
                 await res.body?.cancel();
                 const reason = res.status === 429 ? 'RATE_LIMITED' : res.status >= 500 ? 'UNREACHABLE' : 'AUTH_FAILED';
-                throw new SourceReadError(reason, `the token exchange answered HTTP ${res.status}`);
+                throw new SourceReadError(reason, `the token exchange answered HTTP ${res.status}`, res.status);
             }
             const body = parseJson(await readCapped(res, 64 * 1024, charge)) as { access_token?: unknown };
             if (typeof body.access_token !== 'string' || !EXCHANGED_TOKEN.test(body.access_token)) {

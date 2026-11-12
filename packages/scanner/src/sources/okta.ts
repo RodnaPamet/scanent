@@ -46,10 +46,12 @@ import {
     ageInDays,
     isPlainId,
     readPages,
+    ProbeLog,
     sourceResult,
     SourceReadError,
     type HarnessSource,
     type Observation,
+    type ProbeStep,
     type SourceContext,
     type SourceRead,
 } from '../source';
@@ -203,6 +205,22 @@ export function oktaSource(opts: OktaSourceOptions): HarnessSource {
             } catch (err) {
                 return sourceResult('okta-app', rows, observations, err);
             }
+        },
+        async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
+            const log = new ProbeLog();
+            const hostname = new URL(origin).hostname;
+            await ProbeLog.run(async () => {
+                await log.read('the current API token', hostname, () => ctx.http.getJson(`${origin}${OKTA_READ_PATHS[2]}`, { origin, headers }));
+                await log.read('apps', hostname, () =>
+                    ctx.http.getJson(`${origin}${OKTA_READ_PATHS[0]}?limit=1&filter=${encodeURIComponent('name eq "oidc_client"')}`, { origin, headers }),
+                );
+                // The token's administrator role is read from the user's roles, which this scanner does not declare.
+                log.write({
+                    state: 'NOT_OBSERVABLE',
+                    verify: "confirm in Security, Administrators that the token's user holds the Read-only Administrator role only",
+                });
+            });
+            return log.steps;
         },
     };
 }
