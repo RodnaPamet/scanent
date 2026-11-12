@@ -194,7 +194,7 @@ silently ignored.
 | Kubernetes | A Secret's key, mounted by the chart at `/run/secrets/scanent/<key>` |
 
 The file must be a regular file of at most 64 KiB, and must not be writable
-by others. One trailing line break is removed.
+by its group or by others (`chmod go-w`). One trailing line break is removed.
 
 ## Proxy and certificate authority
 

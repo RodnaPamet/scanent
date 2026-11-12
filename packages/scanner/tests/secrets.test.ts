@@ -113,6 +113,14 @@ describe('reading one file', () => {
         expect(reasonOf(() => readSecretFile('N', file('big', Buffer.alloc(MAX_SECRET_FILE_BYTES + 1, 0x61))))).toBe('TOO_LARGE');
         expect(reasonOf(() => readSecretFile('N', file('edge', Buffer.alloc(MAX_SECRET_FILE_BYTES, 0x61))))).toBe('accepted');
         expect(reasonOf(() => readSecretFile('N', file('open', 'v\n', 0o666)))).toBe('WORLD_WRITABLE');
+        // Writable by its group is refused too, under its own code; world-writable is named first when both bits are set.
+        expect(reasonOf(() => readSecretFile('N', file('group', 'v\n', 0o660)))).toBe('GROUP_WRITABLE');
+        expect(reasonOf(() => readSecretFile('N', file('group-rw', 'v\n', 0o664)))).toBe('GROUP_WRITABLE');
+        expect(reasonOf(() => readSecretFile('N', file('both', 'v\n', 0o662)))).toBe('WORLD_WRITABLE');
+        // What a platform mounts stays accepted: Docker's 0444, Kubernetes' 0644 and 0440, and an owner-only file.
+        for (const [name, bits] of [['docker', 0o444], ['kube', 0o644], ['kube-group', 0o440], ['owner', 0o600]] as const) {
+            expect(reasonOf(() => readSecretFile('N', file(name, 'v\n', bits)))).toBe('accepted');
+        }
         expect(reasonOf(() => readSecretFile('N', file('empty', '')))).toBe('EMPTY');
         expect(reasonOf(() => readSecretFile('N', file('blank', '\n')))).toBe('EMPTY');
         expect(reasonOf(() => readSecretFile('N', file('nul', Buffer.from([0x61, 0x00, 0x62]))))).toBe('NOT_TEXT');

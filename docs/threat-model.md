@@ -67,7 +67,7 @@ disclosure, **D**enial of service, **E**levation of privilege.
 |---|---|---|---|
 | T | A configuration with an unknown or misspelt member is silently half-applied | Every object of the schema is strict; an unknown key refuses the file. `packages/scanner/src/config.ts` (`parseScannerConfig`) | `packages/scanner/tests/scanner-config-and-schedule.test.ts`, `packages/scanner/tests/fuzz-inputs.test.ts` |
 | I | A credential pasted into the configuration file ends up in a log or an error | A secret-shaped string anywhere in the file refuses it, and no message repeats a value of the file. `packages/scanner/src/config.ts` (`firstSecretShaped`), `packages/scanner/src/cli.ts` (`loadConfig`) | `packages/scanner/tests/cli-hardening.test.ts`, `packages/scanner/tests/fuzz-inputs.test.ts` |
-| I | A credential is read from a file another local user can replace | A secret file must be a regular file, at most 64 KiB, not world-writable; a variable and its `_FILE` both set is refused. The check is of the file's own mode and no more: see [Residual risks](#residual-risks), 12. `packages/scanner/src/secrets.ts` (`readSecretFile`) | `packages/scanner/tests/secrets.test.ts` |
+| I | A credential is read from a file another local user can replace | A secret file must be a regular file, at most 64 KiB, writable by its owner alone; a variable and its `_FILE` both set is refused. The check is of the file's own mode and no more: see [Residual risks](#residual-risks), 12. `packages/scanner/src/secrets.ts` (`readSecretFile`) | `packages/scanner/tests/secrets.test.ts` |
 | I | The wizard is given a secret, or writes one where others can read it | `init` asks for names only and writes its files `0600` in a `0700` directory; a signing key is never replaced. `packages/scanner/src/init/write.ts` (`writeInit`), `packages/scanner/src/keygen.ts` (`generateSigningKey`) | `packages/scanner/tests/init-write.test.ts`, `packages/scanner/tests/keygen.test.ts` |
 | I | Certificate verification is switched off by a variable left in a shell profile | `scan` and `schedule` refuse to start with `NODE_TLS_REJECT_UNAUTHORIZED=0`. `packages/scanner/src/cli.ts` (`TLS_OFF`) | `packages/scanner/tests/proxy-and-tls.test.ts` |
 | D | A huge or malformed inventory or CSV | Size caps and a strict decoder; a refusal names a row and a field, never a value. `packages/scanner/src/inventory-file.ts` (`loadInventoryFile`) | `packages/scanner/tests/inventory-file.test.ts`, `packages/scanner/tests/fuzz-inputs.test.ts` |
@@ -214,8 +214,8 @@ Stated plainly. None of these is closed by the code.
     change a file and the manifest together. Restrict who can write that
     directory, and where a result matters, re-derive it from the signed
     report (`scanent diff` reads one) rather than trust the files beside it.
-12. **A secret file is checked for one thing.** The scanner refuses a secret
-    file that is world-writable. It does not check the group's write bit, the
+12. **A secret file is checked by its own mode only.** The scanner refuses a
+    secret file that its group or every user can write. It does not check the
     directory the file is in, or who owns either, and it follows a symbolic
     link to the file. A file another user can replace through its directory
     passes. Keep secret files in a directory only the scanner's user can

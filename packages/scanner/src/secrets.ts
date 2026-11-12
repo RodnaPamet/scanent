@@ -11,10 +11,13 @@
  *     means one of two credentials is silently ignored, and the one ignored
  *     may be the one somebody just rotated.
  *   • The file is a regular file (a link to one is followed: a Kubernetes
- *     secret is a link), at most 64 KiB, text, and NOT writable by others: a
- *     world-writable file lets any local user swap the signing key. A
- *     world-READABLE file is accepted, because Docker mounts a secret 0444 and
- *     Kubernetes 0644 inside a mount only that container sees.
+ *     secret is a link), at most 64 KiB, text, and writable by its owner
+ *     alone: a file its group or every user can write lets somebody else swap
+ *     the signing key. A file others can READ is accepted, because Docker
+ *     mounts a secret 0444 and Kubernetes 0644 inside a mount only that
+ *     container sees, and neither makes one writable. Ownership and the
+ *     directory are not checked: a secret mount's owner and directory are the
+ *     platform's, and differ between platforms.
  *   • Exactly one trailing line break is removed.
  *
  * Nothing here logs, and no error carries a byte of a file's content.
@@ -25,7 +28,7 @@ import { credentialEnvNames, type ScannerConfig } from './config';
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
-export type SecretFileReason = 'BOTH_SET' | 'FILE_PATH' | 'NOT_A_FILE' | 'TOO_LARGE' | 'WORLD_WRITABLE' | 'EMPTY' | 'NOT_TEXT' | 'UNREADABLE';
+export type SecretFileReason = 'BOTH_SET' | 'FILE_PATH' | 'NOT_A_FILE' | 'TOO_LARGE' | 'WORLD_WRITABLE' | 'GROUP_WRITABLE' | 'EMPTY' | 'NOT_TEXT' | 'UNREADABLE';
 
 /** The largest secret file read. The largest real credential, a Google key file, is under 3 KiB. */
 export const MAX_SECRET_FILE_BYTES = 64 * 1024;
@@ -36,6 +39,7 @@ const WHY: Readonly<Record<SecretFileReason, string>> = {
     NOT_A_FILE: 'the _FILE path is not a regular file',
     TOO_LARGE: `the secret file is larger than ${MAX_SECRET_FILE_BYTES} bytes`,
     WORLD_WRITABLE: 'the secret file is writable by other users',
+    GROUP_WRITABLE: 'the secret file is writable by its group; make it writable by its owner alone (chmod g-w)',
     EMPTY: 'the secret file is empty',
     NOT_TEXT: 'the secret file is not text',
     UNREADABLE: 'the secret file could not be read',
@@ -84,6 +88,7 @@ export function readSecretFile(variable: string, path: string, fs: SecretFs = NO
         if (!stat.isFile()) throw new SecretFileError(variable, 'NOT_A_FILE');
         if (stat.size > MAX_SECRET_FILE_BYTES) throw new SecretFileError(variable, 'TOO_LARGE');
         if ((stat.mode & 0o002) !== 0) throw new SecretFileError(variable, 'WORLD_WRITABLE');
+        if ((stat.mode & 0o020) !== 0) throw new SecretFileError(variable, 'GROUP_WRITABLE');
         bytes = fs.readFileSync(path);
     } catch (err) {
         if (err instanceof SecretFileError) throw err;

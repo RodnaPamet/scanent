@@ -1109,14 +1109,15 @@ may name a file holding the value instead:
 
 The file's path is absolute. The file is a regular file (a link to one is
 followed, as a Kubernetes secret is one), at most 64 KiB, UTF-8 text, and not
-writable by other users: a world-writable file would let any local user
+writable by its group or by other users: either would let somebody else
 replace the signing key. One trailing line break is removed. A world-readable
 file is accepted, because Docker mounts a secret 0444 and Kubernetes 0644
 inside a mount only that container sees; `doctor` warns about one outside
 such a mount.
 
 A refusal names the variable and a reason code (`BOTH_SET`, `FILE_PATH`,
-`NOT_A_FILE`, `TOO_LARGE`, `WORLD_WRITABLE`, `EMPTY`, `NOT_TEXT`,
+`NOT_A_FILE`, `TOO_LARGE`, `WORLD_WRITABLE`, `GROUP_WRITABLE`, `EMPTY`,
+`NOT_TEXT`,
 `UNREADABLE`), never anything of the file's content, and the command exits 4.
 Files are read once, at start: under `schedule`, a rotated file takes effect
 at the next start.

@@ -177,7 +177,7 @@ export function checkSecretFiles(config: ScannerConfig, env: Env, fs: DoctorFs):
     }
     let check: Check;
     if (refused.length > 0) {
-        check = fail('secret-files', 'CONFIG', `refused: ${refused.join(', ')}`, 'Set exactly one of NAME and NAME_FILE; a secret file is a regular text file under 64 KiB that other users cannot write.');
+        check = fail('secret-files', 'CONFIG', `refused: ${refused.join(', ')}`, 'Set exactly one of NAME and NAME_FILE; a secret file is a regular text file under 64 KiB that only its owner can write (chmod go-w).');
     } else if (inUse === 0) {
         check = skip('secret-files', 'NOT_APPLICABLE', 'no credential is read from a file');
     } else if (loose.length > 0) {
