@@ -2,6 +2,10 @@
  * The proxy, as the environment names it: what `doctor` reports, never what
  * routes a request.
  */
+import { execFile } from 'child_process';
+import { createServer } from 'net';
+import { join } from 'path';
+
 import { describeProxy, isProxied, nodeHonoursEnvProxy, proxyInEffect, proxyVariableSet } from '../src/proxy-env';
 
 describe('describeProxy', () => {
@@ -74,5 +78,63 @@ describe('isProxied, by Node\'s NO_PROXY rules', () => {
 
     it('an address range is not understood, and so exempts nothing', () => {
         expect(isProxied('10.0.0.5', { NO_PROXY: '10.0.0.1-10.0.0.9' })).toBe(true);
+    });
+});
+
+describe('isProxied agrees with the Node that runs it', () => {
+    /**
+     * Which of `hosts` Node's own `fetch` sends to the proxy under `NO_PROXY`:
+     * a second Node process, a CONNECT listener here, and no name resolved off
+     * this machine (see the probe).
+     */
+    async function nodeProxies(NO_PROXY: string, hosts: readonly string[]): Promise<Record<string, boolean>> {
+        const connects: string[] = [];
+        const proxy = createServer((socket) => {
+            socket.on('error', () => undefined);
+            socket.once('data', (d) => {
+                connects.push(String(d).split('\r\n')[0]);
+                socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+            });
+        });
+        await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve));
+        const { port } = proxy.address() as { port: number };
+        try {
+            await new Promise<void>((resolve, reject) => {
+                execFile(
+                    process.execPath,
+                    [join(__dirname, 'fixtures', 'no-proxy-probe.js'), ...hosts],
+                    { env: { PATH: process.env.PATH, HTTPS_PROXY: `http://127.0.0.1:${port}`, NODE_USE_ENV_PROXY: '1', NO_PROXY, NODE_NO_WARNINGS: '1' }, timeout: 30_000 },
+                    (err) => (err ? reject(err) : resolve()),
+                );
+            });
+        } finally {
+            await new Promise((resolve) => proxy.close(resolve));
+        }
+        return Object.fromEntries(hosts.map((h) => [h, connects.includes(`CONNECT ${h}:443 HTTP/1.1`)]));
+    }
+
+    const HOSTS = ['mcp.estate.example', 'other.estate.example', 'sub.dot.test', 'dot.test', 'sub.star.test', 'port.test', 'ok.test', 'sub.ok.test', 'localhost'];
+    // A Node that ignores the proxy variables has nothing to agree with; the case is skipped by name there, never passed.
+    const onThisNode = nodeHonoursEnvProxy(process.version) ? it.each : it.skip.each;
+
+    onThisNode([
+        ['whitespace between entries', 'localhost mcp.estate.example'],
+        ['a tab and a newline between entries', 'localhost\tmcp.estate.example\n.dot.test'],
+        ['commas', 'localhost,mcp.estate.example'],
+        ['commas and spaces together', 'localhost, mcp.estate.example ,, .dot.test'],
+        ['a leading dot and a star', '.dot.test,*.star.test'],
+        ['ports', 'port.test:8443,ok.test:443'],
+        ['one entry that is a star among others', 'ok.test,*'],
+        ['empty', ''],
+    ])('%s: every host goes where isProxied says it does', async (_label, NO_PROXY) => {
+        const actual = await nodeProxies(NO_PROXY, HOSTS);
+        const said = Object.fromEntries(HOSTS.map((h) => [h, isProxied(h, { NO_PROXY })]));
+        expect(said).toEqual(actual);
+    }, 60_000);
+
+    it('a whitespace-separated list exempts each name in it (the case Node and this function once read differently)', () => {
+        const NO_PROXY = 'localhost mcp.estate.example\tthird.test\nfourth.test';
+        for (const host of ['localhost', 'mcp.estate.example', 'third.test', 'fourth.test']) expect(isProxied(host, { NO_PROXY })).toBe(false);
+        expect(isProxied('other.estate.example', { NO_PROXY })).toBe(true);
     });
 });

@@ -212,6 +212,38 @@ export default tseslint.config(
         },
     },
     {
+        // ── Nothing is printed but through the three places that print ──
+        //
+        // A source holds credentials, and what it reads back can hold them
+        // too. Everything a run says goes through the log it is handed
+        // (`log.ts`), the outputs (`outputs.ts`) or the command line
+        // (`cli.ts`); the secret-canary suites watch those. A `console.log`
+        // or a write to the process's own stdout or stderr anywhere else
+        // would be a way out that none of them sees, so there is none.
+        files: ['packages/*/src/**/*.ts'],
+        ignores: ['packages/scanner/src/cli.ts', 'packages/scanner/src/log.ts', 'packages/scanner/src/outputs.ts'],
+        rules: {
+            'no-console': 'error',
+        },
+    },
+    {
+        // The same, for the process's streams. `packages/report` is left to
+        // its own block, which refuses `process` altogether and whose
+        // `no-restricted-properties` this would otherwise replace.
+        files: ['packages/scanner/src/**/*.ts', 'packages/contract/src/**/*.ts'],
+        ignores: ['packages/scanner/src/cli.ts', 'packages/scanner/src/log.ts', 'packages/scanner/src/outputs.ts'],
+        rules: {
+            'no-restricted-properties': [
+                'error',
+                ...['stdout', 'stderr'].map((property) => ({
+                    object: 'process',
+                    property,
+                    message: 'Only cli.ts, log.ts and outputs.ts write to the process: everything else says what it has to through the log or the output it is handed.',
+                })),
+            ],
+        },
+    },
+    {
         files: ['**/*.mjs'],
         languageOptions: { globals: { URL: 'readonly', process: 'readonly', console: 'readonly' } },
     },

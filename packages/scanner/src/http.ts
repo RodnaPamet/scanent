@@ -274,6 +274,8 @@ export interface TokenExchange {
 
 /** RFC 7523's grant type, the one value `jwtBearer` sends. */
 export const JWT_BEARER_GRANT = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
+/** The client-credentials grant (RFC 6749 §4.4): the scanner's own application, for a token to read with. */
+export const CLIENT_CREDENTIALS_GRANT = 'client_credentials';
 
 /** One response body, in bytes. A listing page is far smaller. */
 export const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -523,7 +525,7 @@ export function createSourceWire(
             return exchange(
                 tokenUrl,
                 origin,
-                new URLSearchParams({ grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret, scope }),
+                new URLSearchParams({ grant_type: CLIENT_CREDENTIALS_GRANT, client_id: clientId, client_secret: clientSecret, scope }),
             );
         },
         jwtBearer({ tokenUrl, origin, assertion }) {

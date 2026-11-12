@@ -102,7 +102,7 @@ interface MergedAgent {
     registeredAgentId: string | null;
     owner: ObservedOwner | null;
     credentials: Map<string, { credential: ObservedCredential; via: SourceKind }>;
-    tools: Map<string, { tool: ObservedTool; via: SourceKind }>;
+    tools: Map<string, { tool: ObservedTool; via: SourceKind; mcpEndpoint?: string }>;
     models: Map<string, { model: ObservedModel; via: SourceKind }>;
     verdicts: CriterionVerdict[];
 }
@@ -150,7 +150,9 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
             }
             if (agent.owner === null && o.owner !== null) agent.owner = o.owner;
             for (const c of o.credentials) if (!agent.credentials.has(c.ref)) agent.credentials.set(c.ref, { credential: c, via: read.kind });
-            for (const { tool } of o.tools ?? []) if (!agent.tools.has(toolKey(tool))) agent.tools.set(toolKey(tool), { tool, via: read.kind });
+            for (const { tool, mcpEndpoint } of o.tools ?? []) {
+                if (!agent.tools.has(toolKey(tool))) agent.tools.set(toolKey(tool), { tool, via: read.kind, mcpEndpoint });
+            }
             for (const m of o.models ?? []) if (!agent.models.has(modelKey(m))) agent.models.set(modelKey(m), { model: m, via: read.kind });
             agent.verdicts.push(...o.verdicts);
             merged.set(o.discoveredId, agent);
@@ -162,9 +164,11 @@ export function buildReportBody(identity: ScanIdentity, reads: readonly SourceRe
     const served = new Map<string, McpServerRead>();
     for (const read of ordered) for (const s of read.mcpServers ?? []) served.set(endpointKey(s.url), s);
     for (const agent of merged.values()) {
-        for (const [key, { tool }] of [...agent.tools]) {
+        for (const [key, { tool, mcpEndpoint }] of [...agent.tools]) {
             if (!tool.name.endsWith(':*')) continue;
-            const server = served.get(endpointKey(tool.server));
+            // The whole endpoint when the source kept one for this comparison;
+            // only `tool.server` (an origin, from code) is ever reported.
+            const server = served.get(endpointKey(mcpEndpoint ?? tool.server));
             if (server === undefined) continue;
             agent.tools.delete(key);
             for (const t of server.tools) if (!agent.tools.has(toolKey(t))) agent.tools.set(toolKey(t), { tool: t, via: 'mcp' });

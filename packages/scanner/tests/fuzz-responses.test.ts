@@ -77,8 +77,16 @@ function evilLink(r: Rng, url: string): string {
     return link;
 }
 
-/** A wire that answers as the estate does, and then spoils the answer in one of a dozen ways. */
-function hostileWire(inner: FetchLike, r: Rng, rate: number): FetchLike {
+/** Statuses no source may read past: the request was refused, throttled or failed. */
+const REFUSALS: readonly number[] = [401, 403, 429, 500, 502, 503, 504];
+
+/**
+ * A wire that answers as the estate does, and then spoils the answer in one of
+ * a dozen ways. `cannotBeComplete` is told each time an answer was spoiled in
+ * a way no read can be complete after: a refusal by status, or a 2xx whose
+ * body was JSON and is now not JSON at all.
+ */
+function hostileWire(inner: FetchLike, r: Rng, rate: number, cannotBeComplete: (why: string) => void = () => undefined): FetchLike {
     return async (url, init) => {
         const res = await inner(url, init);
         if (!r.chance(rate)) return res;
@@ -137,6 +145,15 @@ function hostileWire(inner: FetchLike, r: Rng, rate: number): FetchLike {
         }
         // A status that takes no body cannot be given one.
         const bodiless = status === 204 || status === 304;
+        if (REFUSALS.includes(status)) {
+            cannotBeComplete(`HTTP ${status}`);
+        } else if (status >= 200 && status < 300 && !bodiless && parsed !== undefined && !(headers.get('content-type') ?? '').includes('event-stream')) {
+            try {
+                JSON.parse(body);
+            } catch {
+                cannotBeComplete(`a ${status} whose body is not JSON`);
+            }
+        }
         try {
             return new Response(bodiless ? null : body, { status, headers });
         } catch {
@@ -151,12 +168,19 @@ describe.each(ROWS)('$name over hostile answers', ({ name, source }) => {
     const hosts = configuredHostsOf(config);
     const kind = (source as { kind: string }).kind;
 
-    it('signs a truthful report or refuses to sign, and never leaves the declared surface', async () => {
+    // What this holds, in the order it checks: every request is on the declared
+    // surface; the report verifies, or is refused locally; a status is one the
+    // contract names; and a read that was refused, or answered with something
+    // that is not JSON, is never COMPLETE. It does not hold that a spoiled
+    // answer that IS well-formed JSON is told from a smaller estate: the fixed
+    // cases of partial-failure-matrix.test.ts and each source's own suite do.
+    it('signs a report that verifies or refuses to sign, never calls a refused or unreadable answer complete, and never leaves the declared surface', async () => {
         await forAll(
             `hostile answers to ${name}`,
             (r) => r,
             async (r) => {
-                const recorder = recordRequests(hostileWire(worldFor().fetchImpl, r, r.pick([0.15, 0.5, 1])));
+                const spoiled: string[] = [];
+                const recorder = recordRequests(hostileWire(worldFor().fetchImpl, r, r.pick([0.15, 0.5, 1]), (why) => spoiled.push(why)));
                 let outcome: Awaited<ReturnType<typeof runScan>>;
                 try {
                     outcome = await runScan({ config, env: estateEnv(), log: quiet, fetchImpl: recorder.fetchImpl, resolveHost: PUBLIC_RESOLVER, now: () => NOW });
@@ -172,6 +196,7 @@ describe.each(ROWS)('$name over hostile answers', ({ name, source }) => {
                 if (outcome.body.population.sources.length !== 1 || read.kind !== kind) throw new Error('the source is missing from the report');
                 if (read.status === 'INCOMPLETE' && !(INCOMPLETE_REASONS_V2 as readonly string[]).includes(read.reason ?? '')) throw new Error(`reason ${String(read.reason)}`);
                 if (read.status === 'COMPLETE' && 'reason' in read && read.reason !== undefined) throw new Error('a complete source carries a reason');
+                if (read.status === 'COMPLETE' && spoiled.length > 0) throw new Error(`the source is COMPLETE after ${spoiled[0]}`);
                 if (!verifyAndParseHarnessReport(outcome.raw, [PUBLIC_KEY]).ok) throw new Error('the signed report does not pass its own verifier');
                 // Nothing prototype-shaped came through a hostile body.
                 if (({} as { polluted?: unknown }).polluted !== undefined) throw new Error('Object.prototype was polluted');

@@ -173,7 +173,10 @@ export function observationOf(agent: DetectedAgent): Observation {
             grant: 'unknown' as const,
         })),
         // A definition binds tools; it counts no calls, so none is given.
-        tools: agent.tools.map((t) => ({ tool: { server: t.server, name: t.name, manifestHash: null, pinned: false, readOnlyHint: null } })),
+        tools: agent.tools.map((t) => ({
+            tool: { server: t.server, name: t.name, manifestHash: null, pinned: false, readOnlyHint: null },
+            ...(t.mcpEndpoint !== undefined ? { mcpEndpoint: t.mcpEndpoint } : {}),
+        })),
         models: agent.models.map((m) => ({ endpoint: m.endpoint ?? codeLocator(m.at), model: m.model })),
         // An Agent SDK agent's options, mapped by the planner; the other frameworks' code evidences nothing.
         verdicts: agent.sdkOptions === null ? [] : agentSdkOptionVerdicts(agent.sdkOptions),

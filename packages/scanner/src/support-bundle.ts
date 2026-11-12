@@ -3,10 +3,13 @@
  * how a deployment is set up and how its last run went, for whoever is asked
  * to help with it.
  *
- * WHAT IT NEVER HOLDS. A credential's value: the command asks where each
- * credential comes from (`secretOrigin`) and never resolves one, so no secret
- * file is opened and no value is in memory to leak. A request or response
- * body. A finding's text. The whole document passes `assertNoSecretShape`
+ * WHAT IT NEVER HOLDS. A credential's value. This module asks where each
+ * credential comes from (`secretOrigin`) and never resolves one, so without
+ * `--doctor` no secret file is opened and no value is in memory to leak. With
+ * `--doctor` the caller hands in the preflight, which is `scanent doctor`: it
+ * resolves every credential, opens every secret file and uses each against
+ * its source. Its report holds no value, and none is written here either way.
+ * A request or response body. A finding's text. The whole document passes `assertNoSecretShape`
  * before a byte is written, and a document that holds a secret's shape is
  * refused, not trimmed.
  *
@@ -35,12 +38,13 @@ import { stableJson } from '@scanent/report/render/results-json';
 import { INVENTORY_SCHEMA_ID } from '@scanent/report/results/inventory';
 import { RESULTS_SCHEMA } from '@scanent/report/results/types';
 
-import { ConfigError, mcpTokenEnvNames, parseScannerConfig, sourceCredentialEnv, type ScannerConfig } from './config';
+import { ConfigError, parseScannerConfig, sourceCredentialEnv, type ScannerConfig } from './config';
 import { PROXY_CHECKS_ADDRESSES_ENV } from './customer-host';
 import { outputDirOf } from './doctor/local';
 import { DOCTOR_SCHEMA, type Check, type DoctorReport } from './doctor/types';
 import { assertNoSecretShape, SCAN_ID_PATTERN } from './file-output';
 import { hostsFor } from './hosts';
+import { mcpTokenEnvName } from './init/plan';
 import { nodeHonoursEnvProxy, proxyInEffect, proxyVariableSet } from './proxy-env';
 import { scannerManifestHash, SCANNER_VERSION } from './scanner-surface';
 import { secretOrigin, type Env } from './secrets';
@@ -75,7 +79,13 @@ export function replacedIdentifiers(key: Buffer): Identifiers {
 }
 
 export interface SupportCredential {
-    /** The environment variable the configuration names. A name, never a value. */
+    /**
+     * The environment variable the configuration names. A name, never a value.
+     * With identifiers replaced, an MCP server's token variable that is the
+     * name `init` derives from the server's label (`MCP_<LABEL>_TOKEN`) is
+     * written with the label's token in place of the label. Every other name
+     * is the operator's own and is written as it is.
+     */
     readonly variable: string;
     readonly usedBy: string;
     /** Where the value would come from. `both` is refused at a scan. */
@@ -236,15 +246,29 @@ function loadConfig(fs: SupportFs, path: string): { readonly config: ScannerConf
     }
 }
 
-function credentialsOf(config: ScannerConfig, env: Env): SupportCredential[] {
-    const named: { variable: string; usedBy: string }[] = [{ variable: config.scanner.signingKeyEnv, usedBy: 'signing-key' }];
-    if (config.inflect !== undefined) named.push({ variable: config.inflect.apiKeyEnv, usedBy: 'tenant' });
+function credentialsOf(config: ScannerConfig, env: Env, ids: Identifiers): SupportCredential[] {
+    /** `shown` is the name as the bundle writes it; `variable` is the one the environment is asked about. */
+    const named: { variable: string; shown: string; usedBy: string }[] = [
+        { variable: config.scanner.signingKeyEnv, shown: config.scanner.signingKeyEnv, usedBy: 'signing-key' },
+    ];
+    if (config.inflect !== undefined) named.push({ variable: config.inflect.apiKeyEnv, shown: config.inflect.apiKeyEnv, usedBy: 'tenant' });
     for (const s of config.sources) {
         if (s.kind === 'code' || s.kind === 'inflect-register') continue;
-        const variables = s.kind === 'mcp' ? mcpTokenEnvNames(s) : [sourceCredentialEnv(s)];
-        for (const variable of variables) named.push({ variable, usedBy: s.kind });
+        if (s.kind !== 'mcp') {
+            const variable = sourceCredentialEnv(s);
+            named.push({ variable, shown: variable, usedBy: s.kind });
+            continue;
+        }
+        for (const server of s.servers) {
+            if (server.readTokenEnv === undefined) continue;
+            // The one variable name scanent itself derives from an identifier:
+            // `init` names a server's token `MCP_<LABEL>_TOKEN`. Written as it
+            // is, it would carry the label out beside the label's own token.
+            const derived = ids.mode === 'REPLACED' && server.readTokenEnv === mcpTokenEnvName(server.label);
+            named.push({ variable: server.readTokenEnv, shown: derived ? `MCP_${ids.of('label', server.label)}_TOKEN` : server.readTokenEnv, usedBy: s.kind });
+        }
     }
-    return named.map(({ variable, usedBy }) => ({ variable, usedBy, from: secretOrigin(variable, env).from }));
+    return named.map(({ variable, shown, usedBy }) => ({ variable: shown, usedBy, from: secretOrigin(variable, env).from }));
 }
 
 function configSection(config: ScannerConfig, env: Env, ids: Identifiers): SupportConfig {
@@ -274,7 +298,7 @@ function configSection(config: ScannerConfig, env: Env, ids: Identifiers): Suppo
             ),
             hosts: hosts.filter((h) => h.source === s.kind).map((h) => ({ host: host(h.host, h.named), purpose: h.purpose, named: h.named })),
         })),
-        credentials: credentialsOf(config, env),
+        credentials: credentialsOf(config, env, ids),
     };
 }
 

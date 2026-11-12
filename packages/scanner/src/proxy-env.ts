@@ -10,8 +10,9 @@
  *     else. A proxy URL may carry userinfo, which is a credential; no function
  *     here returns it.
  *   • `isProxied` says whether Node would send a host through the proxy, by
- *     Node's `NO_PROXY` rules: `*`, an exact name, `.suffix`, `*.suffix`, and
- *     an optional `:port`. A bare name matches that name only (observed on
+ *     Node's `NO_PROXY` rules: entries separated by commas or whitespace;
+ *     `*`, an exact name, `.suffix`, `*.suffix`, and an optional `:port`. A
+ *     bare name matches that name only (observed on
  *     Node 22.22: `example.test` does not exempt `sub.example.test`). An
  *     address range is not understood and exempts nothing here, which can
  *     only cause a warning, never hide one.
@@ -70,7 +71,11 @@ export function isProxied(hostname: string, env: Env, port = 443): boolean {
     const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
     const list = first(env, 'NO_PROXY', 'no_proxy');
     if (list === undefined) return true;
-    for (const rawEntry of list.split(',')) {
+    // Commas AND whitespace separate entries, as they do for Node's `fetch`:
+    // read as one entry, `a.test b.test` would be a host this function calls
+    // proxied while Node dials it directly, and a proxied host may have its
+    // address check left to the proxy.
+    for (const rawEntry of list.split(/[,\s]+/)) {
         let entry = rawEntry.trim().toLowerCase();
         if (entry === '') continue;
         if (entry === '*') return false;

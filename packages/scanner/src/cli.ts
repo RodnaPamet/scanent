@@ -427,8 +427,9 @@ async function runInit(argv: readonly string[], io: CliIo): Promise<number> {
 
 /**
  * `scanent support-bundle`. Reads the configuration, the environment's
- * variable names and the last run's files. It resolves no credential, and it
- * makes no request unless `--doctor` is given.
+ * variable names and the last run's files. Unless `--doctor` is given it
+ * resolves no credential and makes no request; with it, the preflight resolves
+ * and uses every credential, as `scanent doctor` does.
  */
 async function runSupportBundle(argv: readonly string[], file: string, env: NodeJS.ProcessEnv, cwd: string): Promise<number> {
     const out = arg(argv, '--out');

@@ -62,8 +62,14 @@ export interface DetectedModel {
 export interface DetectedTool {
     readonly name: string;
     readonly kind: 'function' | 'class' | 'toolkit' | 'mcp' | 'builtin';
-    /** An MCP server's URL, else the `code://` locator of the tool's definition or construction. */
+    /** An MCP server's origin, else the `code://` locator of the tool's definition or construction. */
     readonly server: string;
+    /**
+     * An MCP server's whole endpoint (origin and path), for matching it to a
+     * server the `mcp` source read. Held in memory for that comparison and
+     * NEVER reported: the path of a URL in code is a place a key can sit.
+     */
+    readonly mcpEndpoint?: string;
     readonly at: CodeLocation;
 }
 
@@ -612,15 +618,17 @@ class Recognizer {
             }
             const urlExpr = server.entries.find(([k]) => k === 'url')?.[1];
             let endpoint: string | null = null;
+            let whole: string | null = null;
             if (urlExpr !== undefined) {
                 endpoint = this.endpointOf(urlExpr);
                 if (endpoint === null) {
                     this.fail(urlExpr.line);
                     continue;
                 }
+                whole = this.wholeEndpointOf(urlExpr);
             }
             // A stdio server has no URL: it is the command the code starts, named where it is configured.
-            r.tools.push({ name: `${label}:*`, kind: 'mcp', server: endpoint ?? codeLocator(this.at(server.line)), at });
+            r.tools.push({ name: `${label}:*`, kind: 'mcp', server: endpoint ?? codeLocator(this.at(server.line)), ...(whole !== null ? { mcpEndpoint: whole } : {}), at });
             for (const [k, v] of server.entries) {
                 if (k === null) continue;
                 if (isCredentialKey(k)) r.credentials.push(...this.credentialOf(v));
@@ -812,15 +820,39 @@ class Recognizer {
         }
     }
 
-    /** An endpoint: an http(s) URL with no credentials in it, or an `env://` reference. Null when neither. */
-    endpointOf(e: Expr, depth = 0): string | null {
+    /**
+     * An endpoint: the ORIGIN of an http(s) URL (scheme, host, port), or an
+     * `env://` reference. Null when neither.
+     *
+     * Only the origin, never the path. A gateway or webhook URL often carries
+     * its key as a path segment (`/v1/<token>`, `/services/T…/B…/…`), such a
+     * segment has no shape `looksLikeSecret` can know, and whatever is
+     * returned here is signed into the report and written to every output.
+     * The scanner's own configuration treats a URL's path the same way. User
+     * information, the query and the fragment were already left out.
+     */
+    endpointOf(e: Expr): string | null {
+        const found = this.endpointParts(e);
+        return found === null ? null : found.reported;
+    }
+
+    /**
+     * The same URL with its path, for one use: telling whether an MCP server in
+     * code is one the `mcp` source read. Null for an `env://` reference and for
+     * anything `endpointOf` refuses. The caller keeps it out of every output.
+     */
+    private wholeEndpointOf(e: Expr): string | null {
+        return this.endpointParts(e)?.whole ?? null;
+    }
+
+    private endpointParts(e: Expr, depth = 0): { readonly reported: string; readonly whole: string | null } | null {
         if (depth > 16) return null;
         const env = this.envName(e);
-        if (env !== null) return ENV_NAME.test(env) ? `env://${env}` : null;
+        if (env !== null) return ENV_NAME.test(env) ? { reported: `env://${env}`, whole: null } : null;
         if (e.k === 'ref' || e.k === 'attr') {
             const key = this.dotted(e);
             const bound = key === null ? null : this.binding(key, e.line);
-            return bound === null ? null : this.endpointOf(bound, depth + 1);
+            return bound === null ? null : this.endpointParts(bound, depth + 1);
         }
         if (e.k !== 'str' || e.template) return null;
         let url: URL;
@@ -830,8 +862,9 @@ class Recognizer {
             return null;
         }
         if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
-        const clean = `${url.protocol}//${url.host}${url.pathname === '/' ? '' : url.pathname}`;
-        return clean.length <= 400 && !looksLikeSecret(clean) ? clean : null;
+        const origin = `${url.protocol}//${url.host}`;
+        if (url.host === '' || origin.length > 400 || looksLikeSecret(origin)) return null;
+        return { reported: origin, whole: `${origin}${url.pathname === '/' ? '' : url.pathname}` };
     }
 
     // ── the Claude Agent SDK ──────────────────────────────────────
@@ -929,6 +962,7 @@ class Recognizer {
             }
             const at = this.at(entry.line);
             let where: string | null = null;
+            let whole: string | null = null;
             if (server.k === 'call') {
                 // `createSdkMcpServer` / `create_sdk_mcp_server`: tools the code itself defines, in process.
                 const k = this.sdkKnown(server.fn);
@@ -938,6 +972,7 @@ class Recognizer {
                 if (urlExpr !== undefined) {
                     where = this.endpointOf(urlExpr);
                     if (where === null) this.fail(urlExpr.line);
+                    else whole = this.wholeEndpointOf(urlExpr);
                 } else {
                     // A stdio command, or an in-process `sdk` server: code the agent starts.
                     where = codeLocator(at);
@@ -960,7 +995,7 @@ class Recognizer {
                 continue;
             }
             servers.set(label, where);
-            r.tools.push({ name: `${label}:*`, kind: 'mcp', server: where, at });
+            r.tools.push({ name: `${label}:*`, kind: 'mcp', server: where, ...(whole !== null ? { mcpEndpoint: whole } : {}), at });
         }
         return { servers, complete };
     }
@@ -1262,7 +1297,7 @@ class Recognizer {
                 name,
                 discoveredId: discoveredIdOf(this.label, this.path, name),
                 at: this.at(f.call.line),
-                tools: dedupe(f.r.tools, (t) => `${t.server}\u0000${t.name}`),
+                tools: dedupe(f.r.tools, (t) => `${t.mcpEndpoint ?? t.server}\u0000${t.name}`),
                 models: dedupe(f.r.models, (m) => `${m.provider}\u0000${m.model}\u0000${m.endpoint}\u0000${m.at.line}`),
                 credentials: dedupe(f.r.credentials, (c) => c.ref),
                 sdkOptions: f.sdk?.facts ?? null,

@@ -24,7 +24,7 @@ import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure
 import { ENTRA_READ_PATHS, GRAPH_ORIGIN } from './sources/entra';
 import { GCP_IAM_ORIGIN, GCP_READ_PATHS, GOOGLE_OAUTH_ORIGIN, GOOGLE_TOKEN_PATH } from './sources/gcp-service-accounts';
 import { GITHUB_API_ORIGIN, GITHUB_READ_PATHS } from './sources/github-actions';
-import { HARNESS_REGISTER_TOOL, MCP_MESSAGES, TOKEN_EXCHANGE_GRANT, OPENSHELL_METHODS, OPENSHELL_PROFILE_SCOPE, OPENSHELL_READ_SCOPE, OPENSHELL_SERVICE } from './http';
+import { CLIENT_CREDENTIALS_GRANT, HARNESS_REGISTER_TOOL, JWT_BEARER_GRANT, MCP_MESSAGES, TOKEN_EXCHANGE_GRANT, OPENSHELL_METHODS, OPENSHELL_PROFILE_SCOPE, OPENSHELL_READ_SCOPE, OPENSHELL_SERVICE } from './http';
 import { INFLECT_MCP_PATH, INFLECT_TOKEN_PATH } from './sources/inflect-register';
 import { SKIPPED_DIRECTORIES, SOURCE_EXTENSIONS } from './sources/code/files';
 import { LANGSMITH_READ_PATHS } from './sources/langsmith';
@@ -150,6 +150,33 @@ export const SCANNER_SURFACE = {
         { method: 'TCP', via: 'direct', target: '{inflectHost}:443', expect: 'refused' },
     ],
 } as const;
+
+/**
+ * The OAuth grant each `authenticates` entry asks its token endpoint for, by
+ * the entry's `product`. A token exchange is declared by method, origin and
+ * path above; this says what its body may ask for, so a request to a declared
+ * endpoint with another grant (a password grant, say) is not a declared
+ * request.
+ *
+ * It stands BESIDE the surface and not inside it. The surface is hashed into
+ * every report, and these are the grants the scanner has always used: adding
+ * a member there would change the manifest hash of a scanner that makes
+ * exactly the requests it made before.
+ */
+export const TOKEN_EXCHANGE_GRANTS: Readonly<Record<(typeof SCANNER_SURFACE.authenticates)[number]['product'], string>> = {
+    'azure-key-vault': CLIENT_CREDENTIALS_GRANT,
+    entra: CLIENT_CREDENTIALS_GRANT,
+    'gcp-iam': JWT_BEARER_GRANT,
+};
+
+/**
+ * Whether one form body sent to a product's token endpoint is on the declared
+ * surface: it names that product's grant, once, and no other.
+ */
+export function isDeclaredTokenExchange(product: keyof typeof TOKEN_EXCHANGE_GRANTS, body: string): boolean {
+    const grants = new URLSearchParams(body).getAll('grant_type');
+    return grants.length === 1 && grants[0] === TOKEN_EXCHANGE_GRANTS[product];
+}
 
 /**
  * Whether one gRPC call is on the declared surface: the one service, and one of

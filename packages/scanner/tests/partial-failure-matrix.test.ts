@@ -44,12 +44,27 @@ import { main } from '../src/cli';
 import { parseScannerConfig } from '../src/config';
 import { EXIT } from '../src/exit-codes';
 import { hostsFor } from '../src/hosts';
-import { MAX_RESPONSE_BYTES } from '../src/http';
+import { createSourceWire, MAX_RESPONSE_BYTES, MAX_SOURCE_BYTES, type FetchLike } from '../src/http';
 import { scoreScanLocally } from '../src/local-results';
 import { rawPublicKeyHex } from '../src/report';
 import { loadSigningKey, runScan } from '../src/scan';
-import type { IncompleteReason } from '../src/source';
-import { langSmithFixture, LANGSMITH_US } from './helpers/agent-harness-source-fakes';
+import type { IncompleteReason, SourceRead } from '../src/source';
+import { entraSource } from '../src/sources/entra';
+import { inflectRegisterSource } from '../src/sources/inflect-register';
+import { mcpSource } from '../src/sources/mcp';
+import { oktaSource } from '../src/sources/okta';
+import {
+    AZURE_CLIENT_ID,
+    AZURE_CLIENT_SECRET_VALUE,
+    createSourceFakes,
+    ENTRA_DIRECTORY_ID,
+    INGEST,
+    langSmithFixture,
+    LANGSMITH_US,
+    MCP_CRM,
+    OKTA_ORG,
+    OKTA_TOKEN_VALUE,
+} from './helpers/agent-harness-source-fakes';
 import { SIGNING_PEM } from './helpers/doctor-world';
 import {
     createEstateWorld,
@@ -336,5 +351,126 @@ describe('every source down at once', () => {
         expect(scan.body.population.sources).toHaveLength(NETWORK_KINDS.length);
         expect(failed.length).toBe(NETWORK_KINDS.length);
         expect(new Set(world.log.map((r) => r.host))).toEqual(new Set(['mcp.acme.example']));
+    });
+});
+
+/**
+ * THE SIZE CAPS THE CELLS ABOVE DO NOT REACH. Above, one JSON answer over the
+ * 4 MiB response cap is BYTE_CAP. Three more bounds stand between a source and
+ * an answer of any size, and each could be taken out with every cell above
+ * still passing:
+ *
+ *   • the per-source budget: pages that are each under the response cap and
+ *     together over the source's;
+ *   • an MCP answer delivered as an event stream, which is read by its own
+ *     loop, not the JSON reader's;
+ *   • the answer of a token exchange, capped at 64 KiB wherever one is made.
+ *
+ * Each case is paired with the same answer just inside the bound, read in
+ * full, so what stops the read is the bound and nothing else about the answer.
+ */
+describe('the size caps a listing reaches without one large JSON answer', () => {
+    const ASOF = new Date(NOW);
+    const transport = (fetchImpl: FetchLike) => ({ fetchImpl, deadline: NOW + 60_000, now: () => NOW });
+    const ctxOver = (fetchImpl: FetchLike, caps?: { response?: number; source?: number }) => ({ asOf: ASOF, deadline: NOW + 60_000, now: () => NOW, ...createSourceWire(transport(fetchImpl), caps) });
+    const PUBLIC = async () => ['203.0.113.10'];
+    const TOKEN_CAP = 64 * 1024;
+
+    it('the default budget of a source is 64 MiB, sixteen answers of the largest size', () => {
+        expect(MAX_SOURCE_BYTES).toBe(64 * 1024 * 1024);
+        expect(MAX_SOURCE_BYTES / MAX_RESPONSE_BYTES).toBe(16);
+    });
+
+    it('pages that are each under the response cap and together over the source budget are BYTE_CAP, and what was read is kept', async () => {
+        const okta = () => oktaSource({ orgUrl: OKTA_ORG, apiToken: OKTA_TOKEN_VALUE, ownerProfileKey: 'owner' });
+        // The size of every answer of a clean read, as the wire receives it.
+        const sizes: number[] = [];
+        const fakes = createSourceFakes();
+        const measured: FetchLike = async (url, init) => {
+            const res = await fakes.fetchImpl(url, init);
+            sizes.push(Buffer.byteLength(await res.clone().text()));
+            return res;
+        };
+        const whole = await okta().read(ctxOver(measured));
+        expect(whole).toMatchObject({ status: 'COMPLETE' });
+        const total = sizes.reduce((a, b) => a + b, 0);
+        const largest = Math.max(...sizes);
+        expect(sizes.length).toBeGreaterThan(2);
+        expect(largest).toBeLessThan(total);
+
+        // No single answer is over the budget, and all of them together are.
+        const over = await okta().read(ctxOver(createSourceFakes().fetchImpl, { source: total - 1 }));
+        expect(over).toMatchObject({ kind: 'okta-app', status: 'INCOMPLETE', reason: 'BYTE_CAP' });
+        expect(over.rows).toBeGreaterThan(0);
+        expect(over.rows).toBeLessThanOrEqual(whole.rows);
+        const first = await okta().read(ctxOver(createSourceFakes().fetchImpl, { source: largest }));
+        expect(first).toMatchObject({ status: 'INCOMPLETE', reason: 'BYTE_CAP' });
+        // Exactly the budget is inside it.
+        expect(await okta().read(ctxOver(createSourceFakes().fetchImpl, { source: total }))).toMatchObject({ status: 'COMPLETE', rows: whole.rows });
+    });
+
+    it('an MCP listing answered as an event stream over the response cap is BYTE_CAP, and one inside it is read', async () => {
+        const CAP = 16 * 1024;
+        const read = (padding: number): Promise<SourceRead> => {
+            const fakes = createSourceFakes();
+            const wire: FetchLike = async (url, init) => {
+                const res = await fakes.fetchImpl(url, init);
+                let rpc: { id?: number; method?: string } = {};
+                try {
+                    rpc = JSON.parse(String(init.body ?? '')) as typeof rpc;
+                } catch {
+                    rpc = {};
+                }
+                if (rpc.method !== 'tools/list') return res;
+                // The same answer, as a stream: comment lines first (a server's keep-alive), then the response.
+                const answer = await res.text();
+                const stream = `${`: ${'k'.repeat(1022)}\n`.repeat(padding)}\nevent: message\ndata: ${answer}\n\n`;
+                return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+            };
+            return mcpSource({
+                servers: [{ label: 'crm', url: MCP_CRM, agents: [], pinnedManifestHash: null, token: null, egressPrivateCidrAllowlist: [] }],
+                resolveHost: PUBLIC,
+            }).read(ctxOver(wire, { response: CAP }));
+        };
+        expect(await read(0)).toMatchObject({ kind: 'mcp', status: 'COMPLETE' });
+        // 32 KiB of keep-alive before the answer: twice the cap, and no content-length to refuse it by.
+        const over = await read(32);
+        expect(over).toMatchObject({ kind: 'mcp', status: 'INCOMPLETE', reason: 'BYTE_CAP' });
+        expect(over.mcpServers).toEqual([]);
+    });
+
+    describe.each([
+        [
+            'a client-credentials exchange (Entra)',
+            (fetchImpl: FetchLike) =>
+                entraSource({ directoryId: ENTRA_DIRECTORY_ID, clientId: AZURE_CLIENT_ID, clientSecret: AZURE_CLIENT_SECRET_VALUE, includeThirdPartyApplications: false }).read(ctxOver(fetchImpl)),
+            (url: string) => new URL(url).hostname === 'login.microsoftonline.com',
+        ],
+        [
+            'the register\'s token exchange',
+            (fetchImpl: FetchLike) => inflectRegisterSource({ baseUrl: INGEST, tenantSlug: 'acme', apiKey: 'iflk_fake-ingest-key-3686' }).read(ctxOver(fetchImpl)),
+            (url: string) => new URL(url).pathname === '/api/mcp/token',
+        ],
+    ] as const)('%s', (_label, read, isExchange) => {
+        /** The real answer of the exchange with `bytes` of padding added as one more member. */
+        const padded = (bytes: number): FetchLike => {
+            const fakes = createSourceFakes();
+            return async (url, init) => {
+                const res = await fakes.fetchImpl(url, init);
+                if (!isExchange(url) || !res.ok) return res;
+                const body = (await res.json()) as Record<string, unknown>;
+                const text = JSON.stringify({ ...body, padding: '' });
+                return new Response(JSON.stringify({ ...body, padding: 'p'.repeat(Math.max(0, bytes - Buffer.byteLength(text))) }), { status: res.status, headers: { 'content-type': 'application/json' } });
+            };
+        };
+
+        it('an answer of exactly 64 KiB is taken, and the source is read', async () => {
+            expect(await read(padded(TOKEN_CAP))).toMatchObject({ status: 'COMPLETE' });
+        });
+
+        it('an answer one byte over 64 KiB stops the source with BYTE_CAP, and nothing is read with a token from it', async () => {
+            const result = await read(padded(TOKEN_CAP + 1));
+            expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'BYTE_CAP', rows: 0, observations: [] });
+        });
     });
 });

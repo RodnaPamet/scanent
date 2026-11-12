@@ -21,7 +21,7 @@ import type { CodeFs } from '../src/sources/code/files';
 import { MAX_FILE_BYTES } from '../src/sources/code/files';
 import { callsWithin, type Expr, type FileFacts } from '../src/sources/code/ir';
 import { JavaScriptReadError, readJavaScript } from '../src/sources/code/javascript';
-import { PythonReadError, readPython, tokenizePython } from '../src/sources/code/python';
+import { PythonReadError, readPython, STEPS_PER_TOKEN, tokenizePython, workBudgetFor } from '../src/sources/code/python';
 import * as recognize from '../src/sources/code/recognize';
 import { recognizeAgents } from '../src/sources/code/recognize';
 import { langchainCodeSource } from '../src/sources/langchain';
@@ -223,6 +223,49 @@ describe('4. depth and size', () => {
         ['one long line of operators', `x = 1${' + 1'.repeat(DEEP)}\n`],
     ])('Python nested %s deep is read or refused, never a stack overflow', (_label, src) => {
         expect(['read', 'refused']).toContain(outcome(() => readPython(`from langchain.agents import AgentExecutor\n${src}`), PythonReadError));
+    });
+
+    // Shapes that made the reader re-read the same tokens. Before the reader
+    // remembered a conditional that was not one, the first doubled its work at
+    // every level (depth 24 took seconds, depth 60 years) and the second took
+    // over a minute for one file; neither could be interrupted, because the
+    // read is synchronous. The time limit is the assertion.
+    it.each([
+        ['a conditional inside a lambda inside a conditional, 64 deep', `x = ${'a if lambda: '.repeat(64)}a\n`],
+        ['the same, 20,000 deep', `x = ${'a if lambda: '.repeat(20_000)}a\n`],
+        ['one line of chained conditionals filling the size cap', `x = a${' if a else a'.repeat(Math.floor((MAX_FILE_BYTES - 64) / 12))}\n`],
+        ['a lambda in every bracket, each ending in an abandoned conditional', `x = ${'(lambda: a if '.repeat(60_000)}a${')'.repeat(60_000)}\n`],
+        ['an abandoned conditional before every bracket', `x = ${'a if ('.repeat(100_000)}a${')'.repeat(100_000)}\n`],
+        ['an abandoned conditional in every list', `x = ${'[a if '.repeat(100_000)}a${']'.repeat(100_000)}\n`],
+    ])('Python with %s is read or refused within seconds', (_label, src) => {
+        expect(Buffer.byteLength(src)).toBeLessThanOrEqual(MAX_FILE_BYTES);
+        within(5_000, () => {
+            expect(['read', 'refused']).toContain(outcome(() => readPython(`from langchain.agents import AgentExecutor\n${src}`), PythonReadError));
+        });
+    });
+
+    it('a file that costs more to read than its size allows is refused, and an ordinary file is nowhere near the budget', () => {
+        // Nested brackets inside abandoned conditionals are skipped once per
+        // level of nesting: within the depth cap, but far over the budget.
+        const costly = `x = ${'a if ('.repeat(100_000)}a${')'.repeat(100_000)}\n`;
+        expect(() => readPython(costly)).toThrow(PythonReadError);
+        expect(() => readPython(costly)).toThrow(/costs more to read than its size allows/);
+        // The same statement many times costs about one step a token.
+        const line = 'agent = AgentExecutor(agent=make(llm, tools), tools=[a if b else c for d in e if f], k=lambda: g if h else i)\n';
+        const tokens = tokenizePython(line.repeat(2_000)).length;
+        expect(tokens * 3).toBeLessThan(workBudgetFor(tokens).left);
+        expect(readPython(`from langchain.agents import AgentExecutor\n${line.repeat(2_000)}`).calls.length).toBeGreaterThanOrEqual(2_000);
+        expect(STEPS_PER_TOKEN).toBeLessThanOrEqual(64);
+    });
+
+    it('a conditional is still read as one whose value is not known, chained or not', () => {
+        const value = (src: string) => readPython(src).bindings.get('x')?.[0].expr;
+        expect(value('x = "a" if c else "b"\n')?.k).toBe('opaque');
+        expect(value('x = "a" if c else "b" if d else "e"\n')?.k).toBe('opaque');
+        expect(value('x = f(lambda: "a" if c else "b")\n')?.k).toBe('call');
+        // A comprehension's filter is not a conditional: the list is still a comprehension.
+        expect(value('x = [a for a in b if c]\n')?.k).toBe('opaque');
+        expect(value('x = "a"\n')).toMatchObject({ k: 'str', value: 'a' });
     });
 
     it.each([

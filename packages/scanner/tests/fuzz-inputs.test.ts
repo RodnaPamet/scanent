@@ -65,6 +65,9 @@ afterAll(() => {
     rmSync(dir, { recursive: true, force: true });
 });
 
+/** Deeper than any stack: a value this deep parses as JSON, and overflows whatever then walks it by recursion. */
+const DEEPLY = 500_000;
+
 describe('1. CSV', () => {
     const CSV_PIECES = ['"', '""', ',', '\r\n', '\n', '\r', 'a', ' ', '\ufeff', '=1+1', '@x', '\t', '\u0000', '"a,b"', '"a""b"', '"a\nb"', 'discoveredId', 'name', 'owner', 'purpose', 'reach'];
 
@@ -174,10 +177,35 @@ describe('2. the inventory file', () => {
         }
         expect(Date.now() - started).toBeLessThan(10_000);
     });
+
+    it('an inventory nested deeper than the stack is InventoryRefused, not a stack overflow that ends the scan', () => {
+        // It parses as JSON; what walked it afterwards overflowed, and the scan stopped with the engine's own message.
+        for (const text of [
+            `${'['.repeat(DEEPLY)}${']'.repeat(DEEPLY)}`,
+            `{"inventory":"scanent-inventory/1","agents":${'['.repeat(DEEPLY)}${']'.repeat(DEEPLY)}}`,
+            `{"inventory":"scanent-inventory/1","agents":[${'{"axes":'.repeat(DEEPLY)}1${'}'.repeat(DEEPLY)}]}`,
+        ]) {
+            let thrown: unknown;
+            try {
+                loadInventoryFile('/nowhere/inventory.json', { readFile: () => Buffer.from(text) });
+            } catch (err) {
+                thrown = err;
+            }
+            expect(thrown).toBeInstanceOf(InventoryRefused);
+            expect((thrown as Error).message.length).toBeLessThan(400);
+        }
+    });
 });
 
 describe('3. the configuration', () => {
     const valid = () => fullEstateConfig('/var/lib/scanent/out');
+
+    it('a configuration nested deeper than the stack is a ConfigError, not a stack overflow', () => {
+        for (const text of [`${'['.repeat(DEEPLY)}${']'.repeat(DEEPLY)}`, `{"estate":"acme","sources":${'{"a":'.repeat(DEEPLY)}1${'}'.repeat(DEEPLY)}}`]) {
+            const json: unknown = JSON.parse(text);
+            expect(() => parseScannerConfig(json)).toThrow(ConfigError);
+        }
+    });
 
     it('any value is a configuration or ConfigError, and the message never repeats a value from the file', async () => {
         await forAll(
@@ -294,6 +322,29 @@ describe('4. the inputs of a diff', () => {
             },
             { iterations: Math.max(20, Math.floor(FUZZ_ITERATIONS / 4)) },
         );
+    });
+
+    it('a results file or a report nested deeper than the stack is refused as an input, with the exit code of one', () => {
+        const deepMember = `${'{"a":'.repeat(DEEPLY)}1${'}'.repeat(DEEPLY)}`;
+        const texts = [
+            `{"schema":"scanent-results/1","agents":${deepMember}}`,
+            `{"contract":"inflect-agent-harness/3","signature":${deepMember}}`,
+            `{"contract":"inflect-agent-harness/3","signature":{"signerKey":"00"},"agents":${'['.repeat(DEEPLY)}${']'.repeat(DEEPLY)}}`,
+            `${'['.repeat(DEEPLY)}${']'.repeat(DEEPLY)}`,
+        ];
+        for (const [i, text] of texts.entries()) {
+            expect(() => loadDiffSide(text, 'old', null)).toThrow(DiffInputError);
+            const deep = join(dir, `deep-${i}.json`);
+            const small = join(dir, 'small-for-deep.json');
+            writeFileSync(deep, text);
+            writeFileSync(small, resultsText);
+            for (const paths of [[deep, small], [small, deep]]) {
+                const printed: string[] = [];
+                expect(runDiff(paths, { stdout: (t) => printed.push(t), stderr: (t) => printed.push(t) })).toBe(EXIT.USAGE);
+                expect(printed.join('')).toMatch(/^scanent diff: (old|new): /);
+                expect(printed.join('')).not.toMatch(/call stack/i);
+            }
+        }
     });
 
     it('an input over the size cap is refused before it is parsed', () => {

@@ -213,5 +213,14 @@ export function loadInventoryFile(path: string, deps: InventoryFileDeps = {}): P
     } else {
         decoded = decodeInventoryCsv(text);
     }
-    return parseInventory(decoded, { sha256, format });
+    try {
+        return parseInventory(decoded, { sha256, format });
+    } catch (err) {
+        // A file nested hundreds of thousands deep parses as JSON and then
+        // overflows the stack of whatever walks it. That is a refused
+        // inventory like any other, not the end of the scan with the engine's
+        // own message.
+        if (err instanceof RangeError) throw new InventoryRefused(['(file): nested too deeply']);
+        throw err;
+    }
 }

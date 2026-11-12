@@ -65,6 +65,14 @@ describe('A1. an address that must never be reached, in every spelling', () => {
         ['v6 link-local', 'fe80::1'],
         ['v6 link-local, the top of the block', 'febf::1'],
         ['the AWS v6 metadata address', 'fd00:ec2::254'],
+        ['the Alibaba metadata address', '100.100.100.200'],
+        ['the Oracle metadata address', '192.0.0.192'],
+        ['the Alibaba metadata address, v4-mapped in hex', '::ffff:6464:64c8'],
+        ['v4-translated loopback', '::ffff:0:127.0.0.1'],
+        ['v4-translated loopback, in hex', '::ffff:0:7f00:1'],
+        ['v4-translated metadata, in hex', '::ffff:0:a9fe:a9fe'],
+        ['local-use NAT64 loopback', '64:ff9b:1::7f00:1'],
+        ['local-use NAT64 metadata', '64:ff9b:1:abcd::a9fe:a9fe'],
         ['v4-mapped loopback', '::ffff:127.0.0.1'],
         ['v4-mapped loopback, in hex', '::ffff:7f00:1'],
         ['v4-mapped metadata', '::ffff:169.254.169.254'],
@@ -81,10 +89,24 @@ describe('A1. an address that must never be reached, in every spelling', () => {
         expect(addressReachable(address, NONE)).toBe(false);
     });
 
-    // The AWS v6 metadata address is a unique-local address: private, so an allowlist that names its range admits it.
-    // Every other one is refused whatever the allowlist says.
-    it.each(NEVER.filter(([, a]) => a !== 'fd00:ec2::254'))('%s (%s) is refused inside an allowlist that names everything', (_label, address) => {
+    // Every one is refused whatever the allowlist says. The AWS v6 metadata address used to be left out of this
+    // case as a unique-local address an allowlist of its range admitted; it, and the two v4 metadata addresses that
+    // sit inside ranges an operator may allowlist whole, are now on the never-allowlistable list themselves.
+    it.each(NEVER)('%s (%s) is refused inside an allowlist that names everything', (_label, address) => {
         expect(addressReachable(address, EVERYTHING)).toBe(false);
+    });
+
+    it('a metadata address inside an allowlisted range stays refused, and its neighbours in the range do not', () => {
+        for (const [range, metadata, neighbour] of [
+            ['fd00::/8', 'fd00:ec2::254', 'fd00:ec2::253'],
+            ['100.64.0.0/10', '100.100.100.200', '100.100.100.201'],
+            ['192.0.0.0/24', '192.0.0.192', '192.0.0.8'],
+        ] as const) {
+            expect(addressReachable(metadata, cidrs(range))).toBe(false);
+            expect(isNeverAllowlistable(metadata)).toBe(true);
+            expect(addressReachable(neighbour, cidrs(range))).toBe(true);
+            expect(customerOriginProblem(`https://${metadata.includes(':') ? `[${metadata}]` : metadata}`, cidrs(range))).not.toBeNull();
+        }
     });
 
     it('the metadata addresses are never allowlistable, in the v4 spelling and each v6 spelling of it', () => {
@@ -111,6 +133,20 @@ describe('A2. a private address, in every spelling', () => {
         ['NAT64 10/8, in hex', '64:ff9b::a00:7'],
         ['6to4 10/8', '2002:a00:7::1'],
         ['6to4 192.168/16', '2002:c0a8:101::1'],
+        ['v4-translated 10/8', '::ffff:0:10.0.0.7'],
+        ['v4-translated 10/8, in hex', '::ffff:0:a00:7'],
+        ['local-use NAT64 10/8', '64:ff9b:1::a00:7'],
+        ['local-use NAT64 holding a public v4: the prefix itself is local', '64:ff9b:1::5db8:d822'],
+        ['site-local v6', 'fec0::1'],
+        ['Teredo', '2001:0:4136:e378:8000:63bf:3fff:fdd2'],
+        ['v6 multicast', 'ff02::1'],
+        ['IETF protocol assignments', '192.0.0.8'],
+        ['benchmarking', '198.18.0.1'],
+        ['benchmarking, the top of the block', '198.19.255.254'],
+        ['multicast', '224.0.0.1'],
+        ['reserved', '240.0.0.1'],
+        ['broadcast', '255.255.255.255'],
+        ['multicast, v4-mapped in hex', '::ffff:e000:1'],
     ];
 
     it.each(PRIVATE)('%s (%s) is refused with no allowlist', (_label, address) => {
@@ -119,8 +155,8 @@ describe('A2. a private address, in every spelling', () => {
 
     it.each(PRIVATE)('%s (%s) is reachable only when the allowlist names the range it is in', (_label, address) => {
         expect(addressReachable(address, EVERYTHING)).toBe(true);
-        // An allowlist of some other range admits nothing here.
-        expect(addressReachable(address, cidrs('198.18.0.0/15'))).toBe(false);
+        // An allowlist of some other range admits nothing here. (It was 198.18.0.0/15 until that range joined this table.)
+        expect(addressReachable(address, cidrs('198.51.100.0/24'))).toBe(false);
     });
 
     it('a v4 address written inside a v6 one is admitted by the v4 range that holds it, and by no v6 range alone', () => {
@@ -137,6 +173,11 @@ describe('A2. a private address, in every spelling', () => {
         ['a public address, v4-mapped', '::ffff:93.184.216.34'],
         ['a public address, v4-mapped in hex', '::ffff:5db8:d822'],
         ['a public address through NAT64', '64:ff9b::5db8:d822'],
+        ['a public address, v4-translated', '::ffff:0:5db8:d822'],
+        ['the address below benchmarking', '198.17.255.255'],
+        ['the address above benchmarking', '198.20.0.1'],
+        ['the address below multicast', '223.255.255.254'],
+        ['a global v6 address beside Teredo', '2001:1::1'],
     ])('%s (%s) is reachable', (_label, address) => {
         expect(addressReachable(address, NONE)).toBe(true);
     });
@@ -185,6 +226,17 @@ describe('A3. a host in the configuration, in every spelling a URL allows', () =
         ['unique-local v6', 'https://[fd00::1]'],
         ['link-local v6', 'https://[fe80::1]'],
         ['the AWS v6 metadata address', 'https://[fd00:ec2::254]'],
+        ['the Alibaba metadata address', 'https://100.100.100.200'],
+        ['v4-translated loopback', 'https://[::ffff:0:7f00:1]'],
+        ['local-use NAT64 loopback', 'https://[64:ff9b:1::7f00:1]'],
+        ['local-use NAT64 private', 'https://[64:ff9b:1::a00:7]'],
+        ['site-local v6', 'https://[fec0::1]'],
+        ['v6 multicast', 'https://[ff02::1]'],
+        ['Teredo', 'https://[2001::1]'],
+        ['benchmarking', 'https://198.18.0.1'],
+        ['IETF protocol assignments', 'https://192.0.0.8'],
+        ['reserved', 'https://240.0.0.1'],
+        ['multicast', 'https://224.0.0.1'],
         ['localhost', 'https://localhost'],
         ['localhost in upper case', 'https://LOCALHOST'],
         ['localhost with a trailing dot', 'https://localhost.'],

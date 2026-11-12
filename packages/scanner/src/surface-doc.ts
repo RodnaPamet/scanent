@@ -16,8 +16,8 @@
  * the second is held to be off the declared surface.
  */
 import { ACCESS_GUIDE, GUIDE_ORDER, type AccessEntry } from './init/access-guide';
-import { MAX_RESPONSE_BYTES, MAX_SOURCE_BYTES } from './http';
-import { SCANNER_SURFACE, scannerManifestHash } from './scanner-surface';
+import { JWT_BEARER_GRANT, MAX_RESPONSE_BYTES, MAX_SOURCE_BYTES } from './http';
+import { SCANNER_SURFACE, scannerManifestHash, TOKEN_EXCHANGE_GRANTS } from './scanner-surface';
 import type { SourceKind } from './source';
 import { MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from './sources/code/files';
 import { AZURE_KEY_VAULT_HOST_SUFFIX } from './sources/azure-key-vault';
@@ -252,7 +252,7 @@ export function renderNetworkAndPermissionsMarkdown(): string {
         '|---|---|---|',
     );
     for (const auth of s.authenticates) {
-        const grant = auth.product === 'gcp-iam' ? 'JWT bearer (RFC 7523): an assertion signed with the service-account key' : 'client credentials';
+        const grant = TOKEN_EXCHANGE_GRANTS[auth.product] === JWT_BEARER_GRANT ? 'JWT bearer (RFC 7523): an assertion signed with the service-account key' : 'client credentials';
         lines.push(`| \`${auth.product}\` | \`${auth.method} ${auth.origin}${auth.path}\` | ${grant} |`);
     }
     lines.push('');

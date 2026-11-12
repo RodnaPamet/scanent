@@ -112,8 +112,34 @@ function readBody(text: string, contentType: string): { json: unknown; write: (j
     }
 }
 
+/**
+ * Run `fn` and return what it wrote to the PROCESS meanwhile: the console and
+ * the process's own stdout and stderr. A run is handed its outputs and its
+ * log, and those are watched where they are handed in; this is the way out
+ * that nothing is handed, so a source that printed a header or a body
+ * straight to the process would otherwise pass every case in this file.
+ * Nothing is let through to the real streams while it runs.
+ */
+async function watchingTheProcess<T>(fn: () => Promise<T>): Promise<{ value: T; said: string }> {
+    const said: string[] = [];
+    const take = (...parts: unknown[]): boolean => {
+        said.push(parts.map((p) => (typeof p === 'string' ? p : Buffer.isBuffer(p) ? p.toString('utf8') : JSON.stringify(p) ?? String(p))).join(' '));
+        return true;
+    };
+    const spies = [
+        jest.spyOn(process.stdout, 'write').mockImplementation(take as never),
+        jest.spyOn(process.stderr, 'write').mockImplementation(take as never),
+        ...(['log', 'error', 'warn', 'info', 'debug', 'trace', 'dir'] as const).map((method) => jest.spyOn(console, method).mockImplementation(take as never)),
+    ];
+    try {
+        return { value: await fn(), said: said.join('\n') };
+    } finally {
+        for (const spy of spies) spy.mockRestore();
+    }
+}
+
 interface RunOutcome {
-    /** Everything the run produced that somebody could read: files, stdout, log lines, and a thrown message. */
+    /** Everything the run produced that somebody could read: files, stdout, log lines, a thrown message, and anything written to the process itself. */
     readonly everything: string;
     readonly files: Record<string, string>;
     readonly refused: string | null;
@@ -128,23 +154,25 @@ async function runWhole(wire: FetchLike, sources: readonly unknown[] = SOURCES):
     const logged = capturedLog();
     const printed: string[] = [];
     let refused: string | null = null;
-    try {
-        await scanAndDeliver({
-            config,
-            env: estateEnv(),
-            log: logged.log,
-            fetchImpl: wire,
-            resolveHost: PUBLIC_RESOLVER,
-            now: () => NOW,
-            outputs: [{ kind: 'file', dir }, { kind: 'stdout' }],
-            stdout: (text) => printed.push(text),
-        });
-    } catch (err) {
-        if (!(err instanceof ReportRefusedLocally)) throw err;
-        refused = err.message;
-    }
+    const { said } = await watchingTheProcess(async () => {
+        try {
+            await scanAndDeliver({
+                config,
+                env: estateEnv(),
+                log: logged.log,
+                fetchImpl: wire,
+                resolveHost: PUBLIC_RESOLVER,
+                now: () => NOW,
+                outputs: [{ kind: 'file', dir }, { kind: 'stdout' }],
+                stdout: (text) => printed.push(text),
+            });
+        } catch (err) {
+            if (!(err instanceof ReportRefusedLocally)) throw err;
+            refused = err.message;
+        }
+    });
     const files = tree(dir);
-    return { everything: [Object.values(files).join('\n'), printed.join(''), logged.text(), refused ?? ''].join('\n'), files, refused, dir };
+    return { everything: [Object.values(files).join('\n'), printed.join(''), logged.text(), refused ?? '', said].join('\n'), files, refused, dir };
 }
 
 /** Every string leaf of every JSON response a clean scan of the full estate reads. */
@@ -268,9 +296,12 @@ describe('a canary in what a response is wrapped in', () => {
             const configPath = join(dir, 'config.json');
             writeFileSync(configPath, JSON.stringify(estateConfig(SOURCES, { outputs: [{ kind: 'file', dir: join(dir, 'out') }] })), { mode: 0o600 });
             chmodSync(configPath, 0o600);
-            const report = await runDoctor({ configPath, env: estateEnv(), fetchImpl: wire, resolveHost: PUBLIC_RESOLVER, now: () => NOW, nodeVersion: 'v24.1.0', uid: 1000 });
+            const { value: report, said } = await watchingTheProcess(() =>
+                runDoctor({ configPath, env: estateEnv(), fetchImpl: wire, resolveHost: PUBLIC_RESOLVER, now: () => NOW, nodeVersion: 'v24.1.0', uid: 1000 }),
+            );
             expect(renderDoctorText(report)).not.toContain(canary);
             expect(renderDoctorJson(report)).not.toContain(canary);
+            expect(said).not.toContain(canary);
             void world;
         }
     });
@@ -278,6 +309,38 @@ describe('a canary in what a response is wrapped in', () => {
     it.each(CANARIES)('%s as the whole of a body that is not JSON is in no output', async (_what, canary) => {
         const wire: FetchLike = async () => new Response(`<html><body>${canary}</body></html>`, { status: 200, headers: { 'content-type': 'text/html' } });
         expect((await runWhole(wire)).everything).not.toContain(canary);
+    });
+});
+
+describe('the watch on the process itself', () => {
+    it('sees what is written to the console, stdout and stderr, and lets none of it through', async () => {
+        const { value, said } = await watchingTheProcess(async () => {
+            console.error('to the console', { header: 'authorization' });
+            console.log('logged');
+            process.stderr.write('to stderr\n');
+            process.stdout.write(Buffer.from('to stdout\n'));
+            return 7;
+        });
+        expect(value).toBe(7);
+        for (const part of ['to the console', '"header":"authorization"', 'logged', 'to stderr', 'to stdout']) expect(said).toContain(part);
+    });
+
+    it('a clean scan of every source writes nothing to the process: every word goes through the log or an output it was handed', async () => {
+        const dir = join(base, `run-${runs++}`);
+        mkdirSync(dir, { mode: 0o700 });
+        const { said } = await watchingTheProcess(() =>
+            scanAndDeliver({
+                config: parseScannerConfig(estateConfig(SOURCES, { outputs: [{ kind: 'file', dir }, { kind: 'stdout' }] })),
+                env: estateEnv(),
+                log: capturedLog().log,
+                fetchImpl: worldFor().fetchImpl,
+                resolveHost: PUBLIC_RESOLVER,
+                now: () => NOW,
+                outputs: [{ kind: 'file', dir }, { kind: 'stdout' }],
+                stdout: () => undefined,
+            }),
+        );
+        expect(said).toBe('');
     });
 });
 
@@ -364,9 +427,12 @@ describe('the credentials the scanner is given', () => {
             const configPath = join(dir, 'config.json');
             writeFileSync(configPath, JSON.stringify(estateConfig(SOURCES, { outputs: [{ kind: 'file', dir: join(dir, 'out') }] })), { mode: 0o600 });
             chmodSync(configPath, 0o600);
-            const report = await runDoctor({ configPath, env: estateEnv(), fetchImpl: wire, resolveHost: PUBLIC_RESOLVER, now: () => NOW, nodeVersion: 'v24.1.0', uid: 1000 });
+            const { value: report, said } = await watchingTheProcess(() =>
+                runDoctor({ configPath, env: estateEnv(), fetchImpl: wire, resolveHost: PUBLIC_RESOLVER, now: () => NOW, nodeVersion: 'v24.1.0', uid: 1000 }),
+            );
             assertNone(renderDoctorText(report), 'the preflight table');
             assertNone(renderDoctorJson(report), 'the preflight JSON');
+            assertNone(said, 'the process, during the preflight');
             // A source that is failing is never called ready, whatever the failure answers with.
             expect(report.checks.some((c) => c.scope.startsWith(kind === 'mcp' ? 'mcp:' : kind) && c.status === 'FAIL')).toBe(true);
             expect(report.ready).toBe(false);

@@ -134,7 +134,10 @@ describe('the document', () => {
     });
 
     it('gives the shape of the configuration: kinds, counts, outputs, schedule, and where each credential would come from', async () => {
-        const { config } = await build({ env: { ...estateEnv(), OKTA_API_TOKEN: undefined, GCP_SCANNER_KEY: undefined, GCP_SCANNER_KEY_FILE: '/run/secrets/gcp', MCP_TICKETS_TOKEN_FILE: '/run/secrets/mcp' } });
+        const { config, doctor } = await build({
+            env: { ...estateEnv(), OKTA_API_TOKEN: undefined, GCP_SCANNER_KEY: undefined, GCP_SCANNER_KEY_FILE: '/run/secrets/gcp', MCP_TICKETS_TOKEN_FILE: '/run/secrets/mcp' },
+            doctor: async () => DOCTOR,
+        });
         expect(config).not.toBeNull();
         expect(config?.sources.map((s) => s.kind)).toEqual(['entra-sp', 'okta-app', 'vault', 'cicd', 'gcp-sa', 'runtime', 'mcp', 'code', 'inflect-register']);
         const counts = Object.fromEntries((config?.sources ?? []).map((s) => [s.kind, s.counts]));
@@ -150,6 +153,8 @@ describe('the document', () => {
         expect(config?.inventory).toBeNull();
         // Names, and where from. One of each answer.
         const from = Object.fromEntries((config?.credentials ?? []).map((c) => [c.variable, c.from]));
+        // The token the same bundle gives the label `tickets`, read off a doctor scope.
+        const mcpScope = doctor?.checks[3].scope ?? '';
         expect(from).toEqual({
             SCANNER_SIGNING_KEY: 'env',
             INFLECT_INGEST_KEY: 'env',
@@ -159,8 +164,21 @@ describe('the document', () => {
             GITHUB_READ_TOKEN: 'env',
             GCP_SCANNER_KEY: 'file',
             LANGSMITH_API_KEY: 'env',
-            MCP_TICKETS_TOKEN: 'both',
+            // `MCP_TICKETS_TOKEN` is the name `init` derives from the server's label, so the label in it is a token too.
+            [`MCP_${mcpScope.slice('mcp:'.length)}_TOKEN`]: 'both',
         });
+        expect(mcpScope).toMatch(/^mcp:label-[0-9a-f]{8}$/);
+        expect(JSON.stringify(config)).not.toMatch(/tickets/i);
+        // A name the operator chose is theirs and is kept, and with the names asked for the derived one is kept as well.
+        const own = structuredClone(estateJson());
+        const mcp = (own.sources as { kind: string; servers?: { readTokenEnv?: string }[] }[]).find((x) => x.kind === 'mcp');
+        const server = mcp?.servers?.find((x) => x.readTokenEnv !== undefined);
+        if (server === undefined) throw new Error('the fake estate has an MCP server with a read token');
+        server.readTokenEnv = 'OUR_OWN_NAME';
+        const chosen = await build({ configPath: writeConfig(own, 'own.json') });
+        expect(chosen.config?.credentials.map((c) => c.variable)).toContain('OUR_OWN_NAME');
+        const included = await build({ includeIdentifiers: true });
+        expect(included.config?.credentials.map((c) => c.variable)).toContain('MCP_TICKETS_TOKEN');
         expect((config?.credentials ?? []).map((c) => c.usedBy)).toEqual(['signing-key', 'tenant', 'entra-sp', 'okta-app', 'vault', 'cicd', 'gcp-sa', 'runtime', 'mcp']);
         // A host fixed by the product is named; one the estate names is a token.
         const hosts = (config?.sources ?? []).flatMap((s) => s.hosts);

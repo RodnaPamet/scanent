@@ -32,7 +32,10 @@
  *   • METADATA, LOOPBACK AND LINK-LOCAL STAY REFUSED INSIDE IT.
  *     `NEVER_ALLOWLISTABLE` is checked BEFORE the
  *     allowlist, so `0.0.0.0/0` still cannot reach 169.254.169.254 or
- *     127.0.0.1. The blocked names stay refused too.
+ *     127.0.0.1, and `::/0` cannot reach the metadata addresses that sit
+ *     outside link-local (listed at `NEVER_ALLOWLISTABLE`). The blocked names
+ *     stay refused too. A provider's metadata address that is not on that
+ *     list and not link-local is the operator's to keep out of the allowlist.
  *   • IT WIDENS WHICH ADDRESSES ARE ACCEPTABLE AND REMOVES NO OTHER CHECK.
  *     https only, redirects refused, the origin pinned, and the host resolved
  *     again before every request with EVERY address checked: a name that
@@ -88,7 +91,21 @@ const BLOCKED_HOSTNAMES = new Set(['localhost', 'metadata', 'metadata.google.int
  *   0/8, ::      "this host", an alias for loopback
  *   169.254/16   link-local: 169.254.169.254 is cloud metadata
  *   fe80::/10    v6 link-local
+ *
+ * and the instance-metadata addresses that sit OUTSIDE link-local, inside
+ * ranges an operator may well allowlist whole:
+ *
+ *   fd00:ec2::254     AWS, over IPv6 (inside unique-local fc00::/7)
+ *   100.100.100.200   Alibaba Cloud (inside carrier-grade NAT 100.64/10)
+ *   192.0.0.192       Oracle Cloud (inside 192.0.0.0/24)
  */
+const builtIn = (c: string): Cidr => {
+    const parsed = parseCidr(c);
+    // A literal that did not parse would silently shrink the set; fail at load.
+    if (parsed === null) throw new Error(`customer-host: bad built-in CIDR ${c}`);
+    return parsed;
+};
+
 const NEVER_ALLOWLISTABLE: readonly Cidr[] = [
     '127.0.0.0/8',
     '0.0.0.0/8',
@@ -96,12 +113,39 @@ const NEVER_ALLOWLISTABLE: readonly Cidr[] = [
     '::1/128',
     '::/128',
     'fe80::/10',
-].map((c) => {
-    const parsed = parseCidr(c);
-    // A literal that did not parse would silently shrink the set; fail at load.
-    if (parsed === null) throw new Error(`customer-host: bad built-in CIDR ${c}`);
-    return parsed;
-});
+    'fd00:ec2::254/128',
+    '100.100.100.200/32',
+    '192.0.0.192/32',
+].map(builtIn);
+
+/**
+ * Ranges that are not the public internet and that `isPrivateAddress` (the
+ * text rule, kept as it was copied) does not name. An address in one is
+ * treated as a private address is: refused, unless the estate's allowlist
+ * names the range it is in.
+ *
+ *   192.0.0.0/24     IETF protocol assignments
+ *   198.18.0.0/15    benchmarking, routed inside a network and never across the internet
+ *   224.0.0.0/4      multicast
+ *   240.0.0.0/4      reserved, the broadcast address among it
+ *   64:ff9b:1::/48   local-use NAT64 (RFC 8215): a translator on the path decides where it goes
+ *   2001::/32        Teredo: a tunnel to a v4 address the bytes obscure
+ *   fec0::/10        site-local (deprecated, still routed where it is configured)
+ *   ff00::/8         v6 multicast
+ *
+ * The documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24,
+ * 2001:db8::/32) are not here: they route nowhere.
+ */
+const NOT_PUBLIC: readonly Cidr[] = [
+    '192.0.0.0/24',
+    '198.18.0.0/15',
+    '224.0.0.0/4',
+    '240.0.0.0/4',
+    '64:ff9b:1::/48',
+    '2001::/32',
+    'fec0::/10',
+    'ff00::/8',
+].map(builtIn);
 
 /** The ranges an estate's configuration lists, parsed. Empty is "no allowlist". */
 export type PrivateCidrAllowlist = readonly Cidr[];
@@ -136,13 +180,16 @@ export function isNeverAllowlistable(address: string): boolean {
 /**
  * The IPv4 address an IPv6 address carries inside it, as dotted text, or null.
  *
- * Four ways to write a v4 destination as a v6 address, each of which reaches
+ * Six ways to write a v4 destination as a v6 address, each of which reaches
  * (directly, or through a translator on the path) the v4 address it embeds:
  *
- *   ::ffff:a.b.c.d    v4-mapped (RFC 4291): the same socket destination
- *   ::a.b.c.d         v4-compatible (RFC 4291, deprecated, still parsed)
- *   64:ff9b::a.b.c.d  NAT64, the well-known prefix (RFC 6052)
- *   2002:AABB:CCDD::  6to4 (RFC 3056): the v4 address is bytes 2 to 5
+ *   ::ffff:a.b.c.d      v4-mapped (RFC 4291): the same socket destination
+ *   ::a.b.c.d           v4-compatible (RFC 4291, deprecated, still parsed)
+ *   ::ffff:0:a.b.c.d    v4-translated (RFC 2765, what a stateless translator uses)
+ *   64:ff9b::a.b.c.d    NAT64, the well-known prefix (RFC 6052)
+ *   64:ff9b:1:…:a.b.c.d local-use NAT64 (RFC 8215), read as its last four
+ *                       bytes; the prefix is also `NOT_PUBLIC` as a whole
+ *   2002:AABB:CCDD::    6to4 (RFC 3056): the v4 address is bytes 2 to 5
  *
  * The text check alone (`isPrivateAddress`) knows only the dotted v4-mapped
  * spelling. `::ffff:a00:7` is 10.0.0.7 written in hex, which is how a URL
@@ -155,7 +202,10 @@ function embeddedV4(bytes: Uint8Array): string | null {
     if (isV4Mapped(bytes)) return dotted(12);
     // `::` and `::1` are the unspecified and loopback addresses, not a v4 inside a v6.
     if (zero(0, 12) && !(zero(12, 15) && bytes[15] <= 1)) return dotted(12);
-    if (bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b && zero(4, 12)) return dotted(12);
+    if (zero(0, 8) && bytes[8] === 0xff && bytes[9] === 0xff && bytes[10] === 0 && bytes[11] === 0) return dotted(12);
+    const nat64 = bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b;
+    if (nat64 && zero(4, 12)) return dotted(12);
+    if (nat64 && bytes[4] === 0x00 && bytes[5] === 0x01) return dotted(12);
     if (bytes[0] === 0x20 && bytes[1] === 0x02) return dotted(2);
     return null;
 }
@@ -177,7 +227,7 @@ export function addressReachable(address: string, allowlist: PrivateCidrAllowlis
     const forms = inner === null ? [address] : [address, inner];
     return forms.every((form) => {
         if (isNeverAllowlistable(form)) return false;
-        if (!isPrivateAddress(form)) return true;
+        if (!isPrivateAddress(form) && !inAny(form, NOT_PUBLIC)) return true;
         return allowlist.length > 0 && inAny(form, allowlist);
     });
 }
@@ -200,7 +250,7 @@ export function customerOriginProblem(value: string, allowlist: PrivateCidrAllow
         return 'names a host that is internal by its suffix';
     }
     if (isIpLiteral(host) && !addressReachable(host.replace(/^\[|\]$/g, ''), allowlist)) {
-        return 'is a private, loopback or link-local address outside the allowlist';
+        return 'is a private, loopback, link-local or otherwise non-public address outside the allowlist';
     }
     return null;
 }

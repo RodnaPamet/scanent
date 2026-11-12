@@ -38,7 +38,7 @@ import { createSourceWire, MCP_MESSAGES, type FetchLike } from '../src/http';
 import { jsonLineLog } from '../src/log';
 import { rawPublicKeyHex } from '../src/report';
 import { loadSigningKey, runScan, scanAndPost } from '../src/scan';
-import { SCANNER_SURFACE, scannerManifestHash } from '../src/scanner-surface';
+import { SCANNER_SURFACE, scannerManifestHash, TOKEN_EXCHANGE_GRANTS } from '../src/scanner-surface';
 import type { CodeFs } from '../src/sources/code/files';
 import { langchainCodeSource } from '../src/sources/langchain';
 import { langSmithFixture, LANGSMITH_SELF_HOSTED, LANGSMITH_US } from './helpers/agent-harness-source-fakes';
@@ -348,6 +348,33 @@ describe('the detector is not vacuous', () => {
         const problems = await scanWithExtra(extra);
         expect(problems.length).toBeGreaterThan(0);
         expect(problems.join('\n')).toContain(problem);
+    });
+
+    it('a token exchange for any grant but the one declared for its endpoint fails', () => {
+        const form = (pairs: Record<string, string> | [string, string][]) => new URLSearchParams(pairs).toString();
+        const exchange = (url: string, body: string): RecordedRequest => ({ method: 'POST', url, origin: new URL(url).origin, pathname: new URL(url).pathname, headerNames: [], body, redirect: 'error' });
+        const microsoft = 'https://login.microsoftonline.com/0d1e2c3b-0000-4000-8000-000000003686/oauth2/v2.0/token';
+        const google = 'https://oauth2.googleapis.com/token';
+        const jwtBearer = 'urn:ietf:params:oauth:grant-type:jwt-bearer';
+        expect(classifyRequest(exchange(microsoft, form({ grant_type: 'client_credentials', client_id: 'x', scope: 'y' })), hosts)).toBe('TOKEN_EXCHANGE');
+        expect(classifyRequest(exchange(google, form({ grant_type: jwtBearer, assertion: 'a.b.c' })), hosts)).toBe('TOKEN_EXCHANGE');
+        for (const [url, body] of [
+            [microsoft, form({ grant_type: 'password', username: 'u', password: 'p' })],
+            [microsoft, form({ grant_type: 'refresh_token', refresh_token: 'r' })],
+            [microsoft, form({ grant_type: jwtBearer, assertion: 'a.b.c' })],
+            [microsoft, form([['grant_type', 'client_credentials'], ['grant_type', 'password']])],
+            [microsoft, form({ client_id: 'x' })],
+            [microsoft, ''],
+            [microsoft, JSON.stringify({ grant_type: 'client_credentials' })],
+            [google, form({ grant_type: 'client_credentials', client_id: 'x' })],
+            [google, form({ grant_type: 'authorization_code', code: 'c' })],
+        ] as const) {
+            const req = exchange(url, body);
+            expect(classifyRequest(req, hosts)).toBe('UNDECLARED');
+            expect(readOnlyProblems([req], hosts).join('\n')).toContain('is not on the declared surface');
+        }
+        // Each declared exchange names a grant, and no product is left without one.
+        expect(Object.keys(TOKEN_EXCHANGE_GRANTS).sort()).toEqual([...new Set(SCANNER_SURFACE.authenticates.map((a) => a.product))].sort());
     });
 
     it('a register call of any tool but the one declared fails, and so does an exchange for a wider audience', () => {

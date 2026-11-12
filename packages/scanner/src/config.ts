@@ -472,6 +472,17 @@ export class ConfigError extends Error {
 export function parseScannerConfig<T extends { readonly inflect: object }>(json: T): ScannerConfigWithInflect;
 export function parseScannerConfig(json: unknown): ScannerConfig;
 export function parseScannerConfig(json: unknown): ScannerConfig {
+    try {
+        return parseScannerConfigValue(json);
+    } catch (err) {
+        // A value nested hundreds of thousands deep overflows the stack of
+        // whatever walks it: a refused configuration, not the engine's message.
+        if (err instanceof RangeError) throw new ConfigError(['(root): nested too deeply']);
+        throw err;
+    }
+}
+
+function parseScannerConfigValue(json: unknown): ScannerConfig {
     const secretAt = firstSecretShaped(json, '');
     if (secretAt !== null) {
         throw new ConfigError([`${secretAt}: a credential value in the configuration; name its environment variable instead`]);

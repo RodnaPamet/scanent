@@ -21,6 +21,7 @@ import {
     isDeclaredRegisterExchange,
     isDeclaredRegisterMessage,
     isDeclaredRequest,
+    isDeclaredTokenExchange,
     SCANNER_SURFACE,
 } from '../../src/scanner-surface';
 
@@ -121,7 +122,10 @@ export function classifyRequest(req: RecordedRequest, hosts: ConfiguredHosts): R
         if (origins.includes(req.origin)) return 'READ';
     }
     for (const auth of surface.authenticates) {
-        if (req.method === auth.method && req.origin === auth.origin && matchesTemplate(auth.path, req.pathname)) return 'TOKEN_EXCHANGE';
+        // The body is judged too: a declared endpoint asked for another grant is not a declared request.
+        if (req.method === auth.method && req.origin === auth.origin && matchesTemplate(auth.path, req.pathname) && isDeclaredTokenExchange(auth.product, req.body ?? '')) {
+            return 'TOKEN_EXCHANGE';
+        }
     }
     for (const list of surface.lists) {
         const rpc = rpcMethodOf(req.body);

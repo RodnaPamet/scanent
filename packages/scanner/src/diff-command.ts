@@ -64,6 +64,18 @@ function readCapped(path: string): string {
 
 /** One side of a comparison, from a results file or a signed report. */
 export function loadDiffSide(raw: string, side: 'old' | 'new', trustKey: string | null): LocalResults {
+    try {
+        return loadDiffSideValue(raw, side, trustKey);
+    } catch (err) {
+        // A member nested hundreds of thousands deep parses as JSON and
+        // overflows the stack of whatever walks it: a refused input, with the
+        // exit code of one, not the engine's own message and exit 1.
+        if (err instanceof RangeError) throw new DiffInputError(`${side}: nested too deeply`);
+        throw err;
+    }
+}
+
+function loadDiffSideValue(raw: string, side: 'old' | 'new', trustKey: string | null): LocalResults {
     let parsed: unknown;
     try {
         parsed = JSON.parse(raw);

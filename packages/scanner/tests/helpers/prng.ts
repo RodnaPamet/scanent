@@ -3,7 +3,8 @@
  * No dependency: a property that fails must fail again from its seed on any
  * machine.
  *
- *   FUZZ_SEED         the seed; a fixed constant unless set, so CI is the same every run
+ *   FUZZ_SEED         the seed, a whole number (0 included); a fixed constant when unset or
+ *                     empty, so CI is the same every run; anything else stops the run
  *   FUZZ_ITERATIONS   cases per property; 200 unless set, 50,000 under SCANENT_LONG=1
  *   SCANENT_LONG=1    `npm run test:long`: the long budget, and the suites skipped otherwise
  *
@@ -16,7 +17,23 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 export const LONG = process.env.SCANENT_LONG === '1';
-export const FUZZ_SEED = Number.parseInt(process.env.FUZZ_SEED ?? '', 10) || 0x5ca7e47;
+/** The seed `npm test` and CI use, so that a run is the same every time. */
+export const FIXED_SEED = 0x5ca7e47;
+
+/**
+ * The seed `FUZZ_SEED` names. Unset or empty is the fixed seed. Anything else
+ * must be a whole number, zero included, and is used as given: a seed that is
+ * not one stops the run here, because a run on some other seed than the one
+ * asked for reproduces nothing.
+ */
+export function seedFrom(raw: string | undefined): number {
+    if (raw === undefined || raw.trim() === '') return FIXED_SEED;
+    const parsed = /^\d{1,16}$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN;
+    if (!Number.isSafeInteger(parsed)) throw new Error('FUZZ_SEED must be a whole number (0 or more), or unset for the fixed seed');
+    return parsed;
+}
+
+export const FUZZ_SEED = seedFrom(process.env.FUZZ_SEED);
 export const FUZZ_ITERATIONS = Number.parseInt(process.env.FUZZ_ITERATIONS ?? '', 10) || (LONG ? 50_000 : 200);
 
 /**

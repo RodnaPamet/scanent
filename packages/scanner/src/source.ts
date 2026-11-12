@@ -54,6 +54,14 @@ export type ObservedModel = NonNullable<HarnessReportAgent['models']>[number];
 export interface ObservedToolUse {
     readonly tool: ObservedTool;
     readonly calls?: number;
+    /**
+     * The `code` source only, on a `<key>:*` placeholder: the MCP server's
+     * whole endpoint as the code wrote it. The report builder compares it with
+     * the servers the `mcp` source read and then drops it. It is never
+     * reported, written or logged: `tool.server` carries the origin alone,
+     * because the path of a URL in code is a place a key can sit.
+     */
+    readonly mcpEndpoint?: string;
 }
 
 /** What one source saw of one principal. Merged across sources by `discoveredId`. */
