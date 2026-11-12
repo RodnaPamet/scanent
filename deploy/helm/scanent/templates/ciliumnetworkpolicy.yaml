@@ -1,0 +1,64 @@
+{{- if eq .Values.networkPolicy.flavor "cilium" }}
+# Exactly the hosts in `egress.fqdns`, on TCP 443, and the DNS lookups for
+# those names. Requires Cilium.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: {{ include "scanent.fullname" . }}
+  labels:
+    {{- include "scanent.labels" . | nindent 4 }}
+spec:
+  endpointSelector:
+    matchLabels:
+      {{- include "scanent.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: scanner
+  # One empty rule: ingress is enforced and nothing is allowed in.
+  ingress:
+    - {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: {{ .Values.networkPolicy.dns.namespace }}
+            {{- toYaml .Values.networkPolicy.dns.podLabels | nindent 12 }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.networkPolicy.dns.port | quote }}
+              protocol: ANY
+          rules:
+            dns:
+              {{- range .Values.egress.fqdns }}
+              - matchName: {{ . | quote }}
+              {{- end }}
+    {{- if .Values.networkPolicy.dns.cidrs }}
+    # A DNS answerer that is not a pod (NodeLocal DNSCache): the same names, by address.
+    - toCIDR:
+        {{- range .Values.networkPolicy.dns.cidrs }}
+        - {{ . }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: {{ .Values.networkPolicy.dns.port | quote }}
+              protocol: ANY
+          rules:
+            dns:
+              {{- range .Values.egress.fqdns }}
+              - matchName: {{ . | quote }}
+              {{- end }}
+    {{- end }}
+    - toFQDNs:
+        {{- range .Values.egress.fqdns }}
+        - matchName: {{ . | quote }}
+        {{- end }}
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    {{- range .Values.networkPolicy.extraEgress }}
+    - toCIDR:
+        - {{ .cidr }}
+      toPorts:
+        - ports:
+            - port: {{ .port | quote }}
+              protocol: TCP
+    {{- end }}
+{{- end }}

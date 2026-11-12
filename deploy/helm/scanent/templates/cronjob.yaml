@@ -1,0 +1,153 @@
+{{- include "scanent.validate" . }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "scanent.fullname" . }}
+  labels:
+    {{- include "scanent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: scanner
+spec:
+  schedule: {{ .Values.schedule | quote }}
+  {{- if .Values.timeZone }}
+  timeZone: {{ .Values.timeZone | quote }}
+  {{- end }}
+  # One scan at a time, and a failed scan is not retried: the next run is the retry.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.history.successful }}
+  failedJobsHistoryLimit: {{ .Values.history.failed }}
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            {{- include "scanent.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: scanner
+          annotations:
+            {{- if not .Values.existingConfigMap }}
+            checksum/config: {{ .Values.config | toPrettyJson | sha256sum }}
+            {{- end }}
+            {{- with .Values.podAnnotations }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "scanent.fullname" . }}
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            {{- include "scanent.podSecurityContext" . | nindent 12 }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: scanent
+              image: {{ include "scanent.image" . | quote }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              # The image's own entrypoint, as built: no command, so no shell.
+              args:
+                - scan
+                - --config
+                - /etc/scanent/config.json
+                - --out
+                - /out
+                {{- if .Values.strict }}
+                - --strict
+                {{- end }}
+              securityContext:
+                {{- include "scanent.containerSecurityContext" . | nindent 16 }}
+              env:
+                # Each credential reaches the scanner as a file, never as a value.
+                {{- range .Values.secrets.files }}
+                - name: {{ printf "%s_FILE" .env }}
+                  value: {{ printf "/run/secrets/scanent/%s" .key | quote }}
+                {{- end }}
+                {{- if .Values.egressProxy.enabled }}
+                - name: HTTPS_PROXY
+                  value: {{ printf "http://%s:3128" (include "scanent.proxyName" .) | quote }}
+                {{- else if .Values.proxy.httpsProxy }}
+                - name: HTTPS_PROXY
+                  value: {{ .Values.proxy.httpsProxy | quote }}
+                {{- end }}
+                {{- if .Values.proxy.noProxy }}
+                - name: NO_PROXY
+                  value: {{ .Values.proxy.noProxy | quote }}
+                {{- end }}
+                {{- if .Values.extraCa.existingConfigMap }}
+                - name: NODE_EXTRA_CA_CERTS
+                  value: {{ printf "/etc/scanent-ca/%s" .Values.extraCa.key | quote }}
+                {{- end }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/scanent
+                  readOnly: true
+                - name: out
+                  mountPath: /out
+                {{- if .Values.secrets.files }}
+                - name: credentials
+                  mountPath: /run/secrets/scanent
+                  readOnly: true
+                {{- end }}
+                {{- if .Values.extraCa.existingConfigMap }}
+                - name: extra-ca
+                  mountPath: /etc/scanent-ca
+                  readOnly: true
+                {{- end }}
+                {{- range $i, $root := .Values.codeRoots }}
+                - name: code-{{ $i }}
+                  mountPath: {{ $root.mountPath | quote }}
+                  readOnly: true
+                {{- end }}
+          volumes:
+            - name: config
+              configMap:
+                name: {{ include "scanent.configMapName" . }}
+            - name: out
+              {{- if eq .Values.output.type "pvc" }}
+              persistentVolumeClaim:
+                claimName: {{ include "scanent.fullname" . }}-out
+              {{- else if eq .Values.output.type "existingClaim" }}
+              persistentVolumeClaim:
+                claimName: {{ .Values.output.existingClaim }}
+              {{- else }}
+              emptyDir: {}
+              {{- end }}
+            {{- if .Values.secrets.files }}
+            - name: credentials
+              secret:
+                secretName: {{ .Values.secrets.existingSecret }}
+                # 0440 in decimal: readable by the scanner's group (fsGroup), and by nobody else.
+                defaultMode: 288
+                items:
+                  {{- range .Values.secrets.files }}
+                  - key: {{ .key }}
+                    path: {{ .key }}
+                  {{- end }}
+            {{- end }}
+            {{- if .Values.extraCa.existingConfigMap }}
+            - name: extra-ca
+              configMap:
+                name: {{ .Values.extraCa.existingConfigMap }}
+                items:
+                  - key: {{ .Values.extraCa.key }}
+                    path: {{ .Values.extraCa.key }}
+            {{- end }}
+            {{- range $i, $root := .Values.codeRoots }}
+            - name: code-{{ $i }}
+              persistentVolumeClaim:
+                claimName: {{ $root.existingClaim }}
+                readOnly: true
+            {{- end }}

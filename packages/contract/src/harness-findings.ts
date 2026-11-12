@@ -1,5 +1,5 @@
 /**
- * WHAT ONE VERIFIED HARNESS REPORT MEANS (#3665) — a pure planner.
+ * WHAT ONE VERIFIED HARNESS REPORT MEANS — a pure planner.
  *
  * Input: a report body that has already passed `verifyAndParseHarnessReport`
  * (signature by a trusted key, then the strict schema), and what the tenant
@@ -29,10 +29,10 @@
  * telling a read-only external tool from an internal one needs an inventory
  * of which servers are internal, which the contract does not carry.
  *
- * ── THE REGISTER LINK, AND THE INTAKE'S OWN RECORD OF IT (#3712) ────────────
+ * ── THE REGISTER LINK, AND THE INTAKE'S OWN RECORD OF IT ────────────
  *
  * A report's `registeredAgentId` links only to a row the register holds; a
- * claimed id it does not hold is no link at all (`docs/agent-harness-contract.md`).
+ * claimed id it does not hold is no link at all (`docs/contract.md`, An agent).
  * When a report carries no such link, the register may still know the agent:
  * the registration intake records the discovered agent it registered a row from
  * on `RegisteredAgent.intakeDiscoveredAgentId`. That is the register's own
@@ -49,7 +49,8 @@
  *     the register's evidence, and dropping it on every incomplete scan would
  *     flip the agent between shadow and registered — but it neither raises nor
  *     resolves the finding. A link the REPORT claimed still closes it on any
- *     scan; that asymmetry is an owner decision (2026-10-18).
+ *     scan; that asymmetry is deliberate: what a report states about the
+ *     register is the register's to confirm, on any scan.
  *   • AN AGENT ABSENT FROM THE SCAN IS UNTOUCHED, as always: the planner only
  *     iterates the agents the report names.
  *
@@ -77,14 +78,14 @@
  * than one scanner, and one scanner not seeing an agent is not evidence that
  * the agent is gone.
  *
- * ── "NO UNPINNED WRITE TOOL": WHICH READ IS THE EVIDENCE (#3754) ────────────
+ * ── "NO UNPINNED WRITE TOOL": WHICH READ IS THE EVIDENCE ────────────
  *
- * Owner answer, 2026-10-19: a tool defined in code is judged by a complete
+ * The rule: a tool defined in code is judged by a complete
  * `code` read, and an MCP-served tool by a complete `mcp` read, as before.
  * Which a tool is follows its `server`: a `code://` locator is the contract's
  * name for a tool the agent's code defines or constructs, or for an MCP server
- * the code starts as a local command (`docs/agent-harness-contract.md`, The
- * `code` source); any other `server` is an MCP server's URL. The finding closes
+ * the code starts as a local command (`docs/contract.md`, A tool); any other
+ * `server` is an MCP server's URL. The finding closes
  * only when EVERY source the agent's tools are judged by was read in full:
  *
  *   • each tool the report lists, by its own `server`;
@@ -97,14 +98,14 @@
  * `mcp` read never closes a code-defined one. Reach is unchanged by this: an
  * agent is READ_ONLY only when the `mcp` source was read in full.
  *
- * ── ORPHAN_CREDENTIAL, DERIVED FROM `unboundCredentials[]` (#3754) ──────────
+ * ── ORPHAN_CREDENTIAL, DERIVED FROM `unboundCredentials[]` ──────────
  *
  * The report's own `findings` member is never acted on, so a scanner cannot
  * raise this finding by saying so. A `/2` report lists the credentials each
  * source saw bound to no agent, and the planner decides:
  *
  *   • IT OPENS ONLY WHEN THAT SOURCE, AND EVERY IDENTITY-BEARING SOURCE IN THE
- *     SAME SCAN, WAS READ IN FULL (owner answer, 2026-10-19). "Unbound" means
+ *     SAME SCAN, WAS READ IN FULL. "Unbound" means
  *     no agent in the report holds the reference, and the agent that holds it
  *     may be one a source that stopped early never reported. An
  *     identity-bearing source is one that can report the agent a credential is
@@ -121,7 +122,7 @@
  *   • AN ABSENT OR INCOMPLETE SOURCE CLOSES NOTHING. An incomplete identity
  *     source therefore opens nothing and closes nothing. (A `/1` report, which
  *     had no member to say anything about unbound credentials, closed nothing
- *     either; `/1` is retired, #3686, and the verifier no longer accepts one.)
+ *     either; `/1` is retired, and the verifier no longer accepts one.)
  *
  * The open findings it may close are the ingest's to read
  * (`PriorHarnessState.openOrphanCredentials`), because closing is about rows the
@@ -155,7 +156,7 @@ import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
 
 /**
  * The path of the first string member of a verified body whose value is
- * secret-shaped, or null (DPIA condition 10, `docs/agentic-harness-scanner-dpia.md`).
+ * secret-shaped, or null: no credential value may be stored beside a report.
  *
  * The contract refuses a secret-shaped value inside a credential reference
  * only. Every other string — an id, a tool name, an evidence pointer, a server
@@ -163,8 +164,11 @@ import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
  * stores most of them. So the ingest refuses a report in which ANY string
  * matches, and names the member, never the value: the refusal reaches a log
  * line, and repeating the secret there would be the leak it prevents.
+ *
+ * It walks any JSON-shaped value, so the same function checks whatever else is
+ * about to be written beside a report: local results, an inventory, a diff.
  */
-export function firstSecretShapedMember(body: HarnessReportBody): string | null {
+export function firstSecretShapedMember(body: unknown): string | null {
     const walk = (node: unknown, path: string): string | null => {
         if (typeof node === 'string') return looksLikeSecret(node) ? path : null;
         if (Array.isArray(node)) {
@@ -185,7 +189,7 @@ export function firstSecretShapedMember(body: HarnessReportBody): string | null 
     return walk(body, '');
 }
 
-// ─── Agent SDK options, as the scanner reads them from code (#4156) ─────────
+// ─── Agent SDK options, as the scanner reads them from code ─────────
 
 /**
  * What the reference scanner's `code` source read of ONE Claude Agent SDK
@@ -209,8 +213,9 @@ export interface AgentSdkOptionFacts {
 }
 
 /**
- * The ladder criterion each Agent SDK option fails, as the owner mapped them
- * (#4156, 2026-10-29). The ladder stays report-only: these feed the
+ * The ladder criterion each Agent SDK option fails. The mapping is a decision
+ * of the ladder's owner, not something derived: a new option, or a new
+ * criterion for an old one, is put to them first. The ladder stays report-only: these feed the
  * HARNESS_SHORTFALL finding and the matrix, never a gate.
  *
  * NOT MET ONLY. Code can show that a harness lacks a control. It cannot show
@@ -317,7 +322,7 @@ export interface PlannedAgent {
     readonly verdicts: readonly CriterionVerdict[];
     readonly tools: HarnessReportAgent['tools'];
     /**
-     * The model endpoints `/2` reported, as reported (#3759). `null` is NOT
+     * The model endpoints `/2` reported, as reported. `null` is NOT
      * REPORTED — a `/1` report, or a `/2` agent without `models` — which the
      * ingest stores as NULL, apart from `[]`, reported empty.
      */
@@ -326,7 +331,7 @@ export interface PlannedAgent {
 
 /**
  * A register row the registration intake created from a discovered agent, as
- * the register stores it (#3669): `RegisteredAgent.intakeDiscoveredAgentId`.
+ * the register stores it: `RegisteredAgent.intakeDiscoveredAgentId`.
  */
 export interface IntakeClaim {
     readonly registeredAgentId: string;
@@ -380,11 +385,11 @@ export interface PriorHarnessState {
     readonly registeredAgentIds: ReadonlySet<string>;
     /** Discovered agents whose shortfall is under an unexpired, unrevoked acceptance. */
     readonly acceptedShortfalls: ReadonlySet<string>;
-    /** The intake row each known discovered agent was registered into, by `discoveredId` (#3712). */
+    /** The intake row each known discovered agent was registered into, by `discoveredId`. */
     readonly intakeClaims: ReadonlyMap<string, IntakeClaim>;
     /**
      * The `sourceRef`s of this scanner's ORPHAN_CREDENTIAL findings that are not
-     * CLOSED (#3754). The planner closes one only on a complete read of its
+     * CLOSED. The planner closes one only on a complete read of its
      * source that no longer sees it unbound; a ref of another scanner's is
      * ignored, whoever passed it.
      */
@@ -408,7 +413,7 @@ export interface HarnessPlan {
     readonly assert: readonly PlannedFinding[];
     /** Findings this scan proves resolved, by `sourceRef`. */
     readonly resolve: readonly string[];
-    /** Reports overriding the intake's record (#3712), for the ingest to audit. */
+    /** Reports overriding the intake's record, for the ingest to audit. */
     readonly intakeConflicts: readonly IntakeConflict[];
 }
 
@@ -432,8 +437,8 @@ export type ToolEvidenceSource = Extract<HarnessSourceKind, 'code' | 'mcp'>;
 const CODE_LOCATOR_PREFIX = 'code://';
 
 /**
- * The source whose complete read is evidence about one tool (#3754, owner
- * answer 2026-10-19): `code` for a tool whose `server` is a `code://` locator,
+ * The source whose complete read is evidence about one tool: `code` for a
+ * tool whose `server` is a `code://` locator,
  * `mcp` for any other.
  */
 export function toolEvidenceSource(tool: { readonly server: string }): ToolEvidenceSource {
@@ -456,7 +461,7 @@ export function toolEvidenceSourcesOf(
 }
 
 /**
- * Which source kinds are IDENTITY-BEARING (#3754, owner answer 2026-10-19):
+ * Which source kinds are IDENTITY-BEARING:
  * a source that can report the agent a credential is bound to, by reporting
  * the credential among that agent's `credentials[]`. An `ORPHAN_CREDENTIAL`
  * opens only when every one of these the scan lists was read in full, because
@@ -476,10 +481,10 @@ export function toolEvidenceSourcesOf(
  *   cicd              a pipeline identity, and the secrets its jobs receive
  *   inflect-register  a registered agent, and the API keys that speak for it
  *   code              an agent definition, and the credential references it reads
- *   gcp-sa            a service account, and the user-managed keys it holds (#3785)
+ *   gcp-sa            a service account, and the user-managed keys it holds
  *
  * Exactly one kind is not: `mcp`. A scanner sends an MCP server `initialize`
- * and `tools/list` and nothing else (DPIA condition 1), and neither answer
+ * and `tools/list` and nothing else (no tool is ever called), and neither answer
  * names a caller or holds a credential: an `mcp` read reports servers and the
  * tools they serve, never who binds what.
  */
@@ -514,7 +519,7 @@ export function shadowRefOf(discoveredId: string): string {
 /**
  * The `discoveredId` a SHADOW_AGENT finding names, or null when the finding is
  * not one — the inverse of `shadowRefOf`, read by the registration intake
- * (#3669). A discovered id may itself contain colons (`entra:sp:<objectId>`),
+ *. A discovered id may itself contain colons (`entra:sp:<objectId>`),
  * so everything after the prefix is the id.
  */
 export function discoveredIdOfShadowFinding(finding: {

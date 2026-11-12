@@ -1,5 +1,5 @@
 /**
- * A BOUNDED LEXICAL READER FOR PYTHON (#3737) — text in, `FileFacts` out.
+ * A BOUNDED LEXICAL READER FOR PYTHON — text in, `FileFacts` out.
  *
  * Why not a real Python parser: the scanner is TypeScript, and the options were
  * a WebAssembly grammar (a new dependency and its supply chain), a Python
@@ -12,8 +12,12 @@
  * the recogniser reports as UNPARSEABLE where it matters — never as nothing.
  *
  * It never evaluates anything: no `eval`, no import, no subprocess. Every loop
- * consumes at least one token or stops, and expression nesting is capped, so a
- * hostile file costs time proportional to its (capped) size and no more.
+ * consumes at least one token or stops, expression nesting is capped, and a
+ * conditional that turned out not to be one is never tried twice at the same
+ * token. Behind those sits a WORK BUDGET per file (`STEPS_PER_TOKEN`): every
+ * token the parser takes is counted, and a file that costs more than a fixed
+ * multiple of its own length is refused with `PythonReadError`, so it is one
+ * UNPARSEABLE file and never a scanner that does not come back.
  */
 import {
     callsWithin,
@@ -41,6 +45,24 @@ export class PythonReadError extends Error {
 }
 
 const MAX_DEPTH = 64;
+
+/**
+ * The parser's work budget for one file: this many token steps per token, plus
+ * a floor for a short file. An ordinary file costs between one and three steps
+ * a token; the budget is far above that and far below what a file written to
+ * be re-read (nested brackets inside abandoned conditionals) can ask for.
+ */
+export const STEPS_PER_TOKEN = 24;
+const STEPS_FLOOR = 10_000;
+
+/** One file's remaining work, shared by every line's parser. */
+export interface WorkBudget {
+    left: number;
+}
+
+export function workBudgetFor(tokens: number): WorkBudget {
+    return { left: tokens * STEPS_PER_TOKEN + STEPS_FLOOR };
+}
 
 const KEYWORDS: ReadonlySet<string> = new Set([
     'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except',
@@ -178,7 +200,9 @@ const BINARY_WORDS: ReadonlySet<string> = new Set(['and', 'or', 'in', 'is', 'not
 
 class LineParser {
     private i = 0;
-    constructor(private readonly toks: readonly Tok[]) {}
+    /** Token positions where an `if` was tried as a conditional and had no `else`. */
+    private readonly notConditional = new Set<number>();
+    constructor(private readonly toks: readonly Tok[], private readonly budget: WorkBudget) {}
 
     get done(): boolean {
         return this.i >= this.toks.length;
@@ -187,6 +211,10 @@ class LineParser {
         return this.toks[this.i + offset];
     }
     next(): Tok | undefined {
+        // Every loop in this parser takes a token through here, so this one
+        // counter bounds the whole file's cost whatever shape re-reads it.
+        this.budget.left -= 1;
+        if (this.budget.left < 0) throw new PythonReadError(this.line, 'the file costs more to read than its size allows');
         const t = this.toks[this.i];
         this.i += 1;
         return t;
@@ -233,7 +261,13 @@ class LineParser {
         return t.t === 'name' && (t.v === 'for' || t.v === 'if' || t.v === 'else' || t.v === 'as' || t.v === 'from' || t.v === 'async');
     }
 
-    expr(depth = 0): Expr {
+    /**
+     * One expression. `conditional: false` leaves a trailing `if` to the
+     * caller: the condition and the `else` branch of `a if c else b` are read
+     * that way, so a chain of conditionals is a loop here and not one level of
+     * recursion (and one re-read) per link.
+     */
+    expr(depth = 0, conditional = true): Expr {
         const line = this.line;
         if (depth > MAX_DEPTH) {
             this.skipTo(new Set([',']));
@@ -260,17 +294,27 @@ class LineParser {
                 opaque = true;
                 continue;
             }
-            if (t.t === 'name' && t.v === 'if' && depth >= 0) {
+            if (t.t === 'name' && t.v === 'if' && conditional && !this.notConditional.has(this.i)) {
                 // `a if cond else b`: which branch runs is not knowable here.
                 const save = this.i;
                 this.next();
-                this.expr(depth + 1);
+                this.expr(depth + 1, false);
                 if (this.isName('else')) {
                     this.next();
-                    this.expr(depth + 1);
+                    this.expr(depth + 1, false);
                     opaque = true;
                     continue;
                 }
+                if (depth + 1 > MAX_DEPTH) {
+                    // Too deep to tell what followed: the value is not known.
+                    opaque = true;
+                    continue;
+                }
+                // Not a conditional (a comprehension's filter, say). Remembered,
+                // so no enclosing expression reads the same tokens again: a
+                // lambda body ending here would otherwise double the work at
+                // every level of nesting.
+                this.notConditional.add(save);
                 this.i = save;
             }
             break;
@@ -282,30 +326,36 @@ class LineParser {
 
     private unary(depth: number): Expr {
         const line = this.line;
-        const t = this.peek();
-        if (t === undefined) return { k: 'opaque', line };
-        if (t.t === 'op' && (t.v === '-' || t.v === '+' || t.v === '~')) {
-            this.next();
-            this.unary(depth + 1);
-            return { k: 'opaque', line };
+        // Prefix operators are consumed in a loop, not by recursion: a line of
+        // a hundred thousand `-` or `not` is one a file can hold, and one stack
+        // frame each would overflow the stack rather than end in a refusal.
+        let opaque = false;
+        for (;;) {
+            const t = this.peek();
+            if (t === undefined) return { k: 'opaque', line };
+            if ((t.t === 'op' && (t.v === '-' || t.v === '+' || t.v === '~')) || (t.t === 'name' && t.v === 'not')) {
+                this.next();
+                opaque = true;
+                continue;
+            }
+            if (t.t === 'name' && t.v === 'await') {
+                this.next();
+                continue;
+            }
+            break;
         }
-        if (t.t === 'name' && t.v === 'not') {
-            this.next();
-            this.unary(depth + 1);
-            return { k: 'opaque', line };
-        }
-        if (t.t === 'name' && t.v === 'await') {
-            this.next();
-            return this.unary(depth + 1);
-        }
-        if (t.t === 'name' && t.v === 'lambda') {
+        let operand: Expr;
+        if (this.isName('lambda')) {
+            const at = this.line;
             this.next();
             this.skipTo(new Set([':']));
             if (this.isOp(':')) this.next();
             this.expr(depth + 1);
-            return { k: 'func', line };
+            operand = { k: 'func', line: at };
+        } else {
+            operand = this.postfix(this.primary(depth), depth);
         }
-        return this.postfix(this.primary(depth), depth);
+        return opaque ? { k: 'opaque', line } : operand;
     }
 
     private primary(depth: number): Expr {
@@ -558,6 +608,8 @@ function targetKey(toks: readonly Tok[]): string | null {
 /** Read one file's imports, bindings, tool declarations and calls. Throws `PythonReadError`. */
 export function readPython(src: string): FileFacts {
     const toks = tokenizePython(src);
+    const budget = workBudgetFor(toks.length);
+    const parser = (lineToks: readonly Tok[]) => new LineParser(lineToks, budget);
     const imports = new Map<string, Qualified>();
     const bindings = new Map<string, Binding[]>();
     const toolDeclarations = new Map<string, ToolDeclaration>();
@@ -576,7 +628,7 @@ export function readPython(src: string): FileFacts {
     };
     /** Every expression on a line this reader has no statement rule for, read for its calls. */
     const scan = (lineToks: readonly Tok[]) => {
-        const p = new LineParser(lineToks);
+        const p = parser(lineToks);
         while (!p.done) {
             const t = p.peek()!;
             if ((t.t === 'name' && (!KEYWORDS.has(t.v) || SOFT_KEYWORDS.has(t.v) || t.v === 'await')) || t.t === 'str'
@@ -611,7 +663,7 @@ export function readPython(src: string): FileFacts {
         const line = first.line;
 
         if (first.t === 'op' && first.v === '@') {
-            decorators.push({ expr: new LineParser(lineToks.slice(1)).expr(), line });
+            decorators.push({ expr: parser(lineToks.slice(1)).expr(), line });
             continue;
         }
         const pending = decorators;
@@ -685,7 +737,7 @@ export function readPython(src: string): FileFacts {
         if (first.t === 'name' && first.v === 'class') {
             const nameTok = lineToks[1];
             if (nameTok?.t === 'name' && lineToks[2]?.t === 'op' && (lineToks[2] as { v: string }).v === '(') {
-                const bases = new LineParser(lineToks.slice(2));
+                const bases = parser(lineToks.slice(2));
                 const baseList = bases.expr();
                 const items = baseList.k === 'list' ? baseList.items : [baseList];
                 const isTool = items.some((b) => {
@@ -699,7 +751,7 @@ export function readPython(src: string): FileFacts {
         if ((first.t === 'name' && first.v === 'for') || (isAsync && head?.t === 'name' && head.v === 'for')) {
             // `for target in iterable:` runs the iterable, which is often a call:
             // `async for message in query(...)` is how the Agent SDK is driven
-            // (#4156). The expression reader treats `in` as an operator whose
+            //. The expression reader treats `in` as an operator whose
             // operands it does not keep, so the iterable is read on its own.
             let depth = 0;
             let inAt = -1;
@@ -716,7 +768,7 @@ export function readPython(src: string): FileFacts {
             }
             if (inAt >= 0) {
                 const end = colonAt >= 0 ? colonAt : lineToks.length;
-                collect(new LineParser(lineToks.slice(inAt + 1, end)).expr(), null);
+                collect(parser(lineToks.slice(inAt + 1, end)).expr(), null);
                 // A body written on the same line.
                 if (colonAt >= 0 && colonAt + 1 < lineToks.length) scan(lineToks.slice(colonAt + 1));
                 continue;
@@ -724,7 +776,7 @@ export function readPython(src: string): FileFacts {
         }
         if ((first.t === 'name' && first.v === 'with') || (isAsync && head?.t === 'name' && head.v === 'with')) {
             // `with Client(...) as client:` binds `client` to the context manager.
-            const p = new LineParser(lineToks.slice(isAsync ? 2 : 1));
+            const p = parser(lineToks.slice(isAsync ? 2 : 1));
             while (!p.done) {
                 const value = p.expr();
                 collect(value, null);
@@ -755,7 +807,7 @@ export function readPython(src: string): FileFacts {
         });
         if (first.t === 'name' && !KEYWORDS.has(first.v) && splits.length > 0) {
             const last = splits[splits.length - 1];
-            const value = new LineParser(lineToks.slice(last + 1)).expr();
+            const value = parser(lineToks.slice(last + 1)).expr();
             let start = 0;
             let boundTo: string | null = null;
             for (const s of splits) {
@@ -772,7 +824,7 @@ export function readPython(src: string): FileFacts {
         const aug = augmented as { at: number; op: string } | null;
         if (first.t === 'name' && aug !== null) {
             const key = targetKey(lineToks.slice(0, aug.at));
-            const value = new LineParser(lineToks.slice(aug.at + 1)).expr();
+            const value = parser(lineToks.slice(aug.at + 1)).expr();
             if (key !== null) bind(key, { k: 'concat', parts: [{ k: 'ref', name: key, line }, value], line }, line);
             collect(value, null);
             continue;

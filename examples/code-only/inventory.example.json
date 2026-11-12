@@ -1,0 +1,20 @@
+{
+  "inventory": "scanent-inventory/1",
+  "agents": [
+    {
+      "discoveredId": "code:example/support/agent.py#support_executor",
+      "name": "Support order lookup",
+      "owner": "support-operations",
+      "purpose": "Answers customers' questions about an order's status",
+      "axes": { "autonomy": "human-reviews", "dataClass": "internal", "reach": "read-only" },
+      "riskTier": "LOW",
+      "riskAssessedOn": "2026-10-01"
+    },
+    {
+      "discoveredId": "code:example/billing/agent.py#billing_executor",
+      "name": "Billing reconciliation",
+      "owner": "finance-operations",
+      "purpose": "Declared here and not in the example estate, to show what a declared agent the scan does not find looks like"
+    }
+  ]
+}

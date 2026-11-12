@@ -16,3 +16,5 @@
 !packages/scanner/tsconfig.json
 !packages/scanner/src
 !packages/report/package.json
+!packages/report/tsconfig.json
+!packages/report/src

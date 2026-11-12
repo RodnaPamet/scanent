@@ -731,6 +731,8 @@ export function createSourceFakes(opts: {
             const tenants = [`/${AZURE_TENANT}/oauth2/v2.0/token`, `/${ENTRA_DIRECTORY_ID}/oauth2/v2.0/token`];
             if (method !== 'POST' || !tenants.includes(u.pathname)) return json({ error: 'invalid_request' }, 400);
             const form = new URLSearchParams(String(body ?? ''));
+            // The platform issues an application's token for this grant and no other.
+            if (form.getAll('grant_type').join(',') !== 'client_credentials') return json({ error: 'unsupported_grant_type' }, 400);
             if (form.get('client_id') !== AZURE_CLIENT_ID || form.get('client_secret') !== AZURE_CLIENT_SECRET_VALUE) {
                 return json({ error: 'invalid_client' }, 401);
             }

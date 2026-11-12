@@ -73,7 +73,7 @@ const OktaSourceConfigSchema = z
 const AzureKeyVaultSourceConfigSchema = z
     .object({
         kind: z.literal('vault'),
-        /** The vault product. One adapter today (owner decision, 2026-10-18); the field keeps the kind generic. */
+        /** The vault product. One adapter today; the field keeps the kind generic. */
         product: z.literal('azure-key-vault'),
         vaultUrls: z.array(originOnHosts([AZURE_KEY_VAULT_HOST_SUFFIX], 'each vault URL')).min(1).max(20),
         directoryTenantId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$/),
@@ -99,7 +99,7 @@ const EntraSourceConfigSchema = z
         clientSecretEnv: envName,
         /**
          * Also report the service principals of third-party applications
-         * consented into the directory (owner decision, 2026-10-19: off unless
+         * consented into the directory (off unless
          * the estate opts in). Microsoft's first-party applications are never
          * reported.
          */
@@ -110,7 +110,7 @@ const EntraSourceConfigSchema = z
 const GitHubActionsSourceConfigSchema = z
     .object({
         kind: z.literal('cicd'),
-        /** The CI/CD product. GitHub Actions is the one adapter (#3784); the field keeps the kind generic. */
+        /** The CI/CD product. GitHub Actions is the one adapter; the field keeps the kind generic. */
         product: z.literal('github-actions'),
         /** `owner/repo`, each read from `api.github.com` with the one token. */
         repositories: z
@@ -130,7 +130,7 @@ const GitHubActionsSourceConfigSchema = z
 const GcpServiceAccountSourceConfigSchema = z
     .object({
         kind: z.literal('gcp-sa'),
-        /** The cloud product. Google Cloud IAM is the one adapter (#3785); the field keeps the kind generic. */
+        /** The cloud product. Google Cloud IAM is the one adapter; the field keeps the kind generic. */
         product: z.literal('gcp-iam'),
         /** Project ids, each read from `iam.googleapis.com` as the one service account. */
         projects: z
@@ -159,7 +159,7 @@ const absolutePath = z
 const CodeSourceConfigSchema = z
     .object({
         kind: z.literal('code'),
-        /** The framework the detector recognises. One today (#3737); the field keeps the kind generic. */
+        /** The framework the detector recognises. One today; the field keeps the kind generic. */
         product: z.literal('langchain'),
         /**
          * The directories to read. Each is reported by its `label` alone, never
@@ -179,7 +179,7 @@ const CodeSourceConfigSchema = z
 const LangSmithSourceConfigSchema = z
     .object({
         kind: z.literal('runtime'),
-        /** The runtime product. LangSmith is the one adapter (#3738); the field keeps the kind generic. */
+        /** The runtime product. LangSmith is the one adapter; the field keeps the kind generic. */
         product: z.literal('langsmith'),
         /**
          * Exactly one of: a cloud data region, whose host is fixed here, or the
@@ -217,8 +217,8 @@ const LangSmithSourceConfigSchema = z
         /** The bounded window tool usage is summarised over. */
         windowDays: z.number().int().min(1).max(LANGSMITH_MAX_WINDOW_DAYS).default(LANGSMITH_DEFAULT_WINDOW_DAYS),
         /**
-         * Whether to list deployments too. OFF unless the estate opts in (owner
-         * decision 2026-10-19): the deployments listing carries each
+         * Whether to list deployments too. OFF unless the estate opts in:
+         * the deployments listing carries each
          * deployment's secrets, and a scanner that does not need it should not
          * receive it. Projects are read either way.
          */
@@ -254,14 +254,14 @@ const McpServerConfigSchema = z
     .object({
         label: slug,
         url: z.string().max(512),
-        /** The agents that use this server, by the id the source that finds them gives (owner decision 2 on #3686). */
+        /** The agents that use this server, by the id the source that finds them gives. */
         agents: z.array(discoveredIdRef).max(1_000).default([]),
         /** `sha256:` of the listing the estate pinned: `pinned` is true only while the live listing matches it. */
         pinnedManifestHash: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional(),
         /**
          * A READ token for the server, by environment variable: sent as a bearer
          * token with `initialize`, the initialized notification and `tools/list`,
-         * and nothing else (owner decision 6). For Inflect's own `/api/mcp`, a key
+         * and nothing else. For Inflect's own `/api/mcp`, a key
          * holding `mcp:read` and no other MCP scope.
          */
         readTokenEnv: envName.optional(),
@@ -294,9 +294,9 @@ const McpSourceConfigSchema = z
     .strict();
 
 /**
- * The scanner's own tenant's register (#3686, part c). No field: it is read from
+ * The scanner's own tenant's register. No field: it is read from
  * `inflect.baseUrl`'s `/api/mcp` with the ingest key `inflect.apiKeyEnv` names,
- * which must also carry `mcp:read` (owner decision 3), by the one tool the
+ * which must also carry `mcp:read`, by the one tool the
  * scanner may call.
  */
 const InflectRegisterSourceConfigSchema = z.object({ kind: z.literal('inflect-register') }).strict();
@@ -313,6 +313,22 @@ export const SourceConfigSchema = z.discriminatedUnion('kind', [
     GcpServiceAccountSourceConfigSchema,
 ]);
 
+const OutputConfigSchema = z.discriminatedUnion('kind', [
+    z
+        .object({
+            kind: z.literal('file'),
+            /** The directory each run is written under, as `runs/<scanId>/`. */
+            dir: absolutePath,
+            /** Keep this many runs and remove older ones. Absent: nothing is ever removed. */
+            retainRuns: z.number().int().min(1).max(10_000).optional(),
+        })
+        .strict(),
+    z.object({ kind: z.literal('stdout') }).strict(),
+    z.object({ kind: z.literal('inflect') }).strict(),
+]);
+
+export type OutputConfig = z.infer<typeof OutputConfigSchema>;
+
 export const ScannerConfigSchema = z
     .object({
         /** The estate this deployment scans: a label for the operator and the scan id, never reported. */
@@ -325,6 +341,13 @@ export const ScannerConfigSchema = z
                 signingKeyEnv: envName,
             })
             .strict(),
+        /**
+         * The Inflect tenant the report is posted to and the register is read
+         * from. Optional: a run that only writes its results locally names no
+         * tenant. Required when the `inflect` output is in effect, when the
+         * `inflect-register` source is configured, or when `egress` is set
+         * (the egress proof's allowed host is the ingest's).
+         */
         inflect: z
             .object({
                 baseUrl: z.string().refine((v) => httpsOrigin(v) !== null, 'baseUrl must be an https origin'),
@@ -332,13 +355,22 @@ export const ScannerConfigSchema = z
                 /** An API key with the `admin:harness_ingest` scope and no other. */
                 apiKeyEnv: envName,
             })
-            .strict(),
+            .strict()
+            .optional(),
+        /**
+         * Where one run's results go: files under a directory, the signed
+         * report on stdout, the tenant's ingest. Each kind at most once.
+         * Absent, a configuration with an `inflect` block posts to it, which
+         * is what every configuration written before outputs existed means
+         * (`outputs.ts`).
+         */
+        outputs: z.array(OutputConfigSchema).min(1).max(3).optional(),
         schedule: z.object({ everyHours: z.number().int().min(1).max(720) }).strict(),
         /** Read in a fixed time box each. */
         timeBoxSeconds: z.number().int().min(10).max(3_600).default(600),
         /**
-         * The egress proxy this deployment's scanner is confined to (#5004 part
-         * C). When set, every scan proves the confinement before it reads and
+         * The egress proxy this deployment's scanner is confined to. When
+         * set, every scan proves the confinement before it reads and
          * reports it as `H3.egress_enforced` on the scanner's own agent
          * (`egress-proof.ts`). Absent, the criterion is left unanswered.
          */
@@ -360,6 +392,20 @@ export const ScannerConfigSchema = z
             })
             .strict()
             .optional(),
+        /**
+         * The operator's inventory of the agents the estate knows: who owns
+         * each and what it is for. Optional. It is what lets a run with no
+         * register show an agent as registered, and everything it supplies is
+         * labelled as declared, never as observed (`inventory-file.ts`). The
+         * file is a `.json` or a `.csv`, read once per scan; it never enters
+         * the signed report.
+         */
+        inventory: z
+            .object({
+                path: absolutePath.refine((v) => /\.(json|csv)$/i.test(v), 'a .json or a .csv file'),
+            })
+            .strict()
+            .optional(),
         sources: z.array(SourceConfigSchema).min(1).max(SOURCE_KINDS.length),
     })
     .strict()
@@ -368,13 +414,31 @@ export const ScannerConfigSchema = z
         if (new Set(kinds).size !== kinds.length) {
             ctx.addIssue({ code: 'custom', message: 'each source kind appears once, as in the report', path: ['sources'] });
         }
+        const outputKinds = (c.outputs ?? []).map((o) => o.kind);
+        if (new Set(outputKinds).size !== outputKinds.length) {
+            ctx.addIssue({ code: 'custom', message: 'each output kind appears once', path: ['outputs'] });
+        }
+        if (c.inflect === undefined && (outputKinds.includes('inflect') || kinds.includes('inflect-register') || c.egress !== undefined)) {
+            ctx.addIssue({
+                code: 'custom',
+                message: 'the inflect block is required by the inflect output, the inflect-register source and egress',
+                path: ['inflect'],
+            });
+        }
     });
 
 export type ScannerConfig = z.infer<typeof ScannerConfigSchema>;
 export type SourceConfig = z.infer<typeof SourceConfigSchema>;
+export type InflectConfig = NonNullable<ScannerConfig['inflect']>;
+/** A configuration known to name a tenant: what a value that carries an `inflect` block parses to. */
+export type ScannerConfigWithInflect = ScannerConfig & { readonly inflect: InflectConfig };
 
-/** The path of the first secret-shaped string in an untrusted JSON tree, or null. */
-function firstSecretShaped(node: unknown, path: string): string | null {
+/**
+ * The path of the first secret-shaped string in an untrusted JSON tree, or
+ * null. A KEY is untrusted too: a secret-shaped key is itself a hit, and it is
+ * written `<key>` in the path, which is printed.
+ */
+export function firstSecretShaped(node: unknown, path: string): string | null {
     if (typeof node === 'string') return looksLikeSecret(node) ? path || '(root)' : null;
     if (Array.isArray(node)) {
         for (let i = 0; i < node.length; i++) {
@@ -385,6 +449,7 @@ function firstSecretShaped(node: unknown, path: string): string | null {
     }
     if (node !== null && typeof node === 'object') {
         for (const [k, v] of Object.entries(node)) {
+            if (looksLikeSecret(k)) return path ? `${path}.<key>` : '<key>';
             const hit = firstSecretShaped(v, path ? `${path}.${k}` : k);
             if (hit) return hit;
         }
@@ -404,7 +469,20 @@ export class ConfigError extends Error {
  * BEFORE the schema runs, and reports issues by path and code — never by value,
  * since the value refused may be the credential somebody pasted in.
  */
+export function parseScannerConfig<T extends { readonly inflect: object }>(json: T): ScannerConfigWithInflect;
+export function parseScannerConfig(json: unknown): ScannerConfig;
 export function parseScannerConfig(json: unknown): ScannerConfig {
+    try {
+        return parseScannerConfigValue(json);
+    } catch (err) {
+        // A value nested hundreds of thousands deep overflows the stack of
+        // whatever walks it: a refused configuration, not the engine's message.
+        if (err instanceof RangeError) throw new ConfigError(['(root): nested too deeply']);
+        throw err;
+    }
+}
+
+function parseScannerConfigValue(json: unknown): ScannerConfig {
     const secretAt = firstSecretShaped(json, '');
     if (secretAt !== null) {
         throw new ConfigError([`${secretAt}: a credential value in the configuration; name its environment variable instead`]);
@@ -443,7 +521,7 @@ export function mcpTokenEnvNames(source: Extract<SourceConfig, { kind: 'mcp' }>)
     return source.servers.flatMap((s) => (s.readTokenEnv === undefined ? [] : [s.readTokenEnv]));
 }
 
-/** The environment variables a configuration names, every one of them. */
+/** The environment variables a configuration names, every one of them. The ingest key is one only when the `inflect` block exists. */
 export function credentialEnvNames(config: ScannerConfig): string[] {
     const fromSources = config.sources.flatMap((s) =>
         s.kind === 'code' || s.kind === 'inflect-register'
@@ -452,5 +530,5 @@ export function credentialEnvNames(config: ScannerConfig): string[] {
                 ? mcpTokenEnvNames(s)
                 : [sourceCredentialEnv(s)],
     );
-    return [config.scanner.signingKeyEnv, config.inflect.apiKeyEnv, ...fromSources];
+    return [config.scanner.signingKeyEnv, ...(config.inflect === undefined ? [] : [config.inflect.apiKeyEnv]), ...fromSources];
 }

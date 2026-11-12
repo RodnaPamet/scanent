@@ -1,6 +1,6 @@
 /**
  * Posting a signed report to the tenant's ingest — the scanner's only write,
- * and it is to Inflect, never to the estate (DPIA condition 4).
+ * and it is to Inflect, never to the estate.
  *
  * The body is the serialised report, UNCHANGED: the signature covers the
  * canonical form of what is sent, so re-serialising here could only break it.

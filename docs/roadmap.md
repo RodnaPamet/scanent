@@ -1,0 +1,148 @@
+# Roadmap: what is not in this version
+
+What scanent does not do today, taken from the code and from the open issues
+of the repository. These are open items. None is a promise, none has a date,
+and none should be offered to a client as coming.
+
+"This version" is the scanner at version 0.12.0, unreleased.
+
+## Sources that are not usable
+
+### NVIDIA OpenShell gateway
+
+A reader for the OpenShell gateway is in the source tree
+(`packages/scanner/src/sources/openshell.ts`) and is tested against an
+imitation of the gateway. **It cannot be used.** The gateway speaks gRPC, and
+this version carries no gRPC transport: the wire in
+`packages/scanner/src/http.ts` answers "not built into this scanner". The
+configuration schema has no entry that selects the source, so no scan can
+make such a call.
+
+Its five read calls are still part of the declared request surface, and so of
+the manifest hash in every report, which is why
+[Network and permissions](network-and-permissions.md#declared-and-not-reachable-from-a-configuration)
+lists them. Making it usable needs a decision on a gRPC dependency in the
+image, then the transport, a configuration entry and an end-to-end test
+(issue 8).
+
+### Cloud agent platforms
+
+No source reads any of these:
+
+- **AWS**: IAM roles, Bedrock agents.
+- **Azure AI Foundry** agents.
+- **Google Vertex AI** agents.
+
+What exists nearby, so that it is not mistaken for coverage:
+
+- Google Cloud **service accounts and their keys** are read (`gcp-sa`). That
+  is identity, not Vertex agents.
+- Microsoft Entra **service principals** are read (`entra-sp`). That is
+  identity, not Azure AI Foundry.
+- The `code` source recognises Bedrock and Vertex **model classes** in
+  LangChain code and reports the model endpoint an agent's code names. It
+  reads source files, not the cloud platform.
+
+Each would be a new source, and where it is a new source kind, a new report
+contract id. The steps are in
+[Support and maintenance](security-pack/support-and-maintenance.md#how-a-new-source-is-added).
+
+### Other products under the existing kinds
+
+Each kind is read from one product today:
+
+| Kind | Read today | Not read |
+|---|---|---|
+| `cicd` | GitHub Actions | Any other CI system |
+| `vault` | Azure Key Vault | Any other secret store |
+| `runtime` | LangSmith | Any other tracing or agent runtime (OpenShell: see above) |
+| `code` | LangChain, LangGraph and the Claude Agent SDK, in Python, JavaScript and TypeScript | Any other agent framework or language. An agent written with another framework is not found |
+
+## Levels the scanner cannot evidence
+
+The ladder has six levels, H0 to H5. What a scan can show is limited by what
+its sources read (`packages/scanner/src/criterion-readers.ts`):
+
+- **H4 and H5: no source reports any of their nine criteria.** No agent can
+  be shown at H4 or H5 by this version, whatever its real state. The criteria
+  are a baseline ledger, receipts, a drilled kill switch and a token budget
+  (H4), and coverage, emitted evidence, evaluated skills, a sample audit and
+  an independent audit (H5).
+- **H2 and H3 need an Inflect tenant's register.** Nine of their twelve
+  criteria can be reported as met by the register source only, two of the
+  five on H2 and all seven on H3. So without a register no agent is shown
+  above H1, and with one none is shown above H3.
+- **H1 needs the register or an operator's inventory file.** With neither, no
+  agent is shown above H0.
+
+The results say this per criterion ("No reader in scanent reports this
+criterion"), so a missing reader is not mistaken for a failed check. Whether
+to add sources that evidence H4 and H5 is an open product decision (issue 15).
+
+## Packaging and distribution
+
+- **No release.** No tag, no published image, no signed artefact. The release
+  workflow is written and has never run. Whether the image is to be public is
+  an open owner decision (issue 19).
+- **The contract package is not published.** `@scanent/contract`,
+  `@scanent/report` and `@scanent/scanner` are private workspace packages.
+  A consumer that wants to verify reports with the reference implementation
+  has to take it from this repository. Publishing needs a decision on the
+  registry, and `LICENSE` and `NOTICE` copied into each package first
+  (issue 7).
+- **The originating application carries its own copy of the contract.** The
+  two were identical at extraction and nothing keeps them so (issue 7,
+  `docs/EXTRACTION.md`).
+- **The Helm chart writes to a volume only.** There is no object-store output
+  (issue 19).
+
+## Known gaps in what a scan reports
+
+- **Okta API tokens of other users may not be seen**, and the report does not
+  say so. Unconfirmed against a live Okta organisation (issue 16; threat
+  model, residual risk 3).
+- **Tool call counts are not reported.** The contract has a member for them;
+  the scanner does not fill it (`packages/scanner/src/source.ts`).
+- **Write-access checks are partial.** `doctor` can tell that a credential
+  can write for Entra (from the roles in its token) and for a GitHub classic
+  token. For Okta, Azure Key Vault, Google Cloud, LangSmith and MCP servers
+  it reports the check as not observable. For Okta, Key Vault and Google,
+  seeing the grant would need one more declared read or a request that is not
+  a read (issue 19).
+- **An incomplete scan exits 0 by default.** `--strict` opts in to a non-zero
+  exit. Changing the default is an open decision (issue 19).
+- **A secret-shaped object key is printed in a refusal message** by the
+  contract's check (issue 17; threat model, residual risk 4).
+
+## Hardening follow-ups
+
+From the internal hardening review (issue 20). The first two are documented
+residual risks in the [threat model](threat-model.md#residual-risks)
+(risks 14 and 12). The other two are recorded in issue 20 only:
+
+- The bundled egress proxy has no idle timeout and no connection limit.
+- A secret file is checked for the world-writable bit only.
+- The grant of each token exchange is declared beside the hashed request
+  surface, not inside it.
+- A model name written in code is reported as written when it has no known
+  secret shape.
+
+## Assurance work
+
+Not features, but the largest open items. They need people or time, not
+code (issue 21):
+
+- pilots on real estates, with false positives and false negatives recorded
+  per source;
+- a 72-hour soak;
+- an external penetration test and code review;
+- a first signed release, and the verification commands run against it.
+
+[Assurance status](security-pack/assurance-status.md) has the detail.
+
+## Where this list comes from
+
+The open issues of the repository are the authority, and they move faster
+than this page. An issue may be partly addressed in code and still open. For
+each item above, the cited file or document is where to check what is true
+today.

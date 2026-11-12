@@ -1,6 +1,5 @@
 /**
- * EACH SCAN PROVES ITS OWN EGRESS (#5004 part C; owner decision 4 of
- * 2026-11-08).
+ * EACH SCAN PROVES ITS OWN EGRESS.
  *
  * `H3.egress_enforced` asks whether the agent's outbound network is enforced
  * against an allowlist, with evidence. For the scanner the evidence is taken

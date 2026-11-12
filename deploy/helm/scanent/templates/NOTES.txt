@@ -1,0 +1,37 @@
+scanent {{ .Chart.AppVersion }} is installed as the CronJob {{ include "scanent.fullname" . }} ({{ .Values.schedule }}{{ if .Values.timeZone }} {{ .Values.timeZone }}{{ end }}).
+
+{{- if .Values.secrets.files }}
+
+Credentials. The chart creates no Secret. If {{ .Values.secrets.existingSecret }} does not exist yet, create it from files:
+
+  kubectl create secret generic {{ .Values.secrets.existingSecret }} --namespace {{ .Release.Namespace }}{{ range .Values.secrets.files }} \
+    --from-file={{ .key }}=<path to the {{ .env }} file>{{ end }}
+
+Each key is mounted as a file under /run/secrets/scanent and named to the scanner by <NAME>_FILE.
+{{- end }}
+
+Run one scan now, and read what it logged:
+
+  kubectl create job --namespace {{ .Release.Namespace }} --from=cronjob/{{ include "scanent.fullname" . }} {{ include "scanent.fullname" . }}-manual
+  kubectl logs --namespace {{ .Release.Namespace }} job/{{ include "scanent.fullname" . }}-manual
+
+Each run is written under /out/runs/<scanId>/ on the output volume
+{{- if eq .Values.output.type "pvc" }} (the claim {{ include "scanent.fullname" . }}-out, which is kept when this release is removed)
+{{- else if eq .Values.output.type "existingClaim" }} (the claim {{ .Values.output.existingClaim }})
+{{- else }} (an emptyDir: gone when the pod ends)
+{{- end }}.
+
+Network.
+{{- if eq .Values.networkPolicy.flavor "none" }}
+No network policy was installed (networkPolicy.flavor: none).
+{{- else if eq .Values.networkPolicy.flavor "cilium" }}
+A CiliumNetworkPolicy limits the scanner to exactly the {{ len .Values.egress.fqdns }} host(s) in egress.fqdns, on TCP 443. It needs Cilium.
+{{- else if .Values.egressProxy.enabled }}
+The scanner can reach only the bundled egress proxy, which forwards to exactly the {{ len .Values.egress.fqdns }} host(s) in egress.fqdns, on port 443.
+{{- else }}
+A NetworkPolicy allows nothing in, and out only DNS and TCP 443 to public addresses{{ if .Values.networkPolicy.proxy.cidr }} (replaced here by your proxy at {{ .Values.networkPolicy.proxy.cidr }}){{ end }}.
+It does not stop a connection to a public address that is not one of the scanner's hosts: a NetworkPolicy matches addresses, not names. For exact hosts set networkPolicy.flavor to cilium or egressProxy.enabled to true.
+{{- end }}
+{{- if ne .Values.networkPolicy.flavor "none" }}
+A policy does nothing on a cluster whose network plugin does not enforce it. The chart's README says how to check.
+{{- end }}

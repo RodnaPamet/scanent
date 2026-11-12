@@ -139,7 +139,8 @@ describe('1. each fixture estate yields its agents, tools, model endpoints and c
                 ['function', 'escalate_ticket', 'code://acme/support/agent.py#L26'],
                 ['builtin', 'TavilySearchResults', 'code://acme/support/agent.py#L35'],
             ],
-            models: [['openai', 'gpt-4o-mini', 'https://llm-gateway.acme.example/v1', 'explicit']],
+            // An endpoint written in code is reported as its origin: the fixture's `/v1` is a path, and a path can hold a key.
+            models: [['openai', 'gpt-4o-mini', 'https://llm-gateway.acme.example', 'explicit']],
             credentials: [
                 ['env://SUPPORT_OPENAI_KEY', 'environment'],
                 ['env://TAVILY_API_KEY', 'provider-default'],
@@ -194,7 +195,7 @@ describe('1. each fixture estate yields its agents, tools, model endpoints and c
             language: 'python',
             discoveredId: 'code:acme/ops/graph.py#oncall_agent',
             tools: [
-                ['mcp', 'tickets:*', 'https://mcp.acme.example/tickets/mcp'],
+                ['mcp', 'tickets:*', 'https://mcp.acme.example'],
                 ['function', 'read_metrics', 'code://acme/ops/graph.py#L17'],
             ],
             models: [['openai', 'gpt-4.1', 'https://api.openai.com/v1', 'provider-default']],
@@ -403,13 +404,63 @@ describe('5. its reports verify under inflect-agent-harness/3, with no change to
         // The model endpoints each agent calls, in /2's `models[]`, by reference.
         const models = Object.fromEntries(body.agents.map((a) => [a.discoveredId.split('#')[1], a.models]));
         expect(models).toEqual({
-            support_executor: [{ endpoint: 'https://llm-gateway.acme.example/v1', model: 'gpt-4o-mini' }],
+            support_executor: [{ endpoint: 'https://llm-gateway.acme.example', model: 'gpt-4o-mini' }],
             researchExecutor: [{ endpoint: 'https://api.anthropic.com', model: 'research-model-v1' }],
             triageAgent: [{ endpoint: 'env://TRIAGE_LLM_URL', model: 'gpt-4o' }],
             ops_graph: [{ endpoint: 'https://api.anthropic.com', model: 'ops-model-v1' }],
             oncall_agent: [{ endpoint: 'https://api.openai.com/v1', model: 'gpt-4.1' }],
         });
         expect(body.unboundCredentials).toEqual([]);
+    });
+
+    it('a key in the path of a model or MCP endpoint URL is in no observation and no report: the origin is what is reported', async () => {
+        // None of these has a prefix a secret scan knows: a gateway token, a webhook's three segments, a GUID key.
+        const paths = ['/v1/tok-9f8e7d6c5b4a39281706', '/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX', '/key/9f8e7d6c-5b4a-3928-1706-aabbccddeeff/v1', '/proxy/4f3c2b1a0d9e8f7a6b5c4d3e2f1a0b9c/v1'];
+        const dir = estate({
+            ...Object.fromEntries(
+                paths.map((path, i) => [
+                    `a${i}/agent.py`,
+                    `from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+GATEWAY = "https://gw.acme.example:8443${path}?sig=also-not-kept#nor-this"
+client = MultiServerMCPClient({"tickets": {"url": "https://mcp.acme.example${path}", "transport": "streamable_http"}})
+agent_${i} = create_react_agent(ChatOpenAI(model="gpt-4o", base_url=GATEWAY), client.get_tools())
+`,
+                ]),
+            ),
+            'js/agent.ts': `import { query } from "@anthropic-ai/claude-agent-sdk";
+export const run = query({ prompt: "x", options: { mcpServers: { crm: { type: "http", url: "https://crm.acme.example${paths[0]}" } }, env: { ANTHROPIC_BASE_URL: "https://user:pw@gw.acme.example${paths[1]}" } } });
+`,
+        });
+        const source = langchainCodeSource({ roots: [{ label: 'acme', path: dir }] });
+        const result = await read(source);
+        expect(result.observations.length).toBe(paths.length + 1);
+        const logged: string[] = [];
+        const { raw, body } = await runScan({
+            config: parseScannerConfig({ estate: 'acme-code', scanner: { agentId: 'agt', signingKeyEnv: 'K' }, schedule: { everyHours: 24 }, sources: [{ kind: 'code', product: 'langchain', roots: [{ label: 'acme', path: dir }] }], outputs: [{ kind: 'stdout' }] }),
+            env: { K: generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }).toString() },
+            log: jsonLineLog((line) => logged.push(line)),
+            fetchImpl: async () => {
+                throw new Error('the code source makes no request');
+            },
+        });
+        const everything = `${JSON.stringify(result)}\n${raw}\n${logged.join('\n')}`;
+        // Each agent's model and MCP server are still found, at their origins.
+        const endpoints = body.agents.flatMap((a) => (a.models ?? []).map((m) => m.endpoint));
+        expect(endpoints.filter((e) => e === 'https://gw.acme.example:8443')).toHaveLength(paths.length);
+        expect(endpoints).toContain('https://gw.acme.example');
+        const servers = body.agents.flatMap((a) => a.tools.filter((t) => t.name.endsWith(':*')).map((t) => t.server));
+        expect(servers.filter((s) => s === 'https://mcp.acme.example')).toHaveLength(paths.length);
+        expect(servers).toContain('https://crm.acme.example');
+        // In the signed report: no path segment, query, fragment or user information of any of them.
+        for (const path of paths) for (const segment of path.split('/').filter((p) => p.length > 2)) expect(raw).not.toContain(segment);
+        for (const part of ['also-not-kept', 'nor-this', 'user:pw', 'mcpEndpoint']) expect(raw).not.toContain(part);
+        // In memory the MCP server's whole endpoint is kept for one comparison (below), and nothing else is.
+        const kept = everything.split(paths[0].split('/').pop()!).length - 1;
+        expect(kept).toBe(2);
+        expect(JSON.stringify(result.observations.map((o) => ({ ...o, tools: o.tools?.map((t) => t.tool) })))).not.toContain(paths[0].split('/').pop()!);
     });
 
     it('a model whose endpoint cannot be known statically is reported where it is configured, never dropped', async () => {

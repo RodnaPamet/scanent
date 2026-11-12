@@ -1,5 +1,5 @@
 /**
- * THE JAVASCRIPT AND TYPESCRIPT READER (#3737) — text in, `FileFacts` out.
+ * THE JAVASCRIPT AND TYPESCRIPT READER — text in, `FileFacts` out.
  *
  * TypeScript's own parser (`ts.createSourceFile`), which the repository already
  * depends on, builds a SYNTAX tree: no program, no type checker, no module
@@ -40,8 +40,27 @@ function scriptKindOf(fileName: string): ts.ScriptKind {
     return ts.ScriptKind.JS;
 }
 
-/** Read one file's imports, bindings, tool declarations and calls. Throws `JavaScriptReadError`. */
+/**
+ * Read one file's imports, bindings, tool declarations and calls. Throws
+ * `JavaScriptReadError`, and nothing else.
+ *
+ * TypeScript's parser is recursive and asserts its own invariants: text nested
+ * deeply enough overflows the stack inside it (`RangeError`), and some
+ * malformed text trips an internal assertion (`Debug Failure`). Neither is a
+ * fault the caller can act on, and either would otherwise end the whole
+ * source's read and lose every agent found in the other files. Both are the
+ * file not parsing, so both are refused as that.
+ */
 export function readJavaScript(fileName: string, src: string): FileFacts {
+    try {
+        return readJavaScriptFile(fileName, src);
+    } catch (err) {
+        if (err instanceof JavaScriptReadError) throw err;
+        throw new JavaScriptReadError(1, 'the file could not be parsed');
+    }
+}
+
+function readJavaScriptFile(fileName: string, src: string): FileFacts {
     const sf = ts.createSourceFile(fileName, src, ts.ScriptTarget.Latest, true, scriptKindOf(fileName));
     const diagnostics = (sf as unknown as { parseDiagnostics?: readonly ts.DiagnosticWithLocation[] }).parseDiagnostics ?? [];
     if (diagnostics.length > 0) {

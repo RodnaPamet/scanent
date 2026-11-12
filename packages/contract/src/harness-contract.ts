@@ -1,26 +1,27 @@
 /**
- * The wire contracts `inflect-agent-harness/2` (#3754) and `/3` (#3785), and
- * the refusal of the retired `/1` (#3660, retired by #3686).
+ * The wire contracts `inflect-agent-harness/2` and `/3`, and
+ * the refusal of the retired `/1`.
  *
- * ONE SOURCE OF TRUTH, three readers. `docs/agent-harness-contract.md` is what a
+ * ONE SOURCE OF TRUTH, three readers. `docs/contract.md` is what a
  * scanner is built against, `tests/helpers/agent-harness-fake-scanner.ts` is the
  * executable reference, and these schemas are what the ingest enforces. The suite
- * validates the fake scanner's output against these schemas, so the three cannot
- * drift apart silently. Same arrangement as `src/lib/mcp/client/contract.ts`.
+ * validates the fake scanner's output against these schemas, and holds the
+ * document's limits and lists to these constants, so the three cannot drift
+ * apart silently.
  *
  * ‾‾‾ TWO IDS, AND A RETIRED ONE ‾‾‾
  *
- * `/3` is `/2` plus the `gcp-sa` source kind (#3785, owner decision
- * 2026-10-19), and nothing else: one more member of a closed list, which is why
+ * `/3` is `/2` plus the `gcp-sa` source kind, and nothing else: one more
+ * member of a closed list, which is why
  * it is a new id. Each report is held to the schema of the id it names, so a
  * `/2` report that names `gcp-sa` is refused, as a `/2` verifier would refuse
  * it. The reference scanner speaks `/3`; `/2` stays accepted.
  *
  * `/2` is `/1` plus the `code` source kind, the `UNPARSEABLE` reason, the
  * `unboundCredentials[]` member, and per agent an optional call count on each
- * tool and optional `models[]` endpoints (owner decisions, 2026-10-19). `/1` was
+ * tool and optional `models[]` endpoints. `/1` was
  * accepted beside it while a `/1` scanner could exist, and was retired at the
- * scanner container's release (#3686, owner decision 2026-10-19): a report that
+ * scanner container's release: a report that
  * names it is a `SCHEMA` refusal, and the ingest writes nothing. Scans already
  * stored from `/1` reports still read, because `/2`'s kinds and reasons
  * contain `/1`'s.
@@ -82,10 +83,48 @@ import {
 } from './harness-contract-rules';
 import {
     ALL_HARNESS_CRITERIA,
+    HARNESS_CRITERIA,
+    HARNESS_LEVELS,
     isHarnessCriterionId,
+    shortfallBarFor,
     type CriterionVerdict,
     type HarnessCriterionId,
 } from './harness-ladder';
+
+/**
+ * What a ladder is, as far as a result depends on it: the rungs in order, which
+ * criterion sits on which rung (and in what order, which `blockingNextRung`
+ * follows), and the report-only bar for each reach. Display names are not part
+ * of it: renaming a rung changes no level.
+ */
+export function ladderVersionOf(ladder: {
+    readonly levels: readonly string[];
+    readonly criteria: Readonly<Record<string, readonly string[]>>;
+    readonly bars: Readonly<Record<'read-only' | 'write-or-external' | 'unknown', string>>;
+}): string {
+    const material = { levels: ladder.levels, criteria: ladder.criteria, bars: ladder.bars };
+    return `sha256:${createHash('sha256').update(canonicalJson(material), 'utf8').digest('hex')}`;
+}
+
+/**
+ * THE LADDER'S VERSION: a hash of the ladder this module was built with. Two
+ * results are comparable level for level only when they carry the same one.
+ * Derived, never typed in: a change to the ladder changes it, and the test that
+ * pins its value makes that change a reviewed diff in two places.
+ *
+ * It is NOT a member of any signed report body. Every accepted schema is
+ * strict, so a body carrying it would be refused by every existing verifier; a
+ * report that names its ladder is a new contract id.
+ */
+export const LADDER_VERSION: string = ladderVersionOf({
+    levels: HARNESS_LEVELS,
+    criteria: HARNESS_CRITERIA,
+    bars: {
+        'read-only': shortfallBarFor('read-only'),
+        'write-or-external': shortfallBarFor('write-or-external'),
+        unknown: shortfallBarFor('unknown'),
+    },
+});
 /**
  * Two view types the stored-row readers below return. The originating
  * application declares them in its read model; these are structurally
@@ -252,8 +291,8 @@ const toolMembers = {
 };
 
 /**
- * A tool: `/1`'s members, plus `/2`'s optional call count over a window (owner
- * decision, 2026-10-19). A count is a number of calls and nothing of what was
+ * A tool: `/1`'s members, plus `/2`'s optional call count over a window. A
+ * count is a number of calls and nothing of what was
  * called with — no input, no output, no prompt. It means something only beside
  * its window, so the two come together or not at all.
  */
@@ -287,7 +326,7 @@ const endpointRef = z
     .refine((v) => !looksLikeSecret(v), 'an endpoint reference must not contain a secret-shaped value');
 
 /**
- * `/2`: a model endpoint the agent calls (owner decision, 2026-10-19). A
+ * `/2`: a model endpoint the agent calls. A
  * reference and a model id — never a prompt, an input or an output.
  */
 const ModelEndpointSchema = z
@@ -585,7 +624,7 @@ export function parseStoredHarnessTools(json: unknown): StoredHarnessTool[] | nu
 }
 
 /**
- * One scan item's stored model endpoints (#3759), re-validated against `/2`'s
+ * One scan item's stored model endpoints, re-validated against `/2`'s
  * strict model schema: the endpoint's reference shape, no userinfo, no
  * secret's shape, no member the contract does not define, and at most
  * `MAX_MODELS_PER_AGENT`.
@@ -603,16 +642,18 @@ export function parseStoredHarnessModels(json: unknown): HarnessAgentModels {
     return { state: 'REPORTED', endpoints: parsed.data.map((m) => ({ endpoint: m.endpoint, model: m.model })) };
 }
 
-/** Why a report was refused. Stable codes: the ingest records them. */
-export type HarnessRefusal =
-    | 'TOO_LARGE'
-    | 'NOT_JSON'
-    | 'NOT_AN_OBJECT'
-    | 'UNSIGNED'
-    | 'MALFORMED_SIGNATURE'
-    | 'UNTRUSTED_SIGNER'
-    | 'BAD_SIGNATURE'
-    | 'SCHEMA';
+/** Why a report was refused, in the order the checks run. Stable codes: the ingest records them. */
+export const HARNESS_REFUSALS = [
+    'TOO_LARGE',
+    'NOT_JSON',
+    'NOT_AN_OBJECT',
+    'UNSIGNED',
+    'MALFORMED_SIGNATURE',
+    'UNTRUSTED_SIGNER',
+    'BAD_SIGNATURE',
+    'SCHEMA',
+] as const;
+export type HarnessRefusal = (typeof HARNESS_REFUSALS)[number];
 
 export type HarnessParseResult =
     | { ok: true; body: HarnessReportBody; signerKey: string; complete: boolean }

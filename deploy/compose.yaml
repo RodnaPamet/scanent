@@ -1,0 +1,69 @@
+# scanent on a schedule, with Docker Compose (or `podman compose`).
+#
+# Copy this file beside the directory `scanent init` wrote (./scanent, holding
+# config.json, scanent.env and signing-key.pem), fill in scanent.env, then:
+#
+#   SCANENT_VERSION=<version> SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)" docker compose up -d
+#
+# Relative paths below are taken from this file's own directory.
+#
+# The service runs the image's default command, `schedule`: one scan now, then
+# one every `schedule.everyHours` of the configuration. Each run is written
+# under ./scanent-out/runs/<scanId>/.
+#
+#   SCANENT_VERSION   required. The image tag: a version, never `latest`.
+#   SCANENT_DIR       the directory `init` wrote. Default: ./scanent
+#   SCANENT_OUT       where runs are written. Default: ./scanent-out. Create it
+#                     first, owned by SCANENT_UID, mode 0700: the runs are evidence.
+#   SCANENT_UID/GID   the user the scanner runs as. Default 1000:1000. Set them
+#                     to your own (`id -u`, `id -g`) so the files in SCANENT_DIR,
+#                     which `init` wrote 0600, can be read, and the runs are yours.
+#
+# What the service is given, and nothing else: no published port, no added
+# capability, no host network, no Docker socket, a read-only root filesystem.
+# It writes only under /out.
+name: scanent
+
+services:
+  scanent:
+    image: ghcr.io/rodnapamet/scanent:${SCANENT_VERSION:?set SCANENT_VERSION to the image version}
+    user: "${SCANENT_UID:-1000}:${SCANENT_GID:-1000}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    init: false
+    pids_limit: 256
+    mem_limit: 1g
+    # NAMES and values of the credentials the configuration names. A value is
+    # taken as written: no quotes.
+    env_file:
+      - ${SCANENT_DIR:-./scanent}/scanent.env
+    environment:
+      # The signing key reaches the scanner as a file, never as a value. This
+      # line wins over the same name in scanent.env.
+      SCANNER_SIGNING_KEY_FILE: /run/secrets/scanner_signing_key
+      # A second credential kept in a file, the same way (see `secrets` below):
+      # GCP_SCANNER_KEY_FILE: /run/secrets/gcp_scanner_key
+      #
+      # Behind a proxy, or a proxy that inspects TLS:
+      # HTTPS_PROXY: http://proxy.internal.example:3128
+      # NO_PROXY: mcp.internal.example
+      # NODE_EXTRA_CA_CERTS: /etc/scanent/ca.pem
+    secrets:
+      - scanner_signing_key
+      # - gcp_scanner_key
+    volumes:
+      - ${SCANENT_DIR:-./scanent}:/etc/scanent:ro
+      - ${SCANENT_OUT:-./scanent-out}:/out
+      # A `code` source reads directories. Mount each root read-only at the
+      # path the configuration names:
+      # - /srv/agents:/estate:ro
+
+# A Compose file secret is a bind mount of the file: it keeps the file's own
+# owner and mode, so it must be readable by SCANENT_UID.
+secrets:
+  scanner_signing_key:
+    file: ${SCANENT_DIR:-./scanent}/signing-key.pem
+  # gcp_scanner_key:
+  #   file: ${SCANENT_DIR:-./scanent}/gcp-key.json

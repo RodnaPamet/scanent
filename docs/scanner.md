@@ -102,8 +102,12 @@ configured token missing from the environment leaves that server unread
 (`AUTH_FAILED`), and the other servers are still read.
 
 Each server is a host the customer names, so it is checked as the self-hosted
-LangSmith is: at configuration, and again before every request, with an optional
-`egressPrivateCidrAllowlist` per server. The source is complete only when every
+LangSmith is: at configuration, and again before every request (the handshake's
+second request included), with an optional `egressPrivateCidrAllowlist` per
+server. The name is resolved by this machine for the check and again by the
+request, so a resolver that changes its answer between the two is not caught;
+behind the bundled egress proxy it is, because the proxy resolves once and
+dials the address it checked. The source is complete only when every
 server was read to the end of its listing.
 
 ### The register
@@ -388,9 +392,16 @@ reader cannot see — a tool list returned by a function, a model passed in as a
 parameter, `**kwargs` — makes the source `INCOMPLETE` `UNPARSEABLE`, and the
 agent is still reported with what resolved.
 
-Each agent's model endpoints go into `/2`'s optional `models[]`: the https URL,
-the `env://` reference it is read from, or, when neither is knowable, the
-`code://` locator of the model's construction. The ingest verifies them and
+Each agent's model endpoints go into `/2`'s optional `models[]`: the endpoint's
+origin, the `env://` reference it is read from, or, when neither is knowable, the
+`code://` locator of the model's construction. A URL written in code, for a
+model or for an MCP server, is reported as its origin only: scheme, host and
+port (`https://llm-gateway.acme.example`, not `…/v1`). The path, the query, the
+fragment and any user information are left out, because a gateway or webhook
+URL often carries its key as a path segment and such a segment has no shape a
+secret scan can know. An MCP server in code is still matched to a server the
+`mcp` source read by its whole URL; that URL is held in memory for the
+comparison and is not reported. The ingest verifies them and
 keeps them on the agent's scan item, and the harness matrix lists them.
 
 **Unbound credentials.** `/2`'s `unboundCredentials[]` lists credential
@@ -434,15 +445,27 @@ What the sources never do:
   other source, because a label in the estate being scanned is something its
   administrator can write.
 - **Leave their origin.** Every request is https, on the configured host, with
-  redirects refused; a next-page link anywhere else ends the read as
-  `PAGINATION_TORN`. Each source has a time box and a byte budget.
+  redirects refused; a next-page link to another host, or to another path on
+  the same host, ends the read as `PAGINATION_TORN`. Each source has a time box
+  and a byte budget.
 - **Run what they read.** The `code` source parses text. It follows no symbolic
   link, caps each file at 1 MiB and the whole read at 20,000 files and 128 MiB,
-  and stops at the scan's deadline, reporting each as its reason.
+  and stops at the scan's deadline, reporting each as its reason. A file is
+  opened without following a link and without blocking, and what was opened
+  must be a regular file, so a file swapped for a link or a pipe after it was
+  looked at is a location not read, never one followed. A file that does not
+  parse, however it fails, costs that file and no other.
 
 `packages/scanner/src/scanner-surface.ts` declares every request the scanner can make, and its
 hash is the report's `scan.scanner.manifestHash`. The tests hold every request
-the HTTP fakes see to that declaration.
+the HTTP fakes see to that declaration, and one test
+(`tests/read-only-proof.test.ts`) runs every source kind and every preflight
+against a recorder and fails on any request the declaration does not name, and
+on any declared request that nothing makes.
+[network-and-permissions.md](network-and-permissions.md) is that declaration
+rendered for a reviewer: every host, method and path, what is kept from each,
+and what is never requested. The report itself is specified in
+[contract.md](contract.md).
 
 ## What it may import
 
@@ -579,8 +602,18 @@ its three properties:
 - It is the estate's own file. No tenant column, form or route reaches it.
 - Metadata, loopback and link-local stay refused inside it: `127.0.0.0/8`,
   `0.0.0.0/8`, `169.254.0.0/16`, `::1`, `::` and `fe80::/10` are checked before
-  the allowlist, so even `0.0.0.0/0` cannot reach `169.254.169.254`. The blocked
-  names stay refused too.
+  the allowlist, so even `0.0.0.0/0` cannot reach `169.254.169.254`. So are the
+  instance-metadata addresses that sit outside link-local, inside ranges you
+  might list whole: `fd00:ec2::254` (AWS over IPv6), `100.100.100.200`
+  (Alibaba Cloud) and `192.0.0.192` (Oracle Cloud). The blocked names stay
+  refused too. If your provider's metadata address is neither link-local nor
+  one of those, keep it out of the ranges you list.
+- Without an allowlist, an address that is not on the public internet is
+  refused whether or not it is a private range: also `192.0.0.0/24`,
+  `198.18.0.0/15`, multicast, `240.0.0.0/4`, site-local `fec0::/10`, Teredo
+  `2001::/32` and local-use NAT64 `64:ff9b:1::/48`. An IPv4 address written
+  inside an IPv6 one (v4-mapped, v4-compatible, v4-translated, NAT64, 6to4) is
+  judged as the IPv4 address too.
 - It widens which addresses are acceptable and removes no other check. The host
   is still resolved before every request with every address tested, so a name
   that resolves outside the listed ranges sends nothing.
@@ -588,6 +621,122 @@ its three properties:
 With an allowlist, an internal name such as `langsmith.corp.internal` is
 accepted, because the question becomes the address rather than the name. Each
 entry must be a CIDR, or the configuration is refused.
+
+### Outputs
+
+Where one run's results go. Optional:
+
+```json
+"outputs": [
+  { "kind": "file", "dir": "/out", "retainRuns": 90 },
+  { "kind": "stdout" },
+  { "kind": "inflect" }
+]
+```
+
+| Kind | Fields | Effect |
+|---|---|---|
+| `file` | `dir`, an absolute path; `retainRuns`, optional, 1 to 10,000 | Writes the run's files under `dir` (see "Local results") |
+| `stdout` | none | Writes the signed report and a newline to stdout |
+| `inflect` | none | Posts the signed report to the `inflect` block's tenant |
+
+One to three entries, each kind at most once. Without `outputs`, a
+configuration that has an `inflect` block posts to it, which is what every
+configuration written before outputs existed means.
+
+The `inflect` block is optional. It is required, and the configuration is
+refused without it, when the `inflect` output is configured, when the
+`inflect-register` source is configured, or when `egress` is set. The ingest
+key is needed, before the scan starts, only when the `inflect` output is in
+effect for the run.
+
+Two flags adjust the outputs for one call:
+
+- `--out <dir>` (an absolute path; `--out=<dir>` is the same) sets the file
+  output's directory, adding a file output if the configuration has none.
+- `--dry-run` removes the `inflect` output and adds `stdout`: post nothing,
+  print the report. With `--out` it writes the files as well.
+
+An argument `scan`, `schedule` or `public-key` does not know is refused with
+exit code 2 before the configuration is read, so a mistyped flag never runs a
+scan that delivers somewhere other than where it was told. `--help` or `-h`
+after any of the three prints the commands.
+
+A call left with no output is refused before anything is read: exit code 2
+and `nowhere to deliver: configure outputs, or pass --out or --dry-run`.
+
+Delivery order is file, stdout, inflect, so what stays in the estate is
+written before anything leaves it. Each output is attempted whatever happened
+to the others, a failure is one `output failed` log line naming the output,
+and `scan` exits 0 only when every output was delivered.
+
+### The inventory
+
+Optional. An estate with no register has nothing that says an agent is known or
+who owns it, so every agent the scanner finds would read as a shadow agent. The
+inventory is the operator's own list:
+
+```json
+"inventory": { "path": "/etc/scanent/inventory.json" }
+```
+
+The path is absolute, and the file is a `.json` or a `.csv` (told apart by the
+extension), at most 5 MiB and 5,000 rows. JSON:
+
+```json
+{
+  "inventory": "scanent-inventory/1",
+  "agents": [
+    {
+      "discoveredId": "entra:sp:00000000-0000-0000-0000-000000000000",
+      "name": "Invoice triage",
+      "owner": "finance-operations",
+      "purpose": "Sorts incoming invoices into queues",
+      "axes": { "autonomy": "human-approves", "dataClass": "confidential", "reach": "write" },
+      "riskTier": "MEDIUM",
+      "riskAssessedOn": "2026-09-30"
+    }
+  ]
+}
+```
+
+CSV is RFC 4180, UTF-8, with a header row holding
+`discoveredId,name,owner,purpose` and any of
+`autonomy,dataClass,reach,riskTier,riskAssessedOn`. An empty optional cell is an
+absent value.
+
+| Field | Required | Rule |
+|---|---|---|
+| `discoveredId` | yes | The id the scan reports, 1 to 256 characters, once in the file |
+| `name`, `owner` | yes | 1 to 256 characters, no control character |
+| `purpose` | yes | 1 to 512 characters, no control character |
+| `axes` | no | All three or none. `autonomy`: `human-approves`, `human-reviews`, `autonomous`. `dataClass`: `public`, `internal`, `confidential`, `restricted`. `reach`: `read-only`, `write`, `external` |
+| `riskTier` | no | `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`, with `riskAssessedOn` or not at all |
+| `riskAssessedOn` | no | `YYYY-MM-DD` |
+
+What holds it:
+
+- **It matches by exact `discoveredId` and nothing else.** No case folding, no
+  trimming, no prefix, no name. A row that matches no agent in the scan is
+  listed as declared and not found; it is not a finding.
+- **Everything it supplies is declared by the operator, never observed.** Local
+  results label it so, and keep a level that rests on a declaration apart from
+  the level the sources observed alone.
+- **It evidences the four H1 criteria and nothing above H1.** A matched row
+  declares the agent registered and owned; its axes when all three are given;
+  and its risk tier as fresh when the assessment is dated on or before the scan
+  and at most 365 days before it. A declared "met" never outvotes a source that
+  observed NOT MET.
+- **It never enters the signed report** and is never posted.
+- **A file that is missing, too large, malformed or refused is an error, never
+  an empty inventory.** Scoring against half an inventory would report known
+  agents as shadow agents. A refusal names the row and the field, never the
+  value, and a secret-shaped value anywhere in the file is refused by path.
+
+The inventory is read once per run, before any source, whenever the
+configuration names one. A file that is missing or refused stops the run:
+scoring against half an inventory would report known agents as shadow agents.
+It is used by the file output's local results (below) and by nothing else.
 
 ## Running
 
@@ -597,8 +746,25 @@ From a checkout, after `npm ci && npm run build`:
 node packages/scanner/dist/cli.js public-key --config estate.json
 node packages/scanner/dist/cli.js scan --config estate.json --dry-run
 node packages/scanner/dist/cli.js scan --config estate.json
-node packages/scanner/dist/cli.js schedule --config estate.json
+node packages/scanner/dist/cli.js scan --config estate.json --out /var/lib/scanent
+node packages/scanner/dist/cli.js schedule --config estate.json [--out /var/lib/scanent]
+node packages/scanner/dist/cli.js diff <old> <new>
+node packages/scanner/dist/cli.js init [--dir <dir>] [--answers <file>]
+node packages/scanner/dist/cli.js keygen --out <file>
+node packages/scanner/dist/cli.js doctor --config estate.json [--json]
+node packages/scanner/dist/cli.js hosts --config estate.json
+node packages/scanner/dist/cli.js help
 ```
+
+`init`, `keygen`, `doctor` and `hosts` are described under
+[Setting up an estate](#setting-up-an-estate) below.
+
+`scan --strict` changes the exit code and nothing else: a run that was
+delivered exits 3 when a source was `INCOMPLETE` or the scan found no agent,
+so a scheduler can tell a full run from a partial one. Without it a delivered
+run exits 0, complete or not, as it always has; the report and the local
+results say what was incomplete either way. `schedule` does not take the flag,
+because a schedule does not exit.
 
 `@scanent/scanner` declares that file as two commands, `scanent` and its alias
 `aes`; wherever the package is installed they are the same program.
@@ -612,7 +778,630 @@ The log is one JSON line per event on stderr, with kinds and counts only. A
 string with a secret's shape is replaced before it is written.
 
 On `SIGTERM` or `SIGINT` the scanner stops at once. A scan cut short posts
-nothing.
+nothing, and a run that was being written is left under a temporary name that
+no reader takes for a run; the next run after a day removes it.
+
+## Setting up an estate
+
+Three commands take an estate from nothing to a first scan, and none of them
+needs a second tool: `init` writes the files, `doctor` checks them, `scan`
+runs.
+
+### `init`
+
+```
+scanent init [--dir <dir>] [--answers <file>] [--force] [--no-keygen] [--print-access]
+```
+
+`init` writes three files under `<dir>` (default `./scanent`, created with
+mode 0700):
+
+| File | Mode | What it holds |
+|---|---|---|
+| `config.json` | 0600 | The configuration for the sources you chose. It parses under the strict schema, by construction |
+| `scanent.env` | 0600 | One line per credential the configuration names: the NAME and nothing after the `=`. The one value it ever holds is the path of the signing key `init` created |
+| `signing-key.pem` | 0600 | An Ed25519 signing key, unless `--no-keygen` |
+
+It then prints the public half of the key, the read-only access each chosen
+source needs ([access.md](access.md) is the same tables), and the next steps.
+It makes no network request and reads no credential.
+
+**It never asks for a secret value.** No question is about one; where a source
+has a credential, the wizard names the variable it goes in and moves on. Every
+answer is checked for a secret's shape before anything else looks at it: a hit
+is refused, is not stored, written or repeated back, and the question is asked
+again. Three refusals of one question end the wizard with nothing written. A
+terminal has already shown what was typed, which is why the refusal says to
+rotate the credential if it was real.
+
+Two ways to answer:
+
+- **At a terminal.** `init` asks for the estate's name, then whether you have
+  each kind of source and that source's facts (a directory id, an org URL, a
+  repository), then the output directory, the schedule, an optional inventory
+  and whether to post to an Inflect tenant (default: no).
+- **From a file**, `--answers <file>`, for automation. Without it, and when
+  stdin is not a terminal, `init` exits 2 and says so.
+
+The answers file is strict JSON, schema `scanent-init-answers/1`:
+
+```json
+{
+  "answers": "scanent-init-answers/1",
+  "estate": "acme-prod",
+  "everyHours": 24,
+  "outputDir": "/out",
+  "retainRuns": 90,
+  "inventoryPath": "/etc/scanent/inventory.json",
+  "sources": [
+    { "kind": "entra-sp", "directoryId": "<guid>", "clientId": "<guid>" },
+    { "kind": "okta-app", "orgUrl": "https://acme.okta.com" },
+    { "kind": "cicd", "repositories": ["acme/payments-api"] },
+    { "kind": "code", "roots": [{ "label": "support-bot", "path": "/estate/support-bot" }] },
+    { "kind": "mcp", "servers": [{ "label": "crm", "url": "https://mcp.acme.example/crm/mcp", "readToken": true }] }
+  ],
+  "inflect": null
+}
+```
+
+A source is the configuration's source without `product` (each kind has one)
+and without its variable name, which gets the documented default
+(`ENTRA_CLIENT_SECRET`, `OKTA_API_TOKEN`, `AZURE_CLIENT_SECRET`,
+`GITHUB_READ_TOKEN`, `GCP_SCANNER_KEY`, `LANGSMITH_API_KEY`,
+`MCP_<LABEL>_TOKEN`). Its other fields carry the configuration's own names,
+optional ones included, and are held to the configuration's own rules. To
+choose a variable's name, give the configuration's field (`"apiTokenEnv":
+"ACME_OKTA_TOKEN"`). `inflect` is `null`, or `{ "baseUrl", "tenantSlug",
+"agentId", "readRegister" }`; without it the configuration names no tenant and
+writes files only.
+
+What it will not do:
+
+- Replace `config.json` or `scanent.env` without `--force`. Both are looked
+  for before either is written, so a refused run writes nothing.
+- Replace a signing key, with or without `--force`: every earlier report was
+  signed with it. An existing `signing-key.pem` is kept, and `init` says so.
+- Write into a directory that is a symbolic link.
+
+`--print-access` prints the access tables for the chosen sources on stdout and
+writes nothing.
+
+`scanent.env` names the signing key by the path `init` wrote it to. Run
+`doctor` and `scan` where that path is the same: in a container, run `init`
+with the directory mounted where it will be mounted for the scan.
+
+Exit codes: 0 written; 2 a usage error, a refused overwrite, three refusals,
+or no terminal and no `--answers`; 4 the answers file is unreadable, not JSON,
+fails its schema, plans a configuration that is refused, or holds a
+secret-shaped string (named by path, never repeated).
+
+### `keygen`
+
+```
+scanent keygen --out <file>
+```
+
+Creates an Ed25519 signing key in a new file, mode 0600, and prints its raw
+public key in hex on stdout (what `public-key` prints). The private key goes
+to the file and nowhere else. An existing file is refused with exit 2; there
+is no overwrite. `init` calls the same function.
+
+A run with no tenant still signs: the signature is what lets `diff` and a
+later reader show that a report was not altered. The public half needs
+registering only with a tenant.
+
+`openssl genpkey -algorithm ed25519` makes an equally good key. `keygen`
+exists so a first run needs no second tool, and so the key lands in a file
+(`SCANNER_SIGNING_KEY_FILE`), which survives an env file where a PEM's line
+breaks do not.
+
+### `doctor`
+
+```
+scanent doctor --config <file> [--json] [--out <dir>] [--source <kind>]...
+```
+
+`doctor` answers one question, "is this estate ready to be scanned?", by
+trying it: it reads what `scan` would read, with the same credentials, through
+the same wire. Three rules:
+
+- **It writes nothing, anywhere.** No report, no file, no post. It never sends
+  a write to a system to learn whether a write would be allowed. "Writable" for
+  the output directory is read from permissions, and the detail says so.
+- **It adds no request.** Each source's probe is the first, smallest page of
+  the reads that source already makes, so the declared surface and its hash are
+  unchanged, and the tests hold every request `doctor` makes to that surface.
+- **Absence is never a pass.** A check passes only on something observed.
+
+Every check has one of four statuses:
+
+| Status | Meaning |
+|---|---|
+| `PASS` | What the check names was observed |
+| `WARN` | It works, and something should be fixed. A fix is given |
+| `FAIL` | It does not work. A fix is given, and the failure's class decides the exit code |
+| `SKIPPED` | Not checked, and always with the cause: `not applicable` (nothing to check), `blocked` (something before it failed, so this could not be checked; never read it as a pass), or `not observable` (no read the scanner makes can answer it; the detail says what to confirm by hand) |
+
+Each source gets the same six checks:
+
+| Check | Passes when |
+|---|---|
+| `credential.present` | The variable, or its `_FILE`, holds a value |
+| `host.resolves` | The source's hosts resolve. A host you name (a self-hosted LangSmith, an MCP server) must also resolve to an address the scanner may reach, exactly as before each request of a scan. A fixed host behind a proxy is resolved by the proxy and is `not applicable`; so is a host you name when `EGRESS_PROXY_CHECKS_ADDRESSES=1` leaves its check to scanent's own egress proxy |
+| `reachable` | A request was answered. No answer names the host; an untrusted certificate is told apart, with `NODE_EXTRA_CA_CERTS` as the fix |
+| `authenticated` | The token exchange succeeded, or the first read was not refused as unauthenticated |
+| `read.permitted` | Every probe read succeeded. A 403 fails with the grant the source needs; a 429 is `blocked`, to be run again |
+| `write.absent` | A read showed the credential's grant, and it is read-only |
+
+`write.absent` is where honesty costs the most. Only two sources reveal a
+credential's grant through a read the scanner already makes:
+
+| Source | What shows it | Result |
+|---|---|---|
+| `entra-sp` | The access token's `roles` claim lists the application permissions | `PASS` naming the roles when none writes; `WARN` naming each role that does (`ReadWrite`, `Write`, `FullControl`, `Manage`, `AccessAsUser`) |
+| `cicd` | GitHub's `X-OAuth-Scopes` header lists a classic token's scopes | `WARN` for `repo`, `public_repo`, `workflow`, `delete_repo`, `admin:…` or `write:…`; `PASS` naming the scopes otherwise. A fine-grained or installation token gets no such header: `not observable` |
+| `code` | The file permissions of each root | `WARN` when the scanner could write a root (mount it read-only) |
+| every other source | Nothing the scanner reads | `not observable`, with what to confirm in the product's own console |
+
+Okta's administrator role, a Key Vault role assignment and Google's
+`testIamPermissions` would each need a request the scanner does not declare
+(one of them a POST), so `doctor` does not make them and does not guess.
+
+The `inflect` output's key is used only to post, which is a write, so `doctor`
+checks that the key is present and reports whether it may post as `not
+observable`: the first `scan` shows it.
+
+The local checks, under the scope `local`:
+
+| Check | What it looks at |
+|---|---|
+| `config.valid` | The file parses under the strict schema. If it does not, every other check is `blocked` |
+| `config.mode` | The file is not writable by group or others |
+| `signing-key` | The key resolves and is Ed25519 in PKCS#8 PEM; the detail is its public half |
+| `secret-files` | Every `_FILE` in use passes the rules below. A file readable by group or others outside `/run/secrets/` and `/var/run/secrets/` is a warning |
+| `output.dir` | The file output's directory (or `--out`) exists, is a directory and not a link, and is writable by this user, or does not exist and can be created. Writable by other users is a warning |
+| `inventory` | The inventory, when one is configured, loads; the detail is its row count |
+| `tls.verification` | `NODE_TLS_REJECT_UNAUTHORIZED` is not `0`. When it is, no source is contacted |
+| `tls.extra-ca` | `NODE_EXTRA_CA_CERTS`, when set, names a readable file holding a certificate |
+| `proxy` | `HTTPS_PROXY`, when set, is a URL, and `NODE_USE_ENV_PROXY=1` on a Node that honours it. Otherwise requests would not use the proxy, which is a failure. The detail is the proxy's host and port, never its userinfo |
+| `proxy.customer-hosts` | A host you name is not reached through the proxy (see below) |
+| `clock` | The largest difference between this machine's clock and the `Date` header of the probe responses: under 60 seconds passes, up to 300 warns, more fails. No header seen is `not observable` |
+| `egress` | The egress proof, when the configuration has an `egress` block |
+
+`--source <kind>` limits the source checks to the kinds named, and may repeat;
+the local checks always run. `--out <dir>` checks that directory in place of
+the configuration's file output.
+
+The default output is a table on stdout, with a last line that counts each
+status and says how many checks were not checked and why. It says "all checks
+passed" only when every check did. `--json` prints one document instead:
+
+```json
+{
+  "doctor": "scanent-doctor/1",
+  "estate": "acme-prod",
+  "at": "2026-11-12T09:00:00.000Z",
+  "scanner": { "version": "0.12.0", "manifestHash": "sha256:…" },
+  "ready": false,
+  "counts": { "PASS": 14, "WARN": 2, "FAIL": 0, "SKIPPED": 5 },
+  "exitCode": 3,
+  "checks": [{ "scope": "local", "id": "config.valid", "status": "PASS", "detail": "9 sources" }]
+}
+```
+
+No detail or fix holds a credential, a response body or a URL: they are built
+from fixed sentences, the configuration's own names, status codes, counts and
+role or scope names.
+
+`doctor` exits by the first row that applies:
+
+| Code | When |
+|---|---|
+| 2 | A usage error |
+| 4 | The configuration could not be read or parsed, or any other configuration failure |
+| 5 | A credential is missing or was refused |
+| 6 | A host could not be resolved or reached |
+| 3 | Nothing failed, and there is a warning or a blocked check |
+| 0 | Every check passed, or was `not applicable` or `not observable` |
+
+`not observable` does not change the exit code, because no rerun can turn it
+into a pass. It is always shown and always counted as not checked.
+
+### `hosts`
+
+```
+scanent hosts --config <file> [--format lines|json|egress-allow]
+```
+
+Prints the hosts the configuration makes the scanner reach, each on port 443.
+It is offline: it needs no credential and makes no request. The list is
+derived from the same constants the declared surface is built from, and a test
+holds it equal to the hosts a full scan contacts.
+
+| Source | Hosts |
+|---|---|
+| `entra-sp` | `login.microsoftonline.com`, `graph.microsoft.com` |
+| `vault` | `login.microsoftonline.com`, each vault's host |
+| `okta-app` | The org's host |
+| `cicd` | `api.github.com` |
+| `gcp-sa` | `oauth2.googleapis.com`, `iam.googleapis.com` |
+| `runtime` | `api.smith.langchain.com` or `eu.api.smith.langchain.com`, or the self-hosted host |
+| `mcp` | Each server's host |
+| `inflect-register`, and the `inflect` output | The tenant's host |
+| `code` | None |
+
+`lines` (the default) prints `host:443`, sorted, one per line. `egress-allow`
+prints the comma-separated value the bundled proxy's `EGRESS_ALLOW` takes.
+`json` prints each entry with its source and purpose.
+
+### `support-bundle`
+
+```bash
+scanent support-bundle --config <file> [--out <file>] [--runs <dir>] [--doctor] [--include-identifiers]
+```
+
+One `scanent-support/1` document for whoever helps with a deployment: the
+versions, the shape of the configuration, which credential variables are set
+(never a value), and how the last run went. Hosts, labels, paths and agent ids
+are replaced by tokens unless `--include-identifiers` is given. Without
+`--doctor` it resolves no credential, opens no secret file and makes no
+request; with `--doctor` it runs the preflight, which resolves and uses every
+credential as `scanent doctor` does. No credential value is written either
+way. Exit 0 when the document
+was written, also when the configuration could not be read (the document then
+says why); 1 when it was refused for holding a secret's shape or could not be
+written; 2 for wrong arguments or an existing `--out` file.
+[operations.md](operations.md#asking-for-help-the-support-bundle) describes
+every member.
+
+## Secrets from files
+
+For each variable the configuration names, and for no other, `<NAME>_FILE`
+may name a file holding the value instead:
+
+| `NAME` | `NAME_FILE` | Result |
+|---|---|---|
+| set | unset | The variable's value |
+| unset or empty | set | The file's content |
+| set | set | Refused. A precedence rule would silently ignore one of two credentials, and the one ignored may be the one just rotated |
+| unset or empty | unset | Absent: a source reports `AUTH_FAILED`, and a missing signing key stops the run |
+
+The file's path is absolute. The file is a regular file (a link to one is
+followed, as a Kubernetes secret is one), at most 64 KiB, UTF-8 text, and not
+writable by other users: a world-writable file would let any local user
+replace the signing key. One trailing line break is removed. A world-readable
+file is accepted, because Docker mounts a secret 0444 and Kubernetes 0644
+inside a mount only that container sees; `doctor` warns about one outside
+such a mount.
+
+A refusal names the variable and a reason code (`BOTH_SET`, `FILE_PATH`,
+`NOT_A_FILE`, `TOO_LARGE`, `WORLD_WRITABLE`, `EMPTY`, `NOT_TEXT`,
+`UNREADABLE`), never anything of the file's content, and the command exits 4.
+Files are read once, at start: under `schedule`, a rotated file takes effect
+at the next start.
+
+Use the file form for the signing key and a Google key file. Both have line
+breaks, which an env file cannot carry.
+
+## Proxy and certificate authority
+
+**Proxy.** The scanner's requests are Node's own `fetch`, which honours
+`HTTPS_PROXY` and `NO_PROXY` when `NODE_USE_ENV_PROXY=1` (Node 24, and 22.21
+or later). The container image sets that variable; with no proxy variable it
+changes nothing. From source, set it yourself: `doctor` fails the `proxy`
+check when `HTTPS_PROXY` is set without it, because the requests would
+silently go direct. scanent adds no proxy library, and never logs or prints a
+proxy URL, which may carry a password.
+
+`NO_PROXY` follows the rules of the Node that runs, and they are not the same
+in every Node: `fetch` takes them from the undici library inside Node, which
+has changed them twice. Entries are separated by commas or by spaces, and may
+end in `:port`. Three things differ:
+
+| Entry | Node 22, and Node 24 before undici 7.22 | The image's Node 24 (undici 7.22 and later) | undici 8.11 and later (Node 26) |
+|---|---|---|---|
+| `example.com` | that name only | the name and its subdomains | the name and its subdomains |
+| `.example.com` | its subdomains only | the name and its subdomains | the name and its subdomains |
+| `*.example.com` | its subdomains only | the name and its subdomains | its subdomains only |
+| `*` | every host | every host, but only when it is the whole value | every host |
+
+`node -p process.versions.undici` prints the version. `doctor` and the host
+check read the list by the rules of the Node they run on
+(`packages/scanner/src/proxy-env.ts`); a test asks a second Node process which
+hosts its own `fetch` sends to the proxy and holds them to the answer. If both
+`NO_PROXY` and `no_proxy` are set, Node reads the lower-case one, even when it
+is empty.
+
+**The host check and a proxy.** A host you name (a self-hosted LangSmith, an
+MCP server) is resolved and checked on this machine before every request,
+proxied or not. Through a proxy that check is about this machine's answer, not
+about the connection the proxy makes: it is weaker there, and `scan` logs one
+`customer host reached through a proxy` warning per such host. Three
+consequences:
+
+- A host on your own network belongs in `NO_PROXY`. It is then reached
+  directly, and the check is about the connection that is made.
+- A host reached through the proxy is still resolved here first. If this
+  machine cannot resolve it, the read is `UNREACHABLE`: add it to `NO_PROXY`,
+  or give this machine a resolver that can. If it does resolve, the check
+  passes on this machine's answer while the proxy resolves again on its own.
+  `doctor` raises that as `proxy.customer-hosts`.
+- scanent's own egress proxy ([The egress proxy](#the-egress-proxy)) makes the
+  check itself, on the address it connects to. Beside that proxy, and only
+  beside it, `EGRESS_PROXY_CHECKS_ADDRESSES=1` tells the scanner to leave the
+  check to the proxy for a host that goes through it: the scanner then does
+  not resolve the name, which is what lets it run on a network with no
+  resolver for outside names. `scan` logs `customer host checked by the egress
+  proxy` once per host. An IP literal is always checked here. Beside any other
+  proxy the variable turns the check off, so nothing but the bundled Compose
+  overlay sets it.
+
+**Certificate authority.** To trust a private authority, for example behind
+TLS inspection, mount its certificate as a PEM file and set
+`NODE_EXTRA_CA_CERTS` to its path. Node reads it at start and adds it to its
+own authorities. That is the whole mechanism: there is no configuration key,
+and nothing turns verification off. `scan` and `schedule` refuse to run with
+`NODE_TLS_REJECT_UNAUTHORIZED=0` (exit 4, before the configuration is read),
+and `doctor` fails `tls.verification` and contacts no source: a scanner that
+carries an estate's read credentials does not send them over an unverified
+connection.
+
+A certificate that is not trusted reaches the report as `UNREACHABLE`, like
+any host that could not be reached. `doctor` tells it apart and names the fix.
+
+## Changes that can stop a setup that scanned before
+
+Two refusals are new with `init` and `doctor`, and both are deliberate:
+
+- **`NAME` and `NAME_FILE` both set is refused** (exit 4). There is no
+  precedence: one of the two would be silently ignored.
+- **`scan` and `schedule` refuse `NODE_TLS_REJECT_UNAUTHORIZED=0`** (exit 4).
+  Add a private certificate authority with `NODE_EXTRA_CA_CERTS` instead.
+
+Three more arrived with the review of that work: a configuration file that is
+not JSON is reported as `(root): the file is not JSON` (exit 4, as before, but
+none of the file is repeated); the bundled egress proxy refuses a name that
+resolves to a private address unless its range is in
+`EGRESS_PRIVATE_CIDR_ALLOWLIST`; and `scan`, run through a proxy, logs a
+warning for each host you named.
+
+The hardening pass added these. Each makes the scanner refuse or report
+something it used to accept:
+
+- **A report over 5 MiB is not signed.** The run stops with
+  `the scanner refused to sign its report: (report): <n> bytes, over the 5242880 a report may be`
+  and writes, prints and posts nothing. Before, such a report was signed and
+  written, and then refused as `TOO_LARGE` by every reader. See "Limits and
+  scale".
+- **A next-page link to another path is refused** (`PAGINATION_TORN`), as a
+  link to another host always was.
+- **An address that carries a private or loopback IPv4 address inside an IPv6
+  one is refused**: `::ffff:a00:7`, and the v4-compatible, NAT64 and 6to4
+  spellings. `localhost.` and `metadata.google.internal.` (with a trailing dot)
+  are refused like the names without it, and `.localhost` is refused whatever
+  the allowlist says.
+- **`doctor` fails a read whose answer is not the listing**
+  (`<what> failed (PAGINATION_TORN)`). Before, any JSON answered with 200
+  passed, and the first scan then reported the source incomplete.
+- **A Google project whose listing carries a member other than its collection
+  and its page token is `PAGINATION_TORN`.** Before, any JSON object read as a
+  project with no service account.
+- **A UTF-16 source file is `UNPARSEABLE`.** Before, it was passed over as
+  holding no agent.
+
+## Limits and scale
+
+What bounds a scan, and what happens at each bound. Nothing is cut in silence:
+a bound that is reached is reported, or the run is refused.
+
+| Bound | Value | When it is reached |
+|---|---|---|
+| One response | 4 MiB | The source is `INCOMPLETE` `BYTE_CAP` |
+| All responses of one source | 64 MiB | The source is `INCOMPLETE` `BYTE_CAP` |
+| Pages of one listing | 1,000 | The source is `INCOMPLETE` `BYTE_CAP` |
+| Time per source | `timeBoxSeconds`, 10 to 3,600 | The source is `INCOMPLETE` `TIME_BOX` |
+| Agents in a report | 5,000 | The report carries the first 5,000 by id, and every source that lost an agent is `INCOMPLETE` `BYTE_CAP` |
+| Credentials, tools, models of one agent | 100, 500, 50 | The same, for the source that lost one |
+| Unbound credentials in a report | 10,000 | The same |
+| The signed report | 5 MiB | The run is refused; nothing is written, printed or posted |
+| A code file, the files of a scan, their bytes | 1 MiB, 20,000, 128 MiB | The `code` source is `INCOMPLETE` `BYTE_CAP` |
+| The work of reading one Python file | 24 parser steps for each token of the file, plus 10,000 | That file is not read, and the `code` source is `INCOMPLETE` `UNPARSEABLE`. An ordinary file costs about one step a token; the limit stops a file written to be read over and over |
+| An input of `scanent diff` | 64 MiB | The diff is refused (exit 2) |
+
+**The agent count and the byte size are different limits, and the bytes are
+reached first on an estate whose agents hold tools.** A report of 5 MiB
+averages 1,048 bytes an agent at 5,000 agents. Measured on generated reports:
+
+| Each agent holds | Bytes an agent | 5,000 agents | Agents that fit in 5 MiB |
+|---|---|---|---|
+| no credential, no tool | 367 | 1.75 MiB | 5,000 |
+| 2 credentials | 708 | 3.38 MiB | 5,000 |
+| 2 credentials, 5 tools | 1,687 | 8.04 MiB | about 3,100 |
+| 2 credentials, 10 tools | 2,667 | 12.72 MiB | about 1,960 |
+| 5 credentials, 20 tools | 5,150 | 24.56 MiB | about 1,010 |
+
+So an estate of several thousand agents that are read through a runtime, an
+MCP server or code (the sources that report tools) cannot be put in one
+report. Scan it as several estates, each with its own configuration, signing
+key and output directory. The byte cap is the contract's
+([contract.md](contract.md)); raising it is a change to the contract, not to
+the scanner.
+
+Measured on a generated estate of 5,000 agents and 10,000 credentials read
+through every source kind, with fakes in place of the network (so this is the
+scanner's own cost): the scan took 0.8 s over 1,645 requests and grew the heap
+by 54 MiB; scoring and rendering took 1.9 s and grew it to 366 MiB, because
+`results.json` (33.7 MiB) holds every criterion of every agent. The signed
+report was 3.8 MiB and `summary.html` 5.3 MiB. Allow 1 GiB of memory for a run
+of that size.
+
+### Long tests and the soak
+
+`npm test` runs every suite with a short budget: 200 cases per property, the
+500-agent scale shape, 200 scheduled scans. Three things run only when asked:
+
+```bash
+npm run test:long                                # SCANENT_LONG=1: 50,000 cases per property, the 5,000-agent shape,
+                                                 # 5,000 scheduled scans, every canary shape in every response string
+FUZZ_SEED=12345 FUZZ_ITERATIONS=20000 npx jest packages/scanner/tests/fuzz-inputs.test.ts
+npm run build && npm run soak -- --hours 72 --every-seconds 60
+```
+
+A property that fails names its seed and iteration, and writes its input to a
+file under the system's temporary directory; `FUZZ_SEED=<seed>` runs it again.
+
+`npm run soak` leaves one scanner process scanning the offline example on a
+short cadence, with the real clock and file system, and writes one JSON line
+per run (duration, resident memory, output size). It exits 1 when a run fails,
+a run is missed, memory grows past `--rss-growth-mib` (64) over its level
+after the warm-up, or the output directory holds more runs than retention
+allows. It reaches no network: every host the scanner reads is fixed by kind,
+or refused when it is loopback, so no network source can be pointed at a local
+stand-in.
+
+## Exit codes
+
+| Code | Name | Meaning |
+|---|---|---|
+| 0 | OK | The command did what it was asked. `scan`: every output delivered. `diff`: no difference. `doctor`: ready |
+| 1 | FAILED | The command failed: an output was not delivered, the ingest refused the report, the signing key is missing, or an error with no class of its own. `diff`: a difference |
+| 2 | USAGE | Wrong arguments, an unknown flag, nowhere to deliver, a refused overwrite. Nothing was read or written |
+| 3 | INCOMPLETE | Nothing failed, and not everything could be established. `scan --strict`: delivered, but a source was `INCOMPLETE` or no agent was found. `diff`: could not compare everything. `doctor`: warnings or blocked checks |
+| 4 | CONFIG | The configuration, the answers file, the inventory or a secret file was refused; `NODE_TLS_REJECT_UNAUTHORIZED=0` |
+| 5 | CREDENTIAL | `doctor`: a credential is missing or refused |
+| 6 | NETWORK | `doctor`: a host could not be resolved or reached |
+| 130 | SIGINT | Interrupted |
+| 143 | SIGTERM | Terminated |
+
+0, 1 and 2 mean what they did before the other codes existed. In particular
+`scan` without `--strict` exits 0 for a delivered run whether or not it was
+complete, and a missing signing key is 1.
+
+## Local results
+
+The file output writes one directory per run and a pointer to the newest:
+
+```
+<dir>/
+  latest.json                    { scanId, dir, asOf, complete, agentCount }
+  runs/
+    <scanId>/
+      report.signed.json         the signed report, byte for byte what would be posted
+      results.json               the local results (schema `scanent-results/1`)
+      agents.csv
+      findings.csv
+      summary.html
+      manifest.json              the names, sizes and SHA-256 of the other five
+```
+
+A run is rendered in memory, checked, written under a temporary name and
+renamed into place, so a run directory is whole or absent. Nothing that exists
+is replaced except `latest.json`, and that by a rename; a run whose directory
+already exists fails. Directories are created `0750` and files `0640`, one
+level at a time; a `runs` that is a link to somewhere else is refused. If the
+run is in place and only `latest.json` cannot be replaced, the run is kept and
+the output fails, saying so: the pointer then names an earlier run. Nothing
+is ever removed unless `retainRuns` is set; then, after a successful write, the
+oldest runs beyond that number are removed, and only a directory whose name is
+a scan id and that holds a `manifest.json`.
+
+Before the first byte is written, the results are walked for any string with a
+secret's shape, and each rendered file is checked again as one text. A hit
+refuses the whole run and names the member or the file, never the value.
+
+What the results say, and do not:
+
+- **A level is stated only for an agent that can be judged.** An agent is
+  judged when every source it was found through was read in full, and so was
+  every source that reports on agents other sources find (today, the
+  register). Otherwise it is `NOT_JUDGED` with the reasons, and has no level,
+  bar or shortfall in any file: the page says "Not judged" and the CSV cells
+  are empty.
+- **What the run could not have evidenced is listed.** Each criterion is
+  marked readable or not: whether any reader this run configured could have
+  reported it met. `coverage.reachableLevel` is the highest level the run could
+  have stated. Without the `inflect-register` source that is H1 at most (with
+  an inventory), because two H2 criteria have no other reader; with it, H3.
+  No reader evidences H4 or H5. So in a run with no register every judged
+  agent is below its bar, and the files say that this is a limit of what was
+  read.
+- **Declared is not observed.** What the inventory supplies is labelled
+  "declared by the operator" in every file, and `observedLevel` is the level
+  with the declarations removed.
+- **An empty scan is a finding** (`EMPTY_SCAN`), never a clean result.
+
+`summary.html` is one self-contained file: no script, no image, no font, no
+link to anywhere, and a Content-Security-Policy that makes the browser hold
+that. Every scanned string is escaped. It prints, and follows the reader's
+light or dark setting.
+
+The page is capped so that it opens on a large estate; the other files are
+never shortened. The matrix shows at most 500 agents, each list of shadow
+agents, orphan credentials and declared agents not found at most 500 rows, and
+the findings at most 2,500. A list over its cap says how many it shows, how
+many the run holds and which file holds the rest (`agents.csv`,
+`findings.csv` or `results.json`). Above its cap the matrix shows the agents
+that most need a reader: those not judged, then those below their bar, then
+the lowest levels. The counts at the top of the page are always over the whole
+run. A run under every cap is rendered exactly as before. Measured on a
+5,000-agent run, the page is 5.4 MiB.
+
+Each agent in `results.json` carries `toolEvidenceSources`: the sources that
+must have been read in full before the agent's report is evidence that it
+holds no unpinned write tool. It is `code` for a tool defined in code and
+`mcp` for a tool an MCP server serves, and it also names where a tool the
+report left out would have been. The member is optional, so a file written by
+an earlier version, which has none, still reads.
+
+`agents.csv` and `findings.csv` are UTF-8 with a byte-order mark, CRLF line
+ends and every field quoted. A cell that a spreadsheet would evaluate as a
+formula (it starts with `=`, `+`, `-`, `@`, a tab or a carriage return) is
+prefixed with a single quote.
+
+The same report, inventory and configuration give the same `results.json`,
+CSV files and page, byte for byte.
+
+### Comparing two runs
+
+```bash
+scanent diff <old> <new> [--format text|json] [--trust-key <hex>] [--allow-different-scanner]
+```
+
+Each argument is a `results.json` or a signed report; which is decided by the
+file's content. A signed report is verified first, against `--trust-key` when
+given and otherwise against the key the report itself carries (which shows it
+was not altered, not who signed it; the output says "signer not pinned"), and
+is then scored with no inventory.
+
+Absence is evidence only on a full read:
+
+| Entry | When |
+|---|---|
+| agent `new` | in the newer run and not the older |
+| agent `gone` | in the older run only, and every source it was found through was read in full by the newer run |
+| agent `not seen` | in the older run only, and one of those sources was incomplete or not listed, or the newer run found no agent at all. Nothing is concluded |
+| level up or down | only when both runs judged the agent |
+| orphan credential or finding `closed` | only on the evidence that would close it: its source read in full, the agent present and judged, the scan complete where the rule needs it. An unpinned write tool closes only when every source in the agent's `toolEvidenceSources`, from both runs, is listed and read in full. A file with no such member (written by an earlier version) is decided from where the agent was found, and the diff carries the warning `TOOL_EVIDENCE_OLDER_RULE`. An empty newer run closes no orphan credential |
+| `no longer reported, not concluded` | everything else that is absent from the newer run |
+
+Refused, with exit code 2: a file that cannot be read or is neither kind, a
+results file that fails its schema, a report that fails verification, a newer
+run that is not later than the older, different ladder versions, and different
+scanners unless `--allow-different-scanner` (and then nothing absent is
+concluded). Two runs that name different estates are compared with the warning
+`ESTATE_DIFFERS`, and nothing absent is concluded either.
+
+The strings in a diff are scanned data. In the text output every control
+character, line separator and bidirectional control is written as a visible
+`\u{..}`, so an id cannot add a line or send the terminal an escape sequence;
+in the JSON output they are `\uXXXX` escapes, and the values are unchanged.
+
+| Exit code | Meaning |
+|---|---|
+| 0 | No difference, and every comparison could be made |
+| 1 | At least one difference |
+| 2 | A usage or input error; nothing was compared |
+| 3 | No difference found, but something could not be compared: an incomplete scan, an agent not judged or not seen |
 
 ## The egress proxy
 
@@ -626,6 +1415,13 @@ proxy, and point the scanner at it with `HTTPS_PROXY` and
 proxy admits the ingest host, refuses the canary, and a direct connection to
 the ingest host fails. The result is the scanner's own `H3.egress_enforced`.
 
+A name on the allowlist is not trusted for where it points. The proxy resolves
+it itself, refuses (403) when any address is loopback, link-local or
+unspecified, or is private and outside `EGRESS_PRIVATE_CIDR_ALLOWLIST`
+(comma-separated CIDRs; an entry that is not a CIDR stops the proxy at start),
+and connects to the address it checked, so the name is not resolved a second
+time. A name that does not resolve is a 502.
+
 ## Container
 
 `deploy/Dockerfile` builds the image, from the repository root:
@@ -635,20 +1431,27 @@ docker build -f deploy/Dockerfile -t scanent .
 ```
 
 The image is built and checked in CI and is not published anywhere. Its build
-stage compiles the two packages with `tsc`; its runtime stage holds the
-compiled JavaScript, the two package manifests and the production dependencies
+stage compiles the packages with `tsc`; its runtime stage holds the
+compiled JavaScript, the package manifests and the production dependencies
 (`zod`, `js-yaml` with `argparse`, and `typescript`, whose parser the `code`
 source reads JavaScript and TypeScript with). It holds no TypeScript source, no
-compiler step at start and no package manager: `npm`, `npx`, `corepack` and
-`yarn` are removed. The base image is `node:24-alpine`, pinned by digest, so
-the image does contain a shell (BusyBox); starting the scanner does not use it.
+compiler step at start, no package manager and no shell. The runtime base is
+`gcr.io/distroless/nodejs24-debian13`, pinned by digest: the Node binary, the
+C library, the CA bundle and the time-zone data. Nothing can be run inside the
+image except `node`, so a check of a running container uses `node -e`, and
+`docker exec <container> sh` does not work.
 
-- User: `node` (uid 1000). Nothing under `/app` is writable by it.
+- User: uid 1000, gid 1000, by number. Nothing under `/app` is writable by it.
 - Entrypoint: `node /app/packages/scanner/dist/cli.js`, in exec form, so `node`
   is PID 1 and receives the signal `docker stop` sends.
 - Default command: `schedule --config /etc/scanent/config.json`.
-- The scanner writes no file. Run it with a read-only root filesystem, every
-  capability dropped and no privilege gain:
+- The scanner writes only under the file output's directory. Run it with a
+  read-only root filesystem, every capability dropped and no privilege gain,
+  and mount that directory as the one writable volume (`-v <host dir>:/out`,
+  writable by the user the container runs as: uid 1000, or the one given with
+  `--user`) when the file output is used. Keep that directory private to its
+  owner: the runs are evidence, and a directory every local user can write
+  lets any of them replace a run or the pointer:
 
 ```bash
 docker run --rm \
@@ -660,12 +1463,26 @@ docker run --rm \
 
 Mount the configuration directory read-only, and each `code` root read-only at
 the path the configuration names. Secrets are passed as environment variables
-whose names the configuration gives; none is in the image.
+whose names the configuration gives, or as mounted files named by
+`<NAME>_FILE` ([Secrets from files](#secrets-from-files)); none is in the
+image. The image sets `NODE_USE_ENV_PROXY=1`, so `HTTPS_PROXY` and `NO_PROXY`
+take effect when they are set
+([Proxy and certificate authority](#proxy-and-certificate-authority)).
 
 `deploy/smoke.sh <image>` is the image's smoke test. It builds nothing. It
 runs the image with those flags and no network, and checks the user, the
 absence of package managers and TypeScript source, `public-key`, a dry-run
 scan of a two-agent estate verified inside the image through the image's own
-contract module (`deploy/smoke-verify.js`), and that a scan with nowhere to
-post exits non-zero. CI runs it, followed by a Trivy scan that fails on a
-fixed CRITICAL or HIGH vulnerability.
+contract module (`deploy/smoke-verify.js`), that a scan with nowhere to
+post exits non-zero, and that `scan --dry-run --out /out` on the read-only
+root with one writable mount writes the six files of a run and that a second
+run leaves the first as it was. It then runs as the invoking user (`--user`,
+with `--userns=keep-id` beside it when `CONTAINER_RUNTIME=podman`) into an output
+directory of mode 0700 and reads the run back without the container, gives the
+signing key as a mounted file, runs `init --answers` and `doctor` on what it
+wrote, and `hosts` on a code-only configuration. CI runs it, followed by a
+Trivy scan that fails on a fixed CRITICAL or HIGH vulnerability.
+
+Compose, the Helm chart and the air-gapped bundle are described in
+[deployment.md](deployment.md); a first run at a site is
+[quick-start.md](quick-start.md).
