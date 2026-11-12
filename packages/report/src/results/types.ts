@@ -77,6 +77,29 @@ export interface ScoreInput {
         readonly configuredSources: readonly HarnessSourceKind[];
     };
     readonly meta: ScoreMeta;
+    /**
+     * What the run's own sources said about a read that stopped, beyond the
+     * reason the report carries. Absent when the report is scored without the
+     * run that made it (`diff`, a report from elsewhere).
+     */
+    readonly sourceNotes?: readonly SourceNote[];
+}
+
+/** One place a source did not read, as the operator would look for it. */
+export interface NotReadPlace {
+    readonly where: string;
+    /** The contract's reason for this place. */
+    readonly reason: string;
+}
+
+/** A source kind's own account of a read that stopped. */
+export interface SourceNote {
+    readonly kind: string;
+    /** Fixed words from the scanner; null when the source gave none. */
+    readonly detail: string | null;
+    /** The first places not read; `notReadTotal` counts them all. */
+    readonly notRead: readonly NotReadPlace[];
+    readonly notReadTotal: number;
 }
 
 /** Where an agent's tools are evidenced: a definition in code, or an MCP server's listing. */
@@ -95,6 +118,15 @@ export interface LocalSourceResult {
     readonly rows: number;
     /** Agents discovered via this kind. */
     readonly agents: number;
+    /**
+     * Why the read stopped, in the scanner's fixed words. Present only for an
+     * INCOMPLETE source of a run that scored its own scan.
+     */
+    readonly detail?: string;
+    /** The first places that were not read, where the source can name them. */
+    readonly notRead?: readonly NotReadPlace[];
+    /** Every place not read, counted; at least `notRead.length`. */
+    readonly notReadTotal?: number;
 }
 
 export interface LocalCriterionCell {

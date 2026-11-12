@@ -116,7 +116,7 @@ export async function scanAndDeliver(deps: DeliverDeps): Promise<DeliveryResult>
         let ok = false;
         try {
             if (output.kind === 'file') {
-                const results = scoreScanLocally({ config, raw: scan.raw, body: scan.body, inventory });
+                const results = scoreScanLocally({ config, raw: scan.raw, body: scan.body, inventory, sourceNotes: scan.sourceNotes });
                 const written = writeRun(output, { raw: scan.raw, results }, deps.file);
                 log.info('results written', { scan: written.scanId, dir: written.dir, files: written.files.length, removedRuns: written.removedRuns.length });
                 ok = true;

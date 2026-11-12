@@ -14,6 +14,7 @@
 import {
     FRAMEWORK_MARKERS,
     MAX_FILE_BYTES,
+    MAX_MARKER_SCAN_BYTES,
     MAX_FILES,
     MAX_TOTAL_BYTES,
     readCodeFiles,
@@ -218,10 +219,10 @@ describe('2. what is never entered or followed', () => {
 });
 
 describe('3. every bound is reported where it was reached', () => {
-    it('a file over the size limit is not opened, and the walk carries on', async () => {
+    it('a file over the most that is ever read of one file is not opened, and the walk carries on', async () => {
         const { paths, rows, problems, ops } = await walk({
             src: dir({
-                'big.py': file(AGENT, { statedSize: MAX_FILE_BYTES + 1 }),
+                'big.py': file(AGENT, { statedSize: MAX_MARKER_SCAN_BYTES + 1 }),
                 'exact.py': file(AGENT, { statedSize: MAX_FILE_BYTES }),
                 'small.py': file(AGENT),
             }),
@@ -230,6 +231,41 @@ describe('3. every bound is reported where it was reached', () => {
         expect(rows).toBe(3);
         expect(problems).toEqual([{ reason: 'BYTE_CAP', at: at('big.py') }]);
         expect(ops).not.toContain('readFile /src/big.py');
+    });
+
+    it('a file too large to parse is searched for a framework name: without one it is read, with one it is reported', async () => {
+        const padding = Buffer.alloc(MAX_FILE_BYTES + 1, 0x20);
+        const { paths, rows, problems, ops } = await walk({
+            src: dir({
+                // A vendored bundle: a megabyte and more of somebody else's code that names no framework.
+                'bundle.js': file(Buffer.concat([Buffer.from('var a = 1;\n'), padding])),
+                // The same size, and it names one: an agent may be in it, and it is not parsed.
+                'generated.py': file(Buffer.concat([padding, Buffer.from(AGENT)])),
+                'small.py': file(AGENT),
+            }),
+        });
+        expect(ops).toContain('readFile /src/bundle.js');
+        expect(ops).toContain('readFile /src/generated.py');
+        // Neither is handed to a reader.
+        expect(paths).toEqual(['small.py']);
+        expect(rows).toBe(3);
+        expect(problems).toEqual([{ reason: 'BYTE_CAP', at: at('generated.py') }]);
+    });
+
+    it('a large file with a wide byte-order mark is not searched as if it were text', async () => {
+        const wide = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.alloc(MAX_FILE_BYTES + 1, 0x20)]);
+        const { paths, problems } = await walk({ src: dir({ 'wide.py': file(wide), 'small.py': file(AGENT) }) });
+        expect(paths).toEqual(['small.py']);
+        expect(problems).toEqual([{ reason: 'UNPARSEABLE', at: at('wide.py') }]);
+    });
+
+    it('a large file counts towards the total that may be read', async () => {
+        const each = Buffer.alloc(MAX_MARKER_SCAN_BYTES, 0x20);
+        const names = Array.from({ length: Math.floor(MAX_TOTAL_BYTES / MAX_MARKER_SCAN_BYTES) + 1 }, (_, i) => `f${String(i).padStart(2, '0')}.js`);
+        const { problems, ops } = await walk({ src: dir(Object.fromEntries(names.map((n) => [n, file(each)]))) });
+        const last = names[names.length - 1];
+        expect(problems).toEqual([{ reason: 'BYTE_CAP', at: at(last) }]);
+        expect(ops).not.toContain(`readFile /src/${last}`);
     });
 
     it('a file that grew past the limit between the stat and the read is not used', async () => {

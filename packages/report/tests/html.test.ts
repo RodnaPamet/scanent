@@ -214,6 +214,38 @@ describe('2. one self-contained file', () => {
 });
 
 describe('3. honest states', () => {
+    it('says why a source stopped and names the places not read, as text', () => {
+        const results = scoreReportLocally({
+            ...input(withSource(standaloneBody(), 'entra-sp', 'UNPARSEABLE')),
+            sourceNotes: [
+                {
+                    kind: 'entra-sp',
+                    detail: 'a file that names a framework could not be read as code',
+                    notRead: [
+                        { where: 'code://acme/agents/<b>bold</b>.py#L12', reason: 'UNPARSEABLE' },
+                        { where: 'code://acme/tools.ts#L3', reason: 'UNPARSEABLE' },
+                    ],
+                    notReadTotal: 7,
+                },
+            ],
+        });
+        const page = renderSummaryHtml(results);
+        const { text, tags } = assertSafe(page);
+        const words = text.join('').replace(/\s+/g, ' ');
+        expect(words).toContain('was not read in full: a file that names a framework could not be read as code.');
+        expect(words).toContain('the first 2 of 7 places');
+        expect(words).toContain('code://acme/tools.ts#L3');
+        // The path's markup is text on the page, never an element of it.
+        expect(page).toContain('code://acme/agents/&lt;b&gt;bold&lt;/b&gt;.py#L12');
+        expect(tags.filter((t) => t.name === 'b')).toHaveLength(0);
+    });
+
+    it('a source that stopped with nothing more said of it adds no note', () => {
+        const page = renderSummaryHtml(notJudgedResults());
+        expect(page.includes('What was not read')).toBe(false);
+        expect(page.includes('was not read in full</strong>')).toBe(false);
+    });
+
     it('completeness comes before every other section', () => {
         for (const page of [plainResults(), inventoryResults(), notJudgedResults(), emptyResults()].map(renderSummaryHtml)) {
             const offsets = [...page.matchAll(/<section id="([a-z]+)"/g)].map((m) => [m[1], m.index] as const);

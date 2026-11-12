@@ -223,6 +223,20 @@ ${notJudged > 0 ? html`<strong>${plural(notJudged, 'agent is', 'agents are')} no
 <td class="num">${s.agents}</td>
 </tr>`,
     );
+    const noted = r.sources.filter((s) => s.detail !== undefined || s.notRead !== undefined);
+    const notes = noted.map((s) => {
+        const listed = s.notRead ?? [];
+        const more = (s.notReadTotal ?? listed.length) - listed.length;
+        return html`<div class="callout bad">
+<p><strong><code>${s.kind}</code> was not read in full</strong>${s.detail === undefined ? '' : html`: ${s.detail}`}.</p>
+${listed.length === 0
+            ? ''
+            : html`<p>What was not read${more > 0 ? html` (the first ${listed.length} of ${listed.length + more} places)` : ''}:</p>
+<ul>
+${listed.map((place) => html`<li><code>${place.where}</code> <span class="tag bad">${place.reason}</span></li>`)}
+</ul>`}
+</div>`;
+    });
     return html`<section id="completeness" aria-labelledby="completeness-h">
 <h2 id="completeness-h">Completeness per source</h2>
 ${meaning}
@@ -235,6 +249,7 @@ ${r.sources.length === 0
 ${rows}
 </tbody>
 </table></div>`}
+${notes}
 </section>`;
 }
 

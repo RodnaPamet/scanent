@@ -22,7 +22,17 @@ import { createSourceWire, type FetchLike } from './http';
 import type { ScannerLog } from './log';
 import { postReport, type PostResult } from './post';
 import { buildReportBody, signReport } from './report';
-import { sourceResult, SourceReadError, toolCallsOf, type HarnessSource, type SourceRead } from './source';
+import type { SourceNote } from '@scanent/report/results/types';
+
+import {
+    MAX_NOT_READ_LOCATIONS,
+    sourceResult,
+    SourceReadError,
+    toolCallsOf,
+    type HarnessSource,
+    type NotReadLocation,
+    type SourceRead,
+} from './source';
 import { azureKeyVaultSource } from './sources/azure-key-vault';
 import { entraSource } from './sources/entra';
 import { gcpServiceAccountSource } from './sources/gcp-service-accounts';
@@ -187,7 +197,30 @@ function scanIdFor(estate: string, asOf: Date): string {
 }
 
 /** Read, build and sign. Returns the serialised report and the body it carries. */
-export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: HarnessReportBodyV3 }> {
+/**
+ * What the sources said about a read that stopped, beyond the reason the
+ * signed report carries: for the local results. One note per source KIND, as
+ * the report lists sources; two sources of one kind are joined.
+ */
+export function sourceNotesOf(reads: readonly SourceRead[]): readonly SourceNote[] {
+    const byKind = new Map<string, { details: string[]; notRead: NotReadLocation[]; total: number }>();
+    for (const r of reads) {
+        if (r.status === 'COMPLETE') continue;
+        const note = byKind.get(r.kind) ?? { details: [], notRead: [], total: 0 };
+        if (r.detail !== undefined && !note.details.includes(r.detail)) note.details.push(r.detail);
+        note.notRead.push(...(r.notRead ?? []));
+        note.total += r.notReadTotal ?? 0;
+        byKind.set(r.kind, note);
+    }
+    return [...byKind].map(([kind, note]) => ({
+        kind,
+        detail: note.details.length === 0 ? null : note.details.join('; '),
+        notRead: note.notRead.slice(0, MAX_NOT_READ_LOCATIONS),
+        notReadTotal: note.total,
+    }));
+}
+
+export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: HarnessReportBodyV3; sourceNotes: readonly SourceNote[] }> {
     const { config, env, log } = deps;
     const now = deps.now ?? Date.now;
     const fetchImpl: FetchLike = deps.fetchImpl ?? ((url, init) => fetch(url, init));
@@ -235,7 +268,12 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
     for (const r of [...reads, ...unreadable]) {
         const fields = { source: r.kind, status: r.status, rows: r.rows, principals: r.observations.length, toolCalls: toolCallsOf(r) };
         if (r.status === 'COMPLETE') log.info('source read', fields);
-        else log.warn('source incomplete', { ...fields, reason: r.reason ?? null });
+        else {
+            log.warn('source incomplete', { ...fields, reason: r.reason ?? null, detail: r.detail ?? null });
+            for (const place of r.notRead ?? []) log.warn('not read', { source: r.kind, where: place.where, reason: place.reason });
+            const unlisted = (r.notReadTotal ?? 0) - (r.notRead ?? []).length;
+            if (unlisted > 0) log.warn('not read: more places than are listed', { source: r.kind, unlisted });
+        }
         // The listing hash is what an estate pins a server to: the log is where
         // the operator reads it. The label is the estate's own; the URL is not logged.
         for (const server of r.mcpServers ?? []) {
@@ -249,7 +287,7 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
     );
     const raw = signReport(body, keys);
     log.info('report signed', { scan: body.scan.id, agents: body.agents.length, sources: body.population.sources.length });
-    return { raw, body };
+    return { raw, body, sourceNotes: sourceNotesOf([...reads, ...unreadable]) };
 }
 
 /** The `inflect` block and the ingest key it names, or a refusal that names what is missing. */

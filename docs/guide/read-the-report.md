@@ -158,9 +158,14 @@ When a system is "Incomplete", the reason is one of these:
 | `UNREACHABLE` | The system did not answer, or answered with an error | Check the network path and the firewall |
 | `RATE_LIMITED` | The system said the scanner was asking too fast | Scan again later |
 | `TIME_BOX` | The scan ran out of time before this system was read in full. The whole scan is given ten minutes unless the set-up changes it; systems are read side by side, and one that is not finished by then is marked incomplete | Scan again, or ask for the time limit to be raised |
-| `BYTE_CAP` | A size limit was reached: there was more than one scan may hold | Split the scan into smaller ones. The engagement team can advise |
+| `BYTE_CAP` | A size limit was reached: there was more than one scan may hold | Look at the note under the table, which names what was too large. Split the scan into smaller ones. The engagement team can advise |
 | `PAGINATION_TORN` | A list came back broken, or its next page could not be followed | Scan again. If it repeats, report it |
 | `UNPARSEABLE` | A piece of agent code was read but part of it could not be worked out | Tell the engagement team. An agent the scanner could make out is in the report, with no level, because what it holds may be incomplete. An agent in a file the scanner could not read at all is missing from the report |
+
+Under the table, each incomplete system has a note that says why in a
+sentence. For agent code it also lists the places that were not read, up to
+25 of them, each as `code://<folder label>/<path>#L<line>`. Those are the
+files to look at.
 
 **An incomplete scan is never a clean result.** A system that was read only in
 part may hold agents, tools and failed checks that the page does not show. So

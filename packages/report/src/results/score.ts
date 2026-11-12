@@ -76,6 +76,9 @@ import {
     type ScoreInput,
 } from './types';
 
+/** How many not-read places one source's result names. The schema holds the same number. */
+export const MAX_NOT_READ_PLACES = 25;
+
 const REGISTRATION_BASIS: Readonly<Record<'REPORT' | 'INTAKE', RegistrationBasis>> = {
     REPORT: 'OBSERVED_REGISTER',
     INTAKE: 'DECLARED_INVENTORY',
@@ -330,13 +333,21 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
                       matched: rowByAgent.size,
                       unmatched,
                   },
-        sources: sources.map((s) => ({
-            kind: s.kind,
-            status: s.status,
-            reason: s.reason ?? null,
-            rows: s.rows,
-            agents: body.agents.filter((a) => (a.discoveredVia as readonly string[]).includes(s.kind)).length,
-        })),
+        sources: sources.map((s) => {
+            // A note is only ever about a source the report itself lists as not read in full.
+            const note = s.status === 'COMPLETE' ? undefined : input.sourceNotes?.find((n) => n.kind === s.kind);
+            return {
+                kind: s.kind,
+                status: s.status,
+                reason: s.reason ?? null,
+                rows: s.rows,
+                agents: body.agents.filter((a) => (a.discoveredVia as readonly string[]).includes(s.kind)).length,
+                ...(note === undefined || note.detail === null ? {} : { detail: note.detail }),
+                ...(note === undefined || note.notReadTotal === 0
+                    ? {}
+                    : { notRead: note.notRead.slice(0, MAX_NOT_READ_PLACES), notReadTotal: Math.max(note.notReadTotal, note.notRead.length) }),
+            };
+        }),
         coverage,
         estate: {
             empty: agents.length === 0,

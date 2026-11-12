@@ -41,7 +41,7 @@ import type { CodeFs } from '../src/sources/code/files';
 import { MAX_FILE_BYTES } from '../src/sources/code/files';
 import { reportableModelName, type DetectedAgent } from '../src/sources/code/recognize';
 import { langchainCodeSource, scanLangChainCode } from '../src/sources/langchain';
-import type { SourceContext, SourceRead } from '../src/source';
+import { MAX_NOT_READ_LOCATIONS, type SourceContext, type SourceRead } from '../src/source';
 
 const REAL_FS: CodeFs = { lstat: (p) => lstat(p), readdir: (p) => readdir(p), readFile: (p) => readFile(p) };
 const LATER = { deadline: Number.MAX_SAFE_INTEGER, now: Date.now };
@@ -341,6 +341,75 @@ describe('4. what cannot be read or resolved is INCOMPLETE with its reason, neve
         const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
         expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'BYTE_CAP' });
         expect(result.observations).toHaveLength(1);
+    });
+
+    it('a file over the size cap that names no framework is read, and the source is complete', async () => {
+        const dir = estate(LANGCHAIN_PYTHON);
+        // A vendored, minified bundle: more than the per-file limit of somebody else's code.
+        writeFileSync(join(dir, 'bundle.js'), `var a=1;${'a=a+1;'.repeat(Math.ceil(MAX_FILE_BYTES / 6) + 10)}`);
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+        expect(result.status).toBe('COMPLETE');
+        expect(result.notRead).toBeUndefined();
+        expect(result.observations).toHaveLength(1);
+    });
+
+    it('an incomplete read says why in fixed words and names the places it did not read', async () => {
+        const dir = estate(LANGCHAIN_PYTHON);
+        writeFileSync(join(dir, 'huge.py'), `# langchain\n${'x = 1\n'.repeat(Math.ceil(MAX_FILE_BYTES / 6) + 10)}`);
+        symlinkSync(join(dir, 'huge.py'), join(dir, 'link.py'));
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+        // UNREACHABLE is the source's reason (it claims least); its place is listed first.
+        expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'UNREACHABLE', notReadTotal: 2 });
+        expect(result.detail).toMatch(/symbolic link/);
+        expect(result.notRead).toEqual([
+            { where: 'code://acme/link.py#L0', reason: 'UNREACHABLE' },
+            { where: 'code://acme/huge.py#L0', reason: 'BYTE_CAP' },
+        ]);
+    });
+
+    it('lists at most MAX_NOT_READ_LOCATIONS places and counts them all; a secret-shaped path is not repeated', async () => {
+        const dir = estate({});
+        const secretShaped = fakeOpenAiKey();
+        for (let i = 0; i < MAX_NOT_READ_LOCATIONS + 5; i++) symlinkSync('/etc/hostname', join(dir, `l${String(i).padStart(2, '0')}.py`));
+        symlinkSync('/etc/hostname', join(dir, `a_${secretShaped}.py`));
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+        expect(result.notReadTotal).toBe(MAX_NOT_READ_LOCATIONS + 6);
+        expect(result.notRead).toHaveLength(MAX_NOT_READ_LOCATIONS);
+        expect(result.notRead?.[0].where).toMatch(/^code:\/\/acme\/sha256-[0-9a-f]{24}#L0$/);
+        expect(JSON.stringify(result.notRead).includes(secretShaped)).toBe(false);
+    });
+
+    it('ordinary code is not something that failed to resolve: a file that only names a framework is read in full', async () => {
+        const dir = estate({
+            // No import of a framework: the word appears in a comment and a string.
+            'routes.ts': [
+                '// rules for the langchain proxy',
+                'const RULES = [{ path: "/a", methods: ["GET"] }, { path: "/b", methods: ["POST"] }];',
+                'export const first = [{ path: "/c" }, { path: "/d" }].find((r) => r.path === "/c");',
+                'export const names = [...new Set(RULES.map((r) => r.path))].sort();',
+                'export const MODES = ["STATIC", "langgraph"] as const;',
+                'export const re = new RegExp("x").compile();',
+            ].join('\n'),
+            'notes.py': ['# claude_agent_sdk is not used here', 'RULES = [{"a": 1}, {"b": 2}]', 'names = sorted([*RULES])', 'first = [r for r in RULES][0]'].join('\n'),
+        });
+        const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: dir }] }));
+        expect(result).toMatchObject({ status: 'COMPLETE', rows: 2 });
+        expect(result.observations).toHaveLength(0);
+    });
+
+    it.each([
+        ['JavaScript', LANGCHAIN_JS, /\.[cm]?[jt]sx?$/, '\nconst RULES = [{ path: "/a" }, { path: "/b" }].filter((r) => r.path);\nexport const names = [...new Set(RULES.map((r) => r.path))].sort();\n'],
+        ['Python', LANGCHAIN_PYTHON, /\.py$/, '\nRULES = [{"a": 1}, {"b": 2}]\nnames = sorted([*RULES])\n'],
+    ] as const)('ordinary %s beside an agent changes neither the agents nor what was not resolved', async (_language, tree, sourceFile, ordinary) => {
+        const withOrdinary = Object.fromEntries(Object.entries(tree).map(([path, text]) => [path, sourceFile.test(path) ? `${text}${ordinary}` : text]));
+        const plain = await agentsIn(tree);
+        const mixed = await agentsIn(withOrdinary);
+        expect(plain.scan.agents.length).toBeGreaterThan(0);
+        const shape = (scan: typeof plain.scan) => ({
+            agents: scan.agents.map((a) => ({ name: a.name, tools: a.tools.map((t) => t.name), models: a.models.map((m) => m.model) })),
+            problems: scan.problems.map((p) => `${p.reason} ${p.at?.path}#${p.at?.line}`),
+        });
+        expect(shape(mixed.scan)).toEqual(shape(plain.scan));
     });
 
     it('the scan\'s deadline: TIME_BOX', async () => {

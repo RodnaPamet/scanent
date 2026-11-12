@@ -5,8 +5,13 @@
  * one tree read it identically. Each bound is a stated maximum, and reaching one
  * is reported — never absorbed:
  *
- *   • a file over `MAX_FILE_BYTES`, more than `MAX_FILES` candidates, or more
- *     than `MAX_TOTAL_BYTES` read → BYTE_CAP;
+ *   • a file over `MAX_FILE_BYTES` that names a framework, more than
+ *     `MAX_FILES` candidates, or more than `MAX_TOTAL_BYTES` read → BYTE_CAP.
+ *     A file over `MAX_FILE_BYTES` and up to `MAX_MARKER_SCAN_BYTES` is still
+ *     read, and only searched for a framework's name: a file that names none
+ *     cannot define an agent (the rule every smaller file is held to), so a
+ *     minified bundle somebody vendored does not leave the tree unread. A
+ *     file over `MAX_MARKER_SCAN_BYTES` is not opened → BYTE_CAP;
  *   • the scan's deadline → TIME_BOX;
  *   • a root or entry that is missing or not readable → UNREACHABLE, or
  *     AUTH_FAILED when the operating system refused the read;
@@ -40,6 +45,8 @@ export interface CodeRoot {
 }
 
 export const MAX_FILE_BYTES = 1024 * 1024;
+/** The largest file that is read to look for a framework's name. It is never parsed. */
+export const MAX_MARKER_SCAN_BYTES = 16 * 1024 * 1024;
 export const MAX_FILES = 20_000;
 export const MAX_TOTAL_BYTES = 128 * 1024 * 1024;
 const MAX_DIR_DEPTH = 32;
@@ -155,7 +162,7 @@ export async function readCodeFiles(
                 stopped = true;
                 return;
             }
-            if (st.size > MAX_FILE_BYTES) {
+            if (st.size > MAX_MARKER_SCAN_BYTES) {
                 problem('BYTE_CAP', at);
                 continue;
             }
@@ -171,11 +178,24 @@ export async function readCodeFiles(
                 problem(reasonOf(err), at);
                 continue;
             }
-            if (buf.length > MAX_FILE_BYTES) {
+            // Read one byte past the limit: it grew after it was measured, and what was read is a cut of it.
+            if (buf.length > MAX_MARKER_SCAN_BYTES) {
                 problem('BYTE_CAP', at);
                 continue;
             }
             bytes += buf.length;
+            if (bytes > MAX_TOTAL_BYTES) {
+                problem('BYTE_CAP', at);
+                stopped = true;
+                return;
+            }
+            // Too large to parse. Searched as bytes, so the answer does not depend on how it decodes:
+            // a name spelt in UTF-16 is not found by this search or by the one below.
+            if (buf.length > MAX_FILE_BYTES) {
+                if (startsWithWideByteOrderMark(buf)) problem('UNPARSEABLE', at);
+                else if (FRAMEWORK_MARKERS.some((m) => buf.includes(m))) problem('BYTE_CAP', at);
+                continue;
+            }
             // A UTF-16 or UTF-32 file decodes as UTF-8 into text that names no
             // framework, so it would be passed over as if it held no agent.
             // TypeScript's own compiler reads such a file; this reader does

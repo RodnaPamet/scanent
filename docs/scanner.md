@@ -449,8 +449,12 @@ What the sources never do:
   the same host, ends the read as `PAGINATION_TORN`. Each source has a time box
   and a byte budget.
 - **Run what they read.** The `code` source parses text. It follows no symbolic
-  link, caps each file at 1 MiB and the whole read at 20,000 files and 128 MiB,
-  and stops at the scan's deadline, reporting each as its reason. A file is
+  link, parses no file over 1 MiB, caps the whole read at 20,000 files and
+  128 MiB, and stops at the scan's deadline, reporting each as its reason. A
+  file over 1 MiB and up to 16 MiB is read only to look for a framework's name:
+  one that names none cannot define an agent, which is the rule every smaller
+  file is held to, so a vendored bundle does not leave the tree unread; one
+  that names a framework is `BYTE_CAP`. A file over 16 MiB is not opened. A file is
   opened without following a link and without blocking, and what was opened
   must be a regular file, so a file swapped for a link or a pipe after it was
   looked at is a location not read, never one followed. A file that does not
@@ -1260,7 +1264,8 @@ a bound that is reached is reported, or the run is refused.
 | Credentials, tools, models of one agent | 100, 500, 50 | The same, for the source that lost one |
 | Unbound credentials in a report | 10,000 | The same |
 | The signed report | 5 MiB | The run is refused; nothing is written, printed or posted |
-| A code file, the files of a scan, their bytes | 1 MiB, 20,000, 128 MiB | The `code` source is `INCOMPLETE` `BYTE_CAP` |
+| A code file that is parsed, the files of a scan, their bytes | 1 MiB, 20,000, 128 MiB | The `code` source is `INCOMPLETE` `BYTE_CAP`. A file over 1 MiB that names no framework is read, not parsed, and is not a reason |
+| A code file that is opened at all | 16 MiB | The `code` source is `INCOMPLETE` `BYTE_CAP` |
 | The work of reading one Python file | 24 parser steps for each token of the file, plus 10,000 | That file is not read, and the `code` source is `INCOMPLETE` `UNPARSEABLE`. An ordinary file costs about one step a token; the limit stops a file written to be read over and over |
 | An input of `scanent diff` | 64 MiB | The diff is refused (exit 2) |
 
@@ -1364,6 +1369,15 @@ a scan id and that holds a `manifest.json`.
 Before the first byte is written, the results are walked for any string with a
 secret's shape, and each rendered file is checked again as one text. A hit
 refuses the whole run and names the member or the file, never the value.
+
+For a source that was not read in full, the run's own results add what the
+signed report does not carry: `detail`, why it stopped in the scanner's fixed
+words, and for the `code` source `notRead`, the first 25 places it did not
+read (`where`, `reason`), with `notReadTotal` counting them all. The summary
+page shows both under the completeness table, and the log has a `not read`
+line for each place. A place is the locator an agent in that file would carry;
+a path with the shape of a secret is given by its hash. Results scored from a
+report alone (`scanent diff`, a report made elsewhere) have none of the three.
 
 What the results say, and do not:
 

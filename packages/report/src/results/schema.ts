@@ -163,8 +163,22 @@ export const LocalResultsSchema: z.ZodType<LocalResults> = z
                     reason: id.nullable(),
                     rows: count,
                     agents: count,
+                    // Added in 0.13.0, and optional: a results file written before it carries none.
+                    detail: z.string().min(1).max(400).optional(),
+                    notRead: z.array(z.object({ where: z.string().min(1).max(600), reason: id }).strict()).max(25).optional(),
+                    notReadTotal: count.optional(),
                 })
-                .strict(),
+                .strict()
+                .superRefine((s, ctx) => {
+                    const noted = s.detail !== undefined || s.notRead !== undefined || s.notReadTotal !== undefined;
+                    if (noted && s.status === 'COMPLETE') ctx.addIssue({ code: 'custom', message: 'a source read in full names nothing it did not read' });
+                    if ((s.notRead === undefined) !== (s.notReadTotal === undefined)) {
+                        ctx.addIssue({ code: 'custom', message: 'notRead and notReadTotal are given together' });
+                    }
+                    if (s.notRead !== undefined && s.notReadTotal !== undefined && s.notReadTotal < s.notRead.length) {
+                        ctx.addIssue({ code: 'custom', message: 'notReadTotal counts at least the places listed' });
+                    }
+                }),
         ),
         coverage: z
             .object({

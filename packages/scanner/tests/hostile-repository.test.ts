@@ -29,7 +29,7 @@ import { tmpdir } from 'os';
 import { join, relative } from 'path';
 
 import { createSourceWire } from '../src/http';
-import { MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, readCodeFiles, type CodeFs, type ReadableFile } from '../src/sources/code/files';
+import { MAX_FILE_BYTES, MAX_FILES, MAX_MARKER_SCAN_BYTES, MAX_TOTAL_BYTES, readCodeFiles, type CodeFs, type ReadableFile } from '../src/sources/code/files';
 import { langchainCodeSource, NODE_CODE_FS } from '../src/sources/langchain';
 import { LANGCHAIN_PYTHON } from './helpers/agent-harness-code-fixtures';
 
@@ -190,11 +190,13 @@ describe('the tree as it stands', () => {
         expect(result.files.map((f) => f.text).join('')).not.toContain('stolen');
     });
 
-    it('2. a file over the cap, and one that claims gigabytes, are reported and never opened', () => {
+    it('2. a file too large to parse that names a framework is reported; one that claims gigabytes is never opened', () => {
+        // Over the per-file limit and naming a framework: searched, not parsed, and reported.
         expect(result.problems).toContain('BYTE_CAP big.py');
+        expect(result.files.map((f) => f.path)).not.toContain('big.py');
+        // Over the most that is ever read of one file: not opened at all.
         expect(result.problems).toContain('BYTE_CAP sparse.py');
         const opened = ops.filter((o) => o.op === 'readFile').map((o) => relative(root, o.path));
-        expect(opened).not.toContain('big.py');
         expect(opened).not.toContain('sparse.py');
     });
 
@@ -284,7 +286,7 @@ describe('7. a tree that changes between the stat and the read', () => {
 
     it('a file that grows past the cap after its stat is not read whole: the read stops one byte over', async () => {
         let returned = -1;
-        const rec = racing(() => appendFileSync(target(), Buffer.alloc(3 * MAX_FILE_BYTES, 0x23)));
+        const rec = racing(() => appendFileSync(target(), Buffer.alloc(MAX_MARKER_SCAN_BYTES + 3 * MAX_FILE_BYTES, 0x23)));
         const fs: CodeFs = { ...rec.fs, readFile: async (p) => {
             const buf = await rec.fs.readFile(p);
             if (p === target()) returned = buf.length;
@@ -292,7 +294,7 @@ describe('7. a tree that changes between the stat and the read', () => {
         } };
         const result = await walk(dir, fs);
         expect(result.problems).toEqual(['BYTE_CAP m_target.py']);
-        expect(returned).toBe(MAX_FILE_BYTES + 1);
+        expect(returned).toBe(MAX_MARKER_SCAN_BYTES + 1);
         expect(result.files.map((f) => f.path)).toEqual(['a_first.py', 'z_last.py']);
     });
 

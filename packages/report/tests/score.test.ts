@@ -200,6 +200,54 @@ describe('1. the contract decides', () => {
         expect(results.scan.complete).toBe(false);
     });
 
+    it('adds what the run said of a source that stopped: why, and the places not read', () => {
+        const body = withSource(validV3ReportBody(), 'vault', 'RATE_LIMITED');
+        const places = Array.from({ length: 30 }, (_, i) => ({ where: `code://acme/f${i}.py#L0`, reason: 'UNPARSEABLE' }));
+        const results = scoreReportLocally({
+            ...input(body),
+            sourceNotes: [
+                { kind: 'vault', detail: 'the source answered HTTP 429', notRead: places, notReadTotal: 41 },
+                // A note about a source the report lists as read in full is not repeated: the report decides.
+                { kind: 'entra-sp', detail: 'not true of this report', notRead: places.slice(0, 1), notReadTotal: 1 },
+                // Nor one about a source the report does not list.
+                { kind: 'okta-app', detail: 'not in this report', notRead: [], notReadTotal: 0 },
+            ],
+        });
+        const vault = results.sources.find((s) => s.kind === 'vault');
+        expect(vault).toMatchObject({ detail: 'the source answered HTTP 429', notReadTotal: 41 });
+        expect(vault?.notRead).toEqual(places.slice(0, 25));
+        expect(results.sources.find((s) => s.kind === 'entra-sp')).toEqual({ kind: 'entra-sp', status: 'COMPLETE', reason: null, rows: 412, agents: 2 });
+        expect(LocalResultsSchema.safeParse(results).success).toBe(true);
+    });
+
+    it('a note with no detail and no place adds nothing, and the total is never under what is listed', () => {
+        const body = withSource(validV3ReportBody(), 'vault', 'RATE_LIMITED');
+        const bare = scoreReportLocally({ ...input(body), sourceNotes: [{ kind: 'vault', detail: null, notRead: [], notReadTotal: 0 }] });
+        expect(bare.sources.find((s) => s.kind === 'vault')).toEqual({ kind: 'vault', status: 'INCOMPLETE', reason: 'RATE_LIMITED', rows: 37, agents: 2 });
+        const under = scoreReportLocally({
+            ...input(body),
+            sourceNotes: [{ kind: 'vault', detail: null, notRead: [{ where: 'a', reason: 'UNREACHABLE' }, { where: 'b', reason: 'UNREACHABLE' }], notReadTotal: 1 }],
+        });
+        expect(under.sources.find((s) => s.kind === 'vault')?.notReadTotal).toBe(2);
+        expect(LocalResultsSchema.safeParse(under).success).toBe(true);
+    });
+
+    it('the schema refuses a note on a source read in full, a list without its total, and a total under the list', () => {
+        const good = scoreReportLocally({
+            ...input(withSource(validV3ReportBody(), 'vault', 'RATE_LIMITED')),
+            sourceNotes: [{ kind: 'vault', detail: 'the source answered HTTP 429', notRead: [{ where: 'a', reason: 'UNREACHABLE' }], notReadTotal: 1 }],
+        });
+        const withSources = (change: (s: Record<string, unknown>) => Record<string, unknown>) => ({
+            ...good,
+            sources: good.sources.map((s) => (s.kind === 'vault' || s.kind === 'entra-sp' ? change({ ...s }) : s)),
+        });
+        expect(LocalResultsSchema.safeParse(good).success).toBe(true);
+        expect(LocalResultsSchema.safeParse(withSources((s) => (s.kind === 'entra-sp' ? { ...s, detail: 'x' } : s))).success).toBe(false);
+        expect(LocalResultsSchema.safeParse(withSources((s) => (s.kind === 'vault' ? { ...s, notReadTotal: undefined } : s))).success).toBe(false);
+        expect(LocalResultsSchema.safeParse(withSources((s) => (s.kind === 'vault' ? { ...s, notReadTotal: 0 } : s))).success).toBe(false);
+        expect(LocalResultsSchema.safeParse(withSources((s) => (s.kind === 'vault' ? { ...s, extra: 1 } : s))).success).toBe(false);
+    });
+
     it('lists agents by id, whatever order the report had them in', () => {
         const results = scoreReportLocally(input(standaloneBody()));
         expect(standaloneBody().agents.map((a) => a.discoveredId)).toEqual([BRAVO, ALPHA]);

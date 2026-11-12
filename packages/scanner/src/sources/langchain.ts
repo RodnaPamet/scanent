@@ -57,13 +57,14 @@ import {
     sourceResult,
     SourceReadError,
     type HarnessSource,
+    MAX_NOT_READ_LOCATIONS,
     type IncompleteReason,
     type Observation,
     type ProbeStep,
     type SourceRead,
 } from '../source';
 import type { CodeFs, CodeRoot, FileProblem } from './code/files';
-import { MAX_FILE_BYTES, readCodeFiles } from './code/files';
+import { MAX_MARKER_SCAN_BYTES, readCodeFiles } from './code/files';
 import { JavaScriptReadError, readJavaScript } from './code/javascript';
 import { PythonReadError, readPython } from './code/python';
 import { agentSdkOptionVerdicts } from '@rodnapamet/scanent-contract/harness-findings';
@@ -80,7 +81,8 @@ export interface LangChainCodeSourceOptions {
 const REASON_ORDER: readonly IncompleteReason[] = ['AUTH_FAILED', 'UNREACHABLE', 'TIME_BOX', 'BYTE_CAP', 'UNPARSEABLE'];
 
 /**
- * One file's bytes, at most one more than the size cap, from a REGULAR file
+ * One file's bytes, at most one more than the most that is ever read of a
+ * file (`MAX_MARKER_SCAN_BYTES`), from a REGULAR file
  * that is not reached through a link.
  *
  * The walk stats an entry and then reads it, and a tree somebody else can
@@ -105,7 +107,7 @@ async function readRegularFileCapped(path: string): Promise<Buffer> {
     try {
         const st = await handle.stat();
         if (!st.isFile()) throw Object.assign(new Error('not a regular file'), { code: 'ENOTSUP' });
-        const buffer = Buffer.alloc(Math.min(st.size, MAX_FILE_BYTES) + 1);
+        const buffer = Buffer.alloc(Math.min(st.size, MAX_MARKER_SCAN_BYTES) + 1);
         let length = 0;
         while (length < buffer.byteLength) {
             const { bytesRead } = await handle.read(buffer, length, buffer.byteLength - length, null);
@@ -114,7 +116,7 @@ async function readRegularFileCapped(path: string): Promise<Buffer> {
         }
         // More than the size stated, on a file that was under the cap: it grew while it was read, and
         // what was read is a cut of it. That is a file not read, never text to parse.
-        if (st.size <= MAX_FILE_BYTES && length > st.size) throw Object.assign(new Error('changed while read'), { code: 'EBUSY' });
+        if (st.size <= MAX_MARKER_SCAN_BYTES && length > st.size) throw Object.assign(new Error('changed while read'), { code: 'EBUSY' });
         return buffer.subarray(0, length);
     } finally {
         await handle.close();
@@ -183,6 +185,33 @@ export function observationOf(agent: DetectedAgent): Observation {
     };
 }
 
+/** What each reason means for the code source, in fixed words. */
+const REASON_DETAIL: Readonly<Partial<Record<IncompleteReason, string>>> = {
+    AUTH_FAILED: 'the operating system refused a read',
+    UNREACHABLE: 'a root or an entry is missing, is not a directory, or is a symbolic link, which is never followed',
+    TIME_BOX: 'the scan reached its time box before the tree was read',
+    BYTE_CAP: 'a file that names a framework is over the per-file limit, or the tree is over the file-count, total-size or depth limit',
+    UNPARSEABLE: 'a file that names a framework could not be read as code, or an agent in it could not be resolved',
+};
+
+/**
+ * The places this read did not cover, for the operator: the source's reason
+ * first, then the others, each as the locator an agent in that file would
+ * carry. A problem with no place (the time box) is counted and not listed.
+ */
+export function notReadOf(
+    problems: readonly FileProblem[],
+    reason: IncompleteReason,
+): Pick<SourceRead, 'detail' | 'notRead' | 'notReadTotal'> {
+    const placed = problems.filter((p): p is FileProblem & { at: NonNullable<FileProblem['at']> } => p.at !== null);
+    const ordered = [...placed.filter((p) => p.reason === reason), ...placed.filter((p) => p.reason !== reason)];
+    return {
+        detail: REASON_DETAIL[reason] ?? 'the tree was not read in full',
+        notRead: ordered.slice(0, MAX_NOT_READ_LOCATIONS).map((p) => ({ where: codeLocator(p.at), reason: p.reason })),
+        notReadTotal: problems.length,
+    };
+}
+
 export function langchainCodeSource(options: LangChainCodeSourceOptions): HarnessSource {
     const fs = options.fs ?? NODE_FS;
     return {
@@ -193,7 +222,7 @@ export function langchainCodeSource(options: LangChainCodeSourceOptions): Harnes
             const observations = scan.agents.map(observationOf);
             const reason = REASON_ORDER.find((r) => scan.problems.some((p) => p.reason === r));
             if (reason === undefined) return sourceResult('code', scan.rows, observations, null);
-            return { kind: 'code', status: 'INCOMPLETE', reason, rows: scan.rows, observations };
+            return { kind: 'code', status: 'INCOMPLETE', reason, rows: scan.rows, observations, ...notReadOf(scan.problems, reason) };
         },
         async preflight(): Promise<readonly ProbeStep[]> {
             const steps: ProbeStep[] = [];

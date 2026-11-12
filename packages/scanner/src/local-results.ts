@@ -15,7 +15,7 @@ import { createHash } from 'crypto';
 import { harnessKeyFingerprint, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 import type { ParsedInventory } from '@scanent/report/results/inventory';
 import { scoreReportLocally } from '@scanent/report/results/score';
-import type { LocalResults } from '@scanent/report/results/types';
+import type { LocalResults, SourceNote } from '@scanent/report/results/types';
 
 import type { ScannerConfig } from './config';
 import { configuredSourceKinds, CRITERION_READERS } from './criterion-readers';
@@ -53,6 +53,8 @@ export function scoreScanLocally(scan: {
     readonly raw: string;
     readonly body: HarnessReportBody;
     readonly inventory: ParsedInventory | null;
+    /** `runScan`'s: what the sources said about a read that stopped. */
+    readonly sourceNotes?: readonly SourceNote[];
 }): LocalResults {
     const signerKey = signerKeyOf(scan.raw);
     const fingerprint = signerKey === null ? null : harnessKeyFingerprint(signerKey);
@@ -60,6 +62,7 @@ export function scoreScanLocally(scan: {
     return scoreReportLocally({
         body: scan.body,
         inventory: scan.inventory,
+        ...(scan.sourceNotes === undefined ? {} : { sourceNotes: scan.sourceNotes }),
         readers: { table: CRITERION_READERS, configuredSources: configuredSourceKinds(scan.config) },
         meta: {
             estate: scan.config.estate,

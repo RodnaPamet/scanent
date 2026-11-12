@@ -88,12 +88,36 @@ export interface Observation {
     readonly registeredAgentId?: string;
 }
 
+/**
+ * One place a source did not read, in the words an operator would look for it
+ * by (the code source: `<root label>:<path below the root>`). It goes to the
+ * log and the local results only, never into the signed report.
+ */
+export interface NotReadLocation {
+    readonly where: string;
+    readonly reason: IncompleteReason;
+}
+
+/** How many not-read places one source names; `notReadTotal` counts them all. */
+export const MAX_NOT_READ_LOCATIONS = 25;
+
 /** How far one source got, and what it saw on the way. */
 export interface SourceRead {
     readonly kind: SourceKind;
     readonly status: 'COMPLETE' | 'INCOMPLETE';
     /** Present exactly when `status` is INCOMPLETE. */
     readonly reason?: IncompleteReason;
+    /**
+     * Why the read stopped, in the scanner's own fixed words: a
+     * `SourceReadError`'s message, which is written in this code and carries
+     * nothing an estate wrote. For the log and the local results; the signed
+     * report carries the reason alone.
+     */
+    readonly detail?: string;
+    /** The first `MAX_NOT_READ_LOCATIONS` places not read, where a source can name them. */
+    readonly notRead?: readonly NotReadLocation[];
+    /** Every place not read, counted. Present with `notRead`. */
+    readonly notReadTotal?: number;
     /** Rows read from the inventory, whether or not each became an observation. */
     readonly rows: number;
     /** Principals seen, including on a read that stopped early: what WAS read is real. */
@@ -355,8 +379,11 @@ export function sourceResult(
     stoppedBy: unknown,
 ): SourceRead {
     if (stoppedBy === null) return { kind, status: 'COMPLETE', rows, observations };
-    const reason: IncompleteReason = stoppedBy instanceof SourceReadError ? stoppedBy.reason : 'UNREACHABLE';
-    return { kind, status: 'INCOMPLETE', reason, rows, observations };
+    if (stoppedBy instanceof SourceReadError) {
+        return { kind, status: 'INCOMPLETE', reason: stoppedBy.reason, detail: stoppedBy.message, rows, observations };
+    }
+    // Any other error's message may quote what the estate answered, so it is not repeated.
+    return { kind, status: 'INCOMPLETE', reason: 'UNREACHABLE', detail: 'the reader stopped on an error of its own', rows, observations };
 }
 
 /** A JSON object: not null, not an array. */

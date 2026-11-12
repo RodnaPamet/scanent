@@ -19,7 +19,7 @@ import { ACCESS_GUIDE, GUIDE_ORDER, type AccessEntry } from './init/access-guide
 import { JWT_BEARER_GRANT, MAX_RESPONSE_BYTES, MAX_SOURCE_BYTES } from './http';
 import { SCANNER_SURFACE, scannerManifestHash, TOKEN_EXCHANGE_GRANTS } from './scanner-surface';
 import type { SourceKind } from './source';
-import { MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES } from './sources/code/files';
+import { MAX_FILE_BYTES, MAX_FILES, MAX_MARKER_SCAN_BYTES, MAX_TOTAL_BYTES } from './sources/code/files';
 import { AZURE_KEY_VAULT_HOST_SUFFIX } from './sources/azure-key-vault';
 import { LANGSMITH_CLOUD_ORIGINS } from './sources/langsmith';
 import { OKTA_HOST_SUFFIXES } from './sources/okta';
@@ -234,7 +234,7 @@ export function renderNetworkAndPermissionsMarkdown(): string {
             `- Files read: those ending ${files.extensions.map((e) => `\`${e}\``).join(', ')}.`,
             `- Directories not entered: ${files.skips.map((d) => `\`${d}\``).join(', ')}.`,
             `- Symbolic links followed: ${files.followsSymlinks ? 'yes' : 'never'}. Code executed: ${files.executes ? 'yes' : 'never'}. Files are parsed as text.`,
-            `- Bounds: ${mib(MAX_FILE_BYTES)} per file, ${MAX_FILES.toLocaleString('en-US')} files, ${mib(MAX_TOTAL_BYTES)} in total.`,
+            `- Bounds: ${mib(MAX_FILE_BYTES)} per file that is parsed, ${MAX_FILES.toLocaleString('en-US')} files, ${mib(MAX_TOTAL_BYTES)} in total. A larger file, up to ${mib(MAX_MARKER_SCAN_BYTES)}, is read only to look for a framework's name and is never parsed; one that names a framework is reported as not read.`,
             '',
         );
     }
