@@ -92,8 +92,13 @@ repository's **Settings**.
 
 ## The tag
 
-- [ ] `git tag -s v<version> -m "scanent <version>"` on the commit that passed,
-      then `git push origin v<version>`.
+- [ ] The owner tags the commit that passed and pushes the tag:
+      `git tag -a v<version> -m "scanent <version>" <commit>`, then
+      `git push origin v<version>`. Pushing the tag is the decision to
+      publish, so it is the owner's act. The tag is annotated, not signed
+      (owner decision, 2026-11-13): nothing checks a tag signature, the
+      release's artefacts are signed by the workflow, and the tag ruleset
+      limits who can create a `v*` tag.
 - [ ] The **Release** workflow passes: `gates` (the tagged commit is on main
       and passes what main is held to), `build` on both architectures,
       `bundle`, `sign-bundle`, `publish`, `contract-package`,
