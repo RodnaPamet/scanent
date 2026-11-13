@@ -76,7 +76,10 @@ third-party package travels with its own licence file.
 
 **No SBOM has been produced by the release pipeline yet, because no release
 exists.** What follows describes what `.github/workflows/release.yml` is
-written to do on the first version tag. It has never run. See
+written to do on the first version tag. It has never run for a tag. A
+manual run, which publishes nothing, has made an SBOM of each image and
+checked that it lists the scanner's dependencies; those files were kept only
+as that run's artefacts. See
 [Assurance status](assurance-status.md).
 
 At a release, for each architecture (amd64 and arm64):

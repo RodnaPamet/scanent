@@ -1,0 +1,31 @@
+{
+  "files": [
+    {
+      "bytes": 1113,
+      "name": "report.signed.json",
+      "sha256": "59da6dbd018f2f8bc036a619c3f52247093bcb4f82994abbd8694d78ef3f1706"
+    },
+    {
+      "bytes": 13432,
+      "name": "results.json",
+      "sha256": "0255c1f32caa22b3469f7b32935c75dc34a146f56f6e2474f59337ac5cc4f02f"
+    },
+    {
+      "bytes": 1607,
+      "name": "agents.csv",
+      "sha256": "e0d3df4d3c70a5e0a76921a6310b8957bcadb73d48bc2cc7584787969a03de8d"
+    },
+    {
+      "bytes": 1556,
+      "name": "findings.csv",
+      "sha256": "82c0eeb68992a337040af467acfb5bcc89a62fd48662dcb19e20b621d77988b5"
+    },
+    {
+      "bytes": 33921,
+      "name": "summary.html",
+      "sha256": "1573cd35240e55daa89d93b369d5cb214b2f6348c948ffbec7633b01303cb242"
+    }
+  ],
+  "manifest": "scanent-run/1",
+  "scanId": "example-code-20261113T030658Z-48f1b0b2"
+}

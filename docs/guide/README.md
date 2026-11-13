@@ -91,7 +91,7 @@ These are true today and are stated here so nobody has to find them out later.
   in a real organisation has not been measured.
 - **It has had no independent security test** by an outside firm, and no
   outside code review.
-- **It has not been run continuously for several days.** A five-minute
+- **It has not been run continuously for several days.** A 75-minute
   continuous run has been done; the planned 72-hour run has not.
 
 Plan the first scan as a trial: compare what it finds with what you already

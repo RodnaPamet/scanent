@@ -254,13 +254,16 @@ Stated plainly. None of these is closed by the code.
   and Okta, Azure Key Vault, LangSmith and MCP servers are still tested only
   against fakes written from the providers' documentation. False positives and
   false negatives per provider are not measured.
-- The 72-hour soak has not been run; a five-minute one has.
+- The 72-hour soak has not been run; a 75-minute one has. The 72-hour one is required before 1.0.
 - Keyless signing and the attestations run only on GitHub's runners, at a
   tag. They are written and reviewed. No release exists, so nothing has been
   signed and no client-side verification command has been run against a real
-  signature. The release workflow has never run, in any of its jobs: its own
-  gates, its on-main check, the Syft SBOM step, the arm64 build.
-- The long-test workflow has never run on GitHub.
+  signature. The release workflow has never run for a tag: its on-main
+  check and its signing, publishing and release jobs have never run. It has
+  been run by hand once to the end, which signs and publishes nothing: its
+  gates, the build and smoke test on both architectures, the Syft SBOM step
+  and the bundle.
+- The long-test workflow has run twice on GitHub, by hand.
 - CI first ran on GitHub in its present form on 2026-11-12, which is one day
   of history: lint, type-check, build and the tests on Node 22 and Node 24, `npm audit`, the licence
   allowlist, the Trivy and Grype scans, the cluster test, the rootless Podman

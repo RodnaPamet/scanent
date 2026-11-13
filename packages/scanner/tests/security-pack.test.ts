@@ -281,7 +281,7 @@ describe('docs/security-pack/assurance-status.md', () => {
         for (const heading of ['### One pilot, on the maker\'s own estate, and none at a client', '### No external penetration test, no independent review', '### No long soak', '### No signed release']) {
             expect(notDone).toContain(heading);
         }
-        for (const phrase of ['False positives and false negatives are not measured', '72-hour', 'has never been started', 'never run']) expect(notDone).toContain(phrase);
+        for (const phrase of ['False positives and false negatives are not measured', '72-hour', 'has never run for a\n  tag', 'never run']) expect(notDone).toContain(phrase);
     });
 
     it('agrees with the threat model, which still lists the same four', () => {
@@ -290,18 +290,20 @@ describe('docs/security-pack/assurance-status.md', () => {
         for (const topic of ['penetration test', 'real estate', '72-hour soak', 'No release exists']) expect(theirs).toContain(topic);
     });
 
-    it('claims nothing the repository cannot show: no release directory of fixtures beyond the one it names', () => {
+    it('claims nothing the repository cannot show: no release directory of fixtures beyond the two it names', () => {
         const compat = fs
             .readdirSync(path.join(REPO, 'packages/scanner/tests/fixtures/compat'), { withFileTypes: true })
             .filter((e) => e.isDirectory())
             .map((e) => e.name);
-        expect(compat).toEqual(['0.12.0']);
-        // The one directory is named for a version that has not been released: the page says which commit made it.
+        expect(compat.sort()).toEqual(['0.12.0', '0.13.0']);
+        // The first is named for a version that was never released: the page says which commit made it. The second is the first release's.
         expect(text).toContain('Files written by an earlier commit of the code');
         expect(text).toContain('the earlier unreleased version 0.12.0');
         expect(text).toContain('No released version exists to compare with');
         expect(read('packages/scanner/tests/fixtures/compat/README.md')).toContain('`0.12.0` was made from commit `190f3fb`');
         expect(text).toContain('`190f3fb`');
+        expect(read('packages/scanner/tests/fixtures/compat/README.md')).toContain('`0.13.0` was made from commit `8388ff0`');
+        expect(text).toContain('holds what the code of the first release wrote (commit\n  `8388ff0`)');
     });
 
     it('names the CI jobs as the workflow names them', () => {

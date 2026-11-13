@@ -83,7 +83,7 @@ to add sources that evidence H4 and H5 is an open product decision (issue 15).
 ## Packaging and distribution
 
 - **No release.** No tag, no published image, no signed artefact. The release
-  workflow is written and has never run. The image is to be public (owner
+  workflow is written and has run by hand, which publishes nothing; it has never run for a tag. The image is to be public (owner
   decision, 2026-11-12, issue 19): a pull will need no login. GitHub creates
   a package private, so making it public is a step somebody takes by hand
   after the first release (`docs/release-checklist.md`).
@@ -157,7 +157,7 @@ code (issue 21):
 - pilots at clients, and on the providers the first pilot did not cover
   (Okta, Azure Key Vault, LangSmith, MCP), with false positives and false
   negatives recorded per source;
-- a 72-hour soak;
+- a 72-hour soak, required before 1.0 (a 75-minute one has been run);
 - an external penetration test and code review;
 - a first signed release, and the verification commands run against it.
 

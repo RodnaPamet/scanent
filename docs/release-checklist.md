@@ -74,10 +74,16 @@ repository's **Settings**.
 - [ ] CI is green on the commit to be tagged, every job.
 - [ ] The long tests were run on that commit: the **Long tests** workflow
       (`long-tests.yml`), by hand. Record the run's URL in the release notes.
-- [ ] The soak was run where a machine can stay up:
-      `npm run build && npm run soak -- --hours 72 --every-seconds 60`. Record
-      where its output is kept, the number of runs, and that none failed or
-      was missed. If it was not run for this release, the release notes say so.
+- [ ] The soak was run on the commit, or on one whose scanner code is the
+      same: `npm run build && npm run soak -- --hours <n> --every-seconds 60`.
+      **Before a 0.x release: at least one hour. Before 1.0, and before every
+      release after it: 72 hours**, where a machine can stay up (owner
+      decision, 2026-11-12). Record the length, the number of runs, and that
+      none failed or was missed, in the release notes.
+- [ ] The release notes are written: `docs/releases/<version>.md`, saying
+      what changed, what was run before the tag, and what has not been
+      tested. The release workflow refuses a tag whose page is missing, and
+      the release's own text points at it.
 - [ ] `npm audit --omit=dev` and the two image scans are clean today, not only
       when CI last ran.
 - [ ] A manual run of the **Release** workflow (`workflow_dispatch`) on the
@@ -165,22 +171,16 @@ when it has happened once, and say in which release.
 - `verify.sh` against a real Sigstore bundle and a real `cosign`, with and
   without network. It has been run against a stand-in `cosign` only.
 - `sign-bundle.sh` with a real `cosign`: run against a stand-in only.
-- The release workflow's `gates` job, and its check that the tagged commit is
-  on main. The check's script has been run against a local repository.
-- The release workflow as a workflow, by tag or by hand, and with it the Syft
-  SBOM step. Of the image scans, Trivy and Grype have run in CI; no SBOM has
-  been made by Syft.
-- The contract package's two jobs, `contract-package` and
-  `publish-contract`: `npm pack` and the check of the tarball on a runner, the
-  provenance attestation of the tarball, and `npm publish` to GitHub
-  Packages. The pack and the check have been run on a workstation only.
+- The release workflow by tag, and with it the jobs a manual run skips:
+  `sign-bundle`, `publish`, `publish-contract` and `release`, and the `gates`
+  job's two tag-only steps (the tagged commit is on main; the release has its
+  notes). Each of those two scripts has been run against a local repository.
+- The provenance attestation of the contract package's tarball, and
+  `npm publish` to GitHub Packages.
 - An install of the contract package from GitHub Packages, with a person's
   token or a workflow's.
 - A pull of the image with no login, and the `publish` job's step that tries
   one.
-- The long-test workflow (`long-tests.yml`).
-- The arm64 image: built and bundled on a workstation, never started. It is
-  built and tested only by the release workflow's arm64 runner.
 - The last step of the smoke test under rootless Podman: the `image-podman`
   job leaves the egress overlay out.
 
@@ -189,7 +189,24 @@ Run for the first time on 2026-11-12, on `main`: `ci.yml` in its current form
 gates; `image` with Trivy and Grype; `image-podman`; `chart`;
 `chart-install` on kind), `codeql.yml` and `scorecard.yml`.
 
-- The 72-hour soak.
+Run for the first time on 2026-11-12, by hand, on `main`:
+
+- The long-test workflow (`long-tests.yml`). It passed then, and again on
+  2026-11-13 at commit `8388ff0`:
+  https://github.com/RodnaPamet/scanent/actions/runs/43356834306
+- The release workflow, which publishes and signs nothing when it is run by
+  hand. Its first run failed at the SBOM step on both architectures (the
+  action does not create the directory it writes into). Its second passed,
+  and so did a run on 2026-11-13 at commit `8388ff0`:
+  https://github.com/RodnaPamet/scanent/actions/runs/43356838356
+  The second run is the first time these ran: the `gates` job; the image built,
+  started and smoke-tested on an arm64 runner; the Syft SBOM of each image
+  and the check that it lists the scanner's dependencies; the air-gapped
+  bundle built from both images, unpacked, verified with `--allow-unsigned`,
+  loaded and scanned with; and the contract package packed and checked on a
+  runner.
+
+- The 72-hour soak. It is required before 1.0. For 0.13.0, a 75-minute soak was run on 2026-11-13 at commit `7437554`: 75 scans, one a minute, none failed and none started late (the latest by 64 ms), and resident memory was 110 MiB after the first scan and 110 MiB after the last.
 - A pilot at a client, and any pilot against a real Okta, Azure Key Vault,
   LangSmith or MCP server. One pilot was run on 2026-11-12 on the maker's own
   estate: Entra ID, GitHub Actions, Google Cloud, an Inflect register and

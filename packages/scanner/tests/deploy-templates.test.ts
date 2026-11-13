@@ -1781,6 +1781,8 @@ describe('the release workflow', () => {
             fs.rmSync(dir, { recursive: true, force: true });
         }
         expect(scripts(release.jobs.release)).toContain('are in docs/releases/${VERSION}.md.');
+        // The version in the code has its page, so the tag for it is not refused for want of one.
+        expect(read(`docs/releases/${SCANNER_VERSION}.md`)).toContain(`# scanent ${SCANNER_VERSION}`);
     });
 
     it('the on-main check passes a commit main holds and refuses one it does not, in a real repository', () => {

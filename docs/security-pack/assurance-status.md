@@ -1,7 +1,7 @@
 # Assurance status
 
-What has been done to test scanent, and what has not. Read on 2026-11-12, at
-commit `7836ef9` of `main`. This page is meant to be blunt.
+What has been done to test scanent, and what has not. Read on 2026-11-13, at
+commit `8388ff0` of `main`. This page is meant to be blunt.
 
 ## The short version
 
@@ -13,8 +13,8 @@ production.**
 | Run against a real estate | **Once, on the maker's own estate** (Inflect's): Entra ID, GitHub Actions, Google Cloud, an Inflect register and one repository of source code. **Not at a client**, and not for Okta, Azure Key Vault, LangSmith or an MCP server |
 | External penetration test | **Not done** |
 | Independent code review | **Not done** |
-| 72-hour soak | **Not done** |
-| Signed release | **Not done.** No release, no tag, no published image or package exists |
+| 72-hour soak | **Not done.** A 75-minute soak has been run. The 72-hour one is required before 1.0 (owner decision, 2026-11-12) |
+| Signed release | **Not done.** No release, no tag, no published image or package exists. The release workflow has been run by hand, which signs and publishes nothing |
 | Any security certification of the product | **None.** None is claimed |
 
 Do not describe scanent to anyone as battle-tested, pilot-proven,
@@ -109,8 +109,12 @@ It is not an independent test and must not be presented as one.
 ### No long soak
 
 `scripts/soak.js` exists, and a bounded schedule test runs with the unit
-tests. The 72-hour scheduled run has not been done. The threat model records
-that a five-minute run was done; nothing longer.
+tests. The 72-hour scheduled run has not been done. The owner decided on
+2026-11-12 that it is required before 1.0, and that a 0.x release needs a
+soak of at least one hour.
+
+The longest run so far: a 75-minute soak was run on 2026-11-13 at commit `7437554`: 75 scans, one a minute, none failed and none started late (the latest by 64 ms), and resident memory was 110 MiB after the first scan and 110 MiB after the last. It soaks the `code` source and the file
+output only, and reaches no network.
 
 ### No signed release
 
@@ -118,15 +122,21 @@ No tag has been pushed and no release exists. So:
 
 - Keyless signing, the SBOM attestations and the provenance attestations have
   never run.
-- The release workflow (`.github/workflows/release.yml`) has never run, in
-  any of its jobs, including its check that a tagged commit is on `main`.
+- The release workflow (`.github/workflows/release.yml`) has never run for a
+  tag. Its signing, publishing and release jobs, and its check that a tagged
+  commit is on `main`, have never run.
+- It has been run by hand, which signs and publishes nothing: twice on
+  2026-11-12, where the first run failed at the SBOM step and the second
+  passed, and once on 2026-11-13 at commit `8388ff0`, which passed
+  (https://github.com/RodnaPamet/scanent/actions/runs/43356838356). Such a run builds
+  and smoke-tests the image on amd64 and on arm64, makes a Syft SBOM of each,
+  builds the air-gapped bundle, loads it and scans with what it loaded, and
+  packs the contract package. Before the first of them, the arm64 image had
+  never been started and no SBOM had been made by the pipeline.
 - No command in [Verify a release](../verify-a-release.md) has been run
   against a real signature. `deploy/airgap/verify.sh` and
   `deploy/airgap/sign-bundle.sh` have been run against a stand-in for
   `cosign` only.
-- The SBOM step (Syft) is in the release workflow only, so no SBOM has been
-  produced by the pipeline.
-- The arm64 image has never been started. CI builds and tests amd64 only.
 - Nobody can obtain a verified binary today. The only way to run scanent is
   to build it from source.
 
@@ -148,11 +158,13 @@ Read from GitHub's API on 2026-11-12:
 `docs/release-checklist.md` requires all of these before the first release.
 Residual risk 8 of the threat model (the release identity) rests on them.
 
-### Other things that have never run
+### Other things that have never run, or have run by hand only
 
 - The long-test workflow (`.github/workflows/long-tests.yml`: the fuzzing and
-  scale tests with their large budgets) has never run on GitHub. This page
-  makes no claim that the large budgets have been run anywhere.
+  scale tests with their large budgets) has run twice, by hand, on 2026-11-12
+  and on 2026-11-13 at commit `8388ff0`, and passed both times
+  (https://github.com/RodnaPamet/scanent/actions/runs/43356834306). Two runs
+  with one seed are what that shows.
 - Under rootless Podman, CI runs the image's smoke test without its last
   step (the egress overlay), because that step needs Compose.
 - CodeQL and Scorecard have each run and finished. Their findings, if any,
@@ -164,7 +176,7 @@ All of the following is in the repository and can be re-run.
 
 ### On every push and pull request (CI)
 
-On 2026-11-12 every job below passed on `main` at commit `7836ef9`:
+On 2026-11-13 every job below passed on `main` at commit `8388ff0`:
 
 | Job | What it does |
 |---|---|
@@ -208,7 +220,9 @@ and the [threat model](../threat-model.md).
   (`190f3fb`, the earlier unreleased version 0.12.0) are read by the current
   code, with one exception: its two inventory files are
   `scanent-inventory/1`, which the current code refuses with a message
-  saying what changed. No released version exists to compare with.
+  saying what changed. No released version exists to compare with. A second
+  directory, `0.13.0`, holds what the code of the first release wrote (commit
+  `8388ff0`), so that the version after it is tested against it.
 - **The deployment templates.** Compose, the chart, the air-gapped bundle's
   scripts (against stand-ins for the container runtime and `cosign`).
 - **The documents.** Several pages are generated from the code or checked
