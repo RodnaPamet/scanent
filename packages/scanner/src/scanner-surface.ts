@@ -51,7 +51,7 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * `inflect-agent-harness/4`, with the `code` source's payment-capability fact.
  * The contract id is part of the surface, so the manifest hash moves with it.
  */
-export const SCANNER_VERSION = '0.13.2';
+export const SCANNER_VERSION = '0.14.0';
 
 /** The ingest route, as `docs/contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';

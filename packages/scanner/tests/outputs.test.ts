@@ -365,7 +365,7 @@ describe('5. the declared surface', () => {
         // and the surface names its own version. The move to `inflect-agent-harness/4` changed the
         // contract id it names, and no request. Put those three back and the surface is, to the byte,
         // the one from before outputs existed: nothing else was added to it, by outputs or by anything since.
-        expect(SCANNER_SURFACE.version).toBe('0.13.2');
+        expect(SCANNER_SURFACE.version).toBe('0.14.0');
         expect(SCANNER_SURFACE.contract).toBe('inflect-agent-harness/4');
         const withoutGrants = {
             ...SCANNER_SURFACE,

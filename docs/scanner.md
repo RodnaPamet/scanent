@@ -1143,7 +1143,7 @@ passed" only when every check did. `--json` prints one document instead:
   "doctor": "scanent-doctor/1",
   "estate": "acme-prod",
   "at": "2026-11-12T09:00:00.000Z",
-  "scanner": { "version": "0.13.2", "manifestHash": "sha256:…" },
+  "scanner": { "version": "0.14.0", "manifestHash": "sha256:…" },
   "ready": false,
   "counts": { "PASS": 14, "WARN": 2, "FAIL": 0, "SKIPPED": 5 },
   "exitCode": 3,
