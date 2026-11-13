@@ -44,6 +44,7 @@ Each module is imported by its own path. There is no index module.
 | `@rodnapamet/scanent-contract/harness-contract` | The strict report schemas, the limits, `verifyAndParseHarnessReport`, `harnessSignedMessage`, `LADDER_VERSION` |
 | `@rodnapamet/scanent-contract/harness-contract-rules` | The contract ids, the source kinds, `looksLikeSecret`, `isScanComplete` |
 | `@rodnapamet/scanent-contract/harness-ladder` | The levels and their criteria, `scoreHarness`, `collapseVerdicts`, `criterionState` |
+| `@rodnapamet/scanent-contract/harness-matrix-model` | The table of agents against criteria: `buildHarnessMatrix`, `HARNESS_MATRIX_CELL_STATES`, `harnessJudgementOf`, `compareHarnessMatrixRows`. Imports only the ladder at run time, so a page may use it |
 | `@rodnapamet/scanent-contract/harness-findings` | `planHarnessScan`: what a scan opens and closes, and the finding codes |
 | `@rodnapamet/scanent-contract/canonical-json` | `canonicalJson`: the one form a signature and a hash are made over |
 | `@rodnapamet/scanent-contract/receipt-verification` | Agent-action receipts: the schema and `verifyReceiptSignature` |
@@ -62,8 +63,9 @@ if (result.ok) {
 ```
 
 The package is CommonJS with type declarations, for Node 22 or later. It uses
-Node's `crypto`, so it runs on a server and not in a browser. Its one
-dependency is `zod`, at an exact version.
+Node's `crypto`, so it runs on a server and not in a browser, except
+`harness-matrix-model` and the `harness-ladder` it imports, which import
+nothing else. Its one dependency is `zod`, at an exact version.
 
 ## Licence
 

@@ -16,6 +16,7 @@
  *     a bidirectional control becomes U+FFFD, so a cell reads as it is written.
  */
 import { ALL_HARNESS_CRITERIA } from '@rodnapamet/scanent-contract/harness-ladder';
+import { harnessMatrixCellState, type HarnessMatrixCellState } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 import { isBidiControl } from './escape';
 import type { LocalAgentResult, LocalCriterionCell, LocalResults } from '../results/types';
@@ -50,19 +51,17 @@ function csvFile(header: readonly string[], rows: readonly (readonly (string | n
 
 /**
  * The word one criterion cell holds in `agents.csv`, and in a comparison of two
- * runs: one vocabulary, so a reader of both sees the same word for the same
- * cell.
+ * runs: the table model's cell state (`harnessMatrixCellState`), whose seven
+ * names are these words, so a reader of every file sees the same word for the
+ * same cell, and so does a reader of Inflect's harness tab.
  *
  * A verdict taken from the operator's inventory is never given the word of an
  * observed one. `DECLARED` is a criterion met on what the operator wrote, and
  * `NOT_MET_DECLARED` one not met on it (a row with no axes, no tier, or a tier
  * dated outside the window): no source saw anything either way.
  */
-export function csvCriterionState<T extends Pick<LocalCriterionCell, 'state' | 'basis' | 'readable'>>(cell: T): string {
-    if (cell.state === 'EVIDENCED') return cell.basis === 'DECLARED' ? 'DECLARED' : 'EVIDENCED';
-    if (cell.state === 'NOT_MET') return cell.basis === 'DECLARED' ? 'NOT_MET_DECLARED' : 'NOT_MET';
-    if (cell.state === 'UNANSWERED') return cell.readable ? 'UNANSWERED' : 'NOT_READABLE';
-    return cell.state;
+export function csvCriterionState<T extends Pick<LocalCriterionCell, 'state' | 'basis' | 'readable'>>(cell: T): HarnessMatrixCellState {
+    return harnessMatrixCellState(cell);
 }
 
 export const AGENTS_CSV_LEADING_COLUMNS = [

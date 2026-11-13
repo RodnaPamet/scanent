@@ -137,6 +137,16 @@ what it explains.
 | `LICENSE` | `LICENSE` (verbatim) |
 | `NOTICE` (the agent-action receipts section and the Apache pointer only) | `NOTICE` |
 
+The contract package has one file the copy did not: `packages/contract/src/harness-matrix-model.ts`,
+the shared table of agents against criteria
+([design/table-model.md](design/table-model.md)). It was written here, from
+scanent's local scorer, judgement rule, HTML page and CSV writer and from the
+application's harness tab (`src/lib/agentic/harness-read-model.ts`,
+`MatrixCell.tsx`, `MatrixGrid.tsx`), which it is to replace there. So the
+package holds nine modules: the eight copied files and this one.
+`scripts/compare-inflect-copy.js` still compares the eight, because the
+application has no copy of the ninth.
+
 Rebuilt rather than copied, because the original ran TypeScript source through
 a loader at start and this image runs compiled JavaScript:
 
@@ -317,7 +327,7 @@ What the Inflect Compliance repository still has to do, in order:
    origin commit the application asked for a compatible range; if its
    lockfile resolves another version, npm installs a second copy for the
    package, and a schema of one copy is not a schema of the other.
-4. **Replace the eight copies with imports.** Each row of the file mapping
+4. **Replace the eight copies with imports, and the table with the model.** Each row of the file mapping
    above whose new path is under `packages/contract/src` is one module of the
    package: `src/lib/agentic/harness-contract.ts` becomes
    `@rodnapamet/scanent-contract/harness-contract`, and so on for
@@ -333,6 +343,14 @@ What the Inflect Compliance repository still has to do, in order:
    - at the origin commit the application's own scanner package, the lint
      rule over it and its image build reached contract files by path. Each of
      those references moves to the package or goes.
+   - the harness tab's table moves to `harness-matrix-model` instead of being
+     replaced file for file: `MatrixCell` reads a cell's `state`, the grid
+     sorts with `compareHarnessMatrixRows`, and the read model's own
+     `compareMatrixRows` and its per-cell `criterionState` calls go. That
+     module, unlike the rest of the package, may be imported by a client
+     component: at run time it imports only `harness-ladder`. The tab's own
+     columns (register name, acceptance, drift, the later-ingested level) stay
+     in the application, joined to a row by `discoveredId`.
 5. **Keep the two cross-checks, pointed at the package.** "every reason an
    accepted id can carry has a label in each locale" and "the newest
    migration's CHECK lists SOURCE_KINDS" ("Left behind", above) read the
