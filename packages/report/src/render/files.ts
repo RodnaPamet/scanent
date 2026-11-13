@@ -8,6 +8,7 @@ export const RUN_FILE_NAMES = {
     agents: 'agents.csv',
     findings: 'findings.csv',
     summary: 'summary.html',
+    pdf: 'report.pdf',
     manifest: 'manifest.json',
 } as const;
 

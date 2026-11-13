@@ -3,8 +3,10 @@
  *
  * One canary per secret shape, through every way a string can reach an
  * output: a source, the inventory, the results handed to the renderers, a
- * renderer that assembles one out of harmless parts, and the inputs of
- * `scanent diff`. In every case the output is refused, the refusal names the
+ * renderer that assembles one out of harmless parts, the previous run a page
+ * is compared with, and the inputs of `scanent diff`. `report.pdf` is read
+ * back as text (its streams inflated) and `summary.html`'s data block as JSON,
+ * so neither compression nor escaping can hide a canary from the check. In every case the output is refused, the refusal names the
  * member or the file, and the canary is nowhere: not in a file, not on
  * stdout, not in the log, not in the error.
  *
@@ -27,7 +29,9 @@ import { assertNoSecretShape, OutputRefusedLocally, renderRunFiles, writeRun } f
 import { scanAndDeliver } from '../src/outputs';
 import { ReportRefusedLocally, signReport } from '../src/report';
 import { loadSigningKey } from '../src/scan';
-import { CANARIES, capturedLog, configOf, ENV, EXAMPLE_AGENT, noFetch, scanExample, tree } from './helpers/output-fixtures';
+import { diffResults } from '@scanent/report/diff/diff';
+import { renderReportPdf } from '../src/report-pdf';
+import { CANARIES, capturedLog, configOf, ENV, EXAMPLE_AGENT, noFetch, pageDataOf, pdfTextOf, scanExample, stringsOf, tree } from './helpers/output-fixtures';
 
 const T1 = Date.parse('2026-11-03T03:30:00.000Z');
 
@@ -63,10 +67,18 @@ describe('the canaries', () => {
         expect(looksLikeSecret(canary)).toBe(true);
     });
 
-    it('a clean run passes every check: the renderers\' own text holds no secret shape', () => {
+    it('a clean run passes every check: the renderers\' own text holds no secret shape, nor the PDF\'s, nor the page\'s data', () => {
         const files = renderRunFiles(clean.raw, clean.results);
-        expect(files.map((f) => f.name)).toEqual(['report.signed.json', 'results.json', 'agents.csv', 'findings.csv', 'summary.html']);
-        for (const f of files.slice(1)) expect(looksLikeSecret(f.content)).toBe(false);
+        expect(files.map((f) => f.name)).toEqual(['report.signed.json', 'results.json', 'agents.csv', 'findings.csv', 'summary.html', 'report.pdf']);
+        for (const f of files.slice(1, 5)) expect(looksLikeSecret(f.content as string)).toBe(false);
+        const pdf = pdfTextOf(files[5].content as Uint8Array);
+        // The text read back is the document: the scan id and the agent are in it.
+        expect(pdf.lines).toContain(clean.results.scan.id);
+        expect(pdf.joined).toContain(EXAMPLE_AGENT);
+        expect(looksLikeSecret(pdf.lines)).toBe(false);
+        const data = stringsOf(pageDataOf(files[4].content as string));
+        expect(data).toContain(EXAMPLE_AGENT);
+        for (const text of data) expect(looksLikeSecret(text)).toBe(false);
     });
 });
 
@@ -97,8 +109,14 @@ describe('through a source', () => {
         expect(result.ok).toBe(true);
         expect(result.scan.body.agents).toHaveLength(1);
         const files = tree(out);
-        expect(Object.keys(files)).toHaveLength(7);
+        expect(Object.keys(files)).toHaveLength(8);
         for (const content of [...Object.values(files), ...printed, text()]) expect(content).not.toContain(canary);
+        // Read as a viewer would: the PDF's inflated text, and the page's data as parsed JSON.
+        const run = path.join(out, 'runs', result.scan.body.scan.id);
+        const pdf = pdfTextOf(fs.readFileSync(path.join(run, 'report.pdf')));
+        expect(pdf.joined).toContain(EXAMPLE_AGENT);
+        expect(pdf.joined).not.toContain(canary);
+        expect(stringsOf(pageDataOf(fs.readFileSync(path.join(run, 'summary.html'), 'utf8'))).join('\n')).not.toContain(canary);
     });
 
     it.each(CANARIES)('%s in any string a source reports: the report is not signed, so nothing is delivered', (_label, canary) => {
@@ -236,6 +254,48 @@ describe('assembled at render time', () => {
             expect((thrown as OutputRefusedLocally).where).toBe(name);
             expect((thrown as Error).message).toBe(`output refused: ${name} has the shape of a secret; nothing was written`);
             expect(fs.readdirSync(dir)).toEqual([]);
+        }
+    });
+
+    it.each(halves)('%s put together in the PDF out of two harmless halves is refused as report.pdf', (_label, head, tail) => {
+        const pdf = (r: LocalResults) => {
+            const real = renderReportPdf(r);
+            return { bytes: real.bytes, text: `${real.text}${head}${tail}` };
+        };
+        let thrown: unknown;
+        try {
+            writeRun({ dir }, clean, { renderers: { results: renderResultsJson, agents: renderAgentsCsv, findings: renderFindingsCsv, summary: renderSummaryHtml, pdf } });
+        } catch (err) {
+            thrown = err;
+        }
+        expect(thrown).toBeInstanceOf(OutputRefusedLocally);
+        expect((thrown as Error).message).toBe('output refused: report.pdf has the shape of a secret; nothing was written');
+        expect(fs.readdirSync(dir)).toEqual([]);
+    });
+
+    it.each(CANARIES)('%s in the previous run the page is compared with is refused by member of the page\'s data, and nothing is written', async (_label, canary) => {
+        const later = await scanExample(T1 + 86_400_000);
+        const diff = diffResults(clean.results, later.results);
+        const armed = { ...diff, agents: { ...diff.agents, added: [canary] } };
+        let thrown: unknown;
+        try {
+            writeRun({ dir }, { ...later, previous: { kind: 'COMPARED', diff: armed } });
+        } catch (err) {
+            thrown = err;
+        }
+        expect(thrown).toBeInstanceOf(OutputRefusedLocally);
+        expect((thrown as OutputRefusedLocally).where).toBe('summary.html: drift.added.rows[0]');
+        expect((thrown as Error).message).not.toContain(canary);
+        expect(fs.readdirSync(dir)).toEqual([]);
+    });
+
+    it('the PDF holds what the results hold and no more: its text read back is the renderer\'s own account of it', () => {
+        const rendered = renderReportPdf(clean.results);
+        const read = pdfTextOf(rendered.bytes);
+        // Every line the renderer reports is shown; nothing is in the document that it did not report.
+        for (const word of ['Agent estate scan results', 'Completeness per source', clean.results.scan.id, 'What this document does not say']) {
+            expect(rendered.text).toContain(word);
+            expect(read.lines).toContain(word);
         }
     });
 

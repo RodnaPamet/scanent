@@ -107,8 +107,9 @@ With a file output, each scan writes one directory and replaces one pointer:
     report.signed.json        the signed report
     results.json              levels, criteria and findings, scored locally
     agents.csv, findings.csv  the same, for a spreadsheet
-    summary.html              the same, to read
-    manifest.json             the name, size and SHA-256 of the five files above
+    summary.html              the same, to read in a browser
+    report.pdf                the same, as a document
+    manifest.json             the name, size and SHA-256 of the six files above
 ```
 
 A run directory is written whole or not at all, mode `0750`, files `0640`. A

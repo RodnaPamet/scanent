@@ -5,6 +5,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { inflateSync } from 'node:zlib';
 
 import type { LocalResults } from '@scanent/report/results/types';
 
@@ -75,6 +76,61 @@ export function tree(dir: string): Record<string, string> {
     };
     walk(dir);
     return out;
+}
+
+/**
+ * The text a PDF shows, read back from its bytes the way a viewer would find
+ * it: every content stream inflated, and every string the text operators show
+ * (`(…)` and `<hex>` operands of `Tj`, `TJ`, `'` and `"`) decoded as Latin-1,
+ * which is what the standard fonts' WinAnsi encoding is for every character
+ * scanent writes. One line per text operator, so a string pdfkit split across
+ * operators is still in `joined`, which has nothing between them.
+ */
+export function pdfTextOf(pdf: Uint8Array): { readonly lines: string; readonly joined: string } {
+    const bytes = Buffer.from(pdf);
+    const pieces: string[] = [];
+    let at = 0;
+    for (;;) {
+        const start = bytes.indexOf('stream', at, 'latin1');
+        if (start < 0) break;
+        let from = start + 'stream'.length;
+        if (bytes[from] === 0x0d) from += 1;
+        if (bytes[from] === 0x0a) from += 1;
+        const end = bytes.indexOf('endstream', from, 'latin1');
+        if (end < 0) break;
+        const raw = bytes.subarray(from, end);
+        let content: string;
+        try {
+            content = inflateSync(raw).toString('latin1');
+        } catch {
+            content = raw.toString('latin1');
+        }
+        for (const op of content.matchAll(/(\[(?:[^\]\\]|\\.)*\]|\((?:[^()\\]|\\.)*\)|<[0-9a-fA-F\s]*>)\s*(TJ|Tj|'|")/g)) {
+            let text = '';
+            for (const part of op[1].matchAll(/<([0-9a-fA-F\s]*)>|\(((?:[^()\\]|\\.)*)\)/g)) {
+                if (part[1] !== undefined) text += Buffer.from(part[1].replace(/\s+/g, ''), 'hex').toString('latin1');
+                else text += part[2].replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (_m, c: string) => (/^[0-7]+$/.test(c) ? String.fromCharCode(parseInt(c, 8)) : ({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' } as Record<string, string>)[c] ?? c));
+            }
+            pieces.push(text);
+        }
+        at = end + 'endstream'.length;
+    }
+    return { lines: pieces.join('\n'), joined: pieces.join('') };
+}
+
+/** The JSON a `summary.html` carries for its script, parsed. */
+export function pageDataOf(html: string): unknown {
+    const m = /<script type="application\/json" id="scan-data">([^<]*)<\/script>/.exec(html);
+    if (m === null) throw new Error('the page carries no data block');
+    return JSON.parse(m[1]) as unknown;
+}
+
+/** Every string in a value, keys included. */
+export function stringsOf(value: unknown): string[] {
+    if (typeof value === 'string') return [value];
+    if (Array.isArray(value)) return value.flatMap(stringsOf);
+    if (value !== null && typeof value === 'object') return Object.entries(value).flatMap(([k, v]) => [k, ...stringsOf(v)]);
+    return [];
 }
 
 /** One canary per secret shape, built from parts so this file holds no secret-shaped literal. */

@@ -16,7 +16,9 @@ hands the values in.
 | `results/inventory` | The operator's inventory: the strict schema, `parseInventory`, and the four H1 verdicts a matched row declares |
 | `render/results-json` | `renderResultsJson`: the results as text with sorted keys, so the same results give the same bytes |
 | `render/csv` | `renderAgentsCsv`, `renderFindingsCsv` and `csvCell`, the one function every cell passes through: RFC 4180, and a cell a spreadsheet would evaluate is neutralised |
-| `render/html` | `renderSummaryHtml`: one self-contained page. No script, nothing loaded, one style block |
+| `render/html` | `renderSummaryHtml`: one self-contained page: the static sections, one JSON data block and one inline script, allowed by a hash-based CSP. Nothing loaded |
+| `render/page-data` | `summaryPageData`: what the page's script and `report.pdf` show, from the shared table model (`render/matrix-of-results`) |
+| `render/page-script` | The page's script, as text |
 | `render/escape` | The `html` template every string enters the page through. There is no exported way to mark text as safe |
 | `render/files` | The names of the files one run writes |
 | `diff/diff` | `diffResults(old, new)`: what changed between two runs, and what could not be compared |

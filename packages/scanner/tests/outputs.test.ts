@@ -189,7 +189,7 @@ describe('4. delivery', () => {
         expect(fs.readFileSync(path.join(run, RUN_FILE_NAMES.report), 'utf8')).toBe(result.scan.raw);
         expect(verifyAndParseHarnessReport(result.scan.raw, [PUBLIC_HEX])).toMatchObject({ ok: true });
         expect(lines().map((l) => l.msg)).toEqual(['source read', 'report signed', 'results written', 'report ingested']);
-        expect(lines()[2]).toMatchObject({ dir: `runs/${result.scan.body.scan.id}`, files: 6, removedRuns: 0 });
+        expect(lines()[2]).toMatchObject({ dir: `runs/${result.scan.body.scan.id}`, files: 7, removedRuns: 0 });
     });
 
     it('stdout alone writes the report and a newline, and logs nothing more than a scan does', async () => {
@@ -258,7 +258,7 @@ describe('4. delivery', () => {
         expect(failed.error).toMatch(new RegExp(`^results written to runs/${id}, but latest\\.json was not updated \\([A-Z]+\\); it does not name this run$`));
         expect(text()).not.toContain(dir);
         // The run is there, whole.
-        expect(fs.readdirSync(path.join(dir, 'runs', id))).toHaveLength(6);
+        expect(fs.readdirSync(path.join(dir, 'runs', id))).toHaveLength(7);
     });
 
     it('a failed post is one error line, and the file output still stands', async () => {
@@ -277,7 +277,7 @@ describe('4. delivery', () => {
             { kind: 'inflect', ok: false },
         ]);
         expect(lines().filter((l) => l.level === 'error')).toEqual([expect.objectContaining({ msg: 'output failed', output: 'inflect', error: 'TypeError' })]);
-        expect(Object.keys(tree(dir)).length).toBe(7);
+        expect(Object.keys(tree(dir)).length).toBe(8);
     });
 
     it('a refused post is not a delivery, and a thrown non-error is logged as unknown', async () => {

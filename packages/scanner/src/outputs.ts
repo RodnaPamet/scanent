@@ -20,6 +20,7 @@ import type { ParsedInventory } from '@scanent/report/results/inventory';
 import type { OutputConfig, ScannerConfig } from './config';
 import { OutputRefusedLocally, PointerNotUpdated, writeRun, type FileOutputDeps } from './file-output';
 import { loadConfiguredInventory, scoreScanLocally } from './local-results';
+import { previousRunOf } from './previous-run';
 import { ingestTarget, postSignedReport, runScan, type ScanDeps } from './scan';
 
 export type OutputKind = OutputConfig['kind'];
@@ -117,7 +118,9 @@ export async function scanAndDeliver(deps: DeliverDeps): Promise<DeliveryResult>
         try {
             if (output.kind === 'file') {
                 const results = scoreScanLocally({ config, raw: scan.raw, body: scan.body, inventory, sourceNotes: scan.sourceNotes });
-                const written = writeRun(output, { raw: scan.raw, results }, deps.file);
+                // The run the directory names as its latest, read before this one replaces the pointer.
+                const previous = previousRunOf(output.dir, results);
+                const written = writeRun(output, { raw: scan.raw, results, previous }, deps.file);
                 log.info('results written', { scan: written.scanId, dir: written.dir, files: written.files.length, removedRuns: written.removedRuns.length });
                 ok = true;
             } else if (output.kind === 'stdout') {

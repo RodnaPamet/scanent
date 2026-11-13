@@ -140,8 +140,9 @@ cat scanent-out/latest.json
 
 names the newest run. Open `scanent-out/runs/<scan id>/summary.html` in a
 browser: it is one file and loads nothing from the network. Beside it are
-`agents.csv` and `findings.csv` for a spreadsheet, `results.json`, the signed
-report and a manifest of checksums. The files are yours (mode 0640, in a
+`report.pdf`, the same results as a document, `agents.csv` and `findings.csv`
+for a spreadsheet, `results.json`, the signed report and a manifest of
+checksums. The files are yours (mode 0640, in a
 directory 0750), because the scanner ran as you.
 
 A source that could not be read in full is shown as incomplete with its

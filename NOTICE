@@ -41,6 +41,27 @@ the image with its own licence file, under `/app/node_modules/<name>/` or
                                     third-party notices are in the package's
                                     ThirdPartyNoticeText.txt
 
+`report.pdf` is written by pdfkit and the packages it depends on, each
+installed unmodified at the version the lockfile pins:
+
+  pdfkit, fontkit, png-js, linebreak, restructure, tiny-inflate,
+  unicode-properties, unicode-trie, dfa, brotli
+               MIT License          by Devon Govett and the foliojs
+                                    contributors (png-js states its licence
+                                    in its LICENSE file only)
+  fflate       MIT License          Copyright (c) Arjun Barrett
+  @noble/hashes, @noble/ciphers
+               MIT License          Copyright (c) 2022 Paul Miller
+  @swc/helpers Apache License 2.0   Copyright the SWC contributors
+  clone        MIT License          Copyright (c) 2011-2015 Paul Vorbach
+  fast-deep-equal
+               MIT License          Copyright (c) 2017 Evgeny Poberezkin
+  pako         MIT License          Copyright (C) 2014-2016 Vitaly Puzrin
+  base64-js    MIT License          Copyright (c) 2014 Jameson Little
+
+No font file is embedded in any output: report.pdf names the standard PDF
+fonts, which a viewer supplies.
+
 ------------------------------------------------------------------------
 Apache License, Version 2.0
 ------------------------------------------------------------------------

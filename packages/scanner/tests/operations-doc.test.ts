@@ -164,7 +164,7 @@ describe('docs/operations.md, the rest', () => {
     });
 
     it('names the run\'s files as the scanner writes them', () => {
-        for (const name of ['latest.json', 'report.signed.json', 'results.json', 'agents.csv', 'findings.csv', 'summary.html', 'manifest.json']) expect(DOC).toContain(name);
+        for (const name of ['latest.json', 'report.signed.json', 'results.json', 'agents.csv', 'findings.csv', 'summary.html', 'report.pdf', 'manifest.json']) expect(DOC).toContain(name);
     });
 
     it('describes the support bundle by its schema, its members and its flags', () => {

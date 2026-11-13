@@ -29,6 +29,7 @@ import {
 import { diffResults } from '../src/diff/diff';
 import { csvPaymentCapabilities, renderAgentsCsv, renderFindingsCsv } from '../src/render/csv';
 import { renderDiffText } from '../src/render/diff-text';
+import { summaryPageData } from '../src/render/page-data';
 import { renderSummaryHtml } from '../src/render/html';
 import { LocalResultsSchema } from '../src/results/schema';
 import { scoreReportLocally } from '../src/results/score';
@@ -197,7 +198,9 @@ describe('3. the page, the spreadsheet and the comparison', () => {
         expect(LocalResultsSchema.safeParse(older).success).toBe(true);
         const page = renderSummaryHtml(older);
         expect(page).not.toContain('payments-h');
-        expect(page).not.toContain('Can pay');
+        // Neither the static page nor the data its script reads offers a payment count: the script's own words are not the page's.
+        expect(page.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '')).not.toContain('Can pay');
+        expect(summaryPageData(older).estate.paying).toBeNull();
     });
 
     it('agents.csv states each of the three states in words, and findings.csv carries the finding', () => {

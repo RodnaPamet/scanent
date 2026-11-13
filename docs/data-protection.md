@@ -138,7 +138,7 @@ criminal convictions are not read.
 | Output | Where | Personal data in it |
 |---|---|---|
 | The signed report (`report.signed.json`, or stdout, or posted to a tenant) | Your output directory; a tenant only if you configure one | Owner ids, as above. No declared inventory fields |
-| `results.json`, `agents.csv`, `summary.html` | Your output directory | Owner ids, and the inventory's declared `name`, `owner` and `purpose` |
+| `results.json`, `agents.csv`, `summary.html`, `report.pdf` | Your output directory | Owner ids, and the inventory's declared `name`, `owner` and `purpose` |
 | `findings.csv` | Your output directory | Agent ids and credential references. A finding names an agent or a credential by its id; for the sources listed under "Indirectly" above, that id holds names your estate chose (a secret's name, a workflow file, a path), and a person's name written there is carried |
 | The log (stderr) | Wherever your platform sends a container's stderr | None by design: kinds, counts, scan ids, host names. No owner, no agent id (`docs/operations.md`) |
 | A support bundle | Where you write it, if you run the command | None by default: every name and id is replaced by a token. With `--include-identifiers`: agent ids, the estate's name, the tenant's host and slug, configured hosts, labels, paths, and the text of each doctor check |

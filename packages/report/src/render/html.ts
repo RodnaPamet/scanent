@@ -1,15 +1,27 @@
 /**
  * `summary.html` — the results as one page somebody opens.
  *
- * ONE FILE, NOTHING LOADED. No script element, no link, no image, no frame,
- * no import, no web font and no inline event handler; one style block. A
- * Content-Security-Policy meta makes the browser hold the same line.
+ * ONE FILE, NOTHING LOADED. The page carries its data as one JSON block and
+ * its interactive view as one inline script, and its look as one style block.
+ * No link, no image, no frame, no import, no web font, no inline event handler
+ * and no request of any kind. A Content-Security-Policy meta allows exactly
+ * that script and that style, by their SHA-256 hashes, and nothing else:
+ * nothing may be fetched, connected to, framed or submitted.
  *
- * EVERY SCANNED STRING IS ESCAPED. The page is built with the `html` template
- * of `escape.ts`, which escapes whatever is interpolated. Scanned data never
- * becomes a tag name, an attribute name, a class, a URL or a link: classes and
- * state codes come from the fixed tables in this file, keyed by enum values,
- * and a value the tables do not know falls back to a fixed neutral entry.
+ * READABLE WITH NO SCRIPT. Every section below is rendered here, on the
+ * server side of the file, and is the whole page when the script does not
+ * run. The interactive view (`page-script.ts`) is built into an element that
+ * is hidden until it is complete; it then hides the static sections it
+ * repeats (`dup`), and printing shows the static page again.
+ *
+ * EVERY SCANNED STRING IS ESCAPED. The static page is built with the `html`
+ * template of `escape.ts`, which escapes whatever is interpolated, and the
+ * JSON block is written by `scriptJson`, which nothing in it can end. Scanned
+ * data never becomes a tag name, an attribute name, a class, a URL or a link:
+ * classes and state codes come from the fixed tables in `words.ts`, keyed by
+ * enum values, and a value the tables do not know falls back to a fixed
+ * neutral entry. The one address the view may link to is an evidence
+ * reference that is an absolute https URL.
  *
  * WHAT COULD NOT BE READ COMES FIRST. Completeness per source is the first
  * section after the header, and what this run could not have evidenced is the
@@ -18,23 +30,55 @@
  * and no level anywhere. An empty scan is shown as a finding, never as a clean
  * result.
  *
+ * ONE TABLE MODEL. Every row the page shows, static or interactive, is a row
+ * of the contract's shared table model (`harnessMatrixOfResults`), so where an
+ * agent stands against its bar is the model's `heldToBar` and
+ * `countsAsShortfall`: an unregistered automated identity is held to none.
+ *
  * NO CLOCK AND NO PATH. The page holds no generation time and no absolute
- * path, so the same results give the same bytes.
+ * path, so the same results (and the same previous run) give the same bytes.
  */
 import { HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3 } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import { harnessBarFor } from '@rodnapamet/scanent-contract/harness-findings';
-import { HARNESS_LEVEL_NAMES, HARNESS_LEVELS, levelAtLeast, type HarnessCriterionId, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
+import { HARNESS_LEVELS, levelAtLeast, type HarnessCriterionId } from '@rodnapamet/scanent-contract/harness-ladder';
 import {
     compareHarnessMatrixRows,
-    HARNESS_MATRIX_CELL_STATES,
     harnessMatrixCellState,
-    type HarnessMatrixCellState,
+    type HarnessMatrixModel,
+    type HarnessMatrixRow,
     type HarnessMatrixRowRank,
 } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 import type { LocalAgentResult, LocalCriterionCell, LocalFinding, LocalResults } from '../results/types';
-import { html, htmlText, type HtmlValue, type SafeHtml } from './escape';
+import { html, htmlText, scriptElement, type HtmlValue, type SafeHtml } from './escape';
 import { RUN_FILE_NAMES } from './files';
+import { harnessMatrixOfResults } from './matrix-of-results';
+import { findingsBySeverity, scriptJson, summaryPageData, type DriftRecord, type SummaryContext } from './page-data';
+import { PAGE_SCRIPT } from './page-script';
+import { cspHashSource } from './sha256';
+import {
+    CAVEATS,
+    CELL_STYLE,
+    ESTATE_REGISTRATION_TEXT,
+    fixed,
+    LEGEND,
+    levelName,
+    MODEL_SIGN_TEXT,
+    plural,
+    criterionWords,
+    REACH_TEXT,
+    reasonSentence,
+    REGISTRATION_TEXT,
+    SEVERITY_CLASS,
+    standingOf,
+    STANDING_TEXT,
+    SUBJECT_WITHOUT_AGENT,
+    UNBOUND_TEXT,
+    UNREADABLE_TEXT,
+    type CellStyle,
+} from './words';
+
+export type { PreviousRun, SummaryContext } from './page-data';
 
 /**
  * Above this many agents the matrix shows the first ones and says so. A run at
@@ -75,126 +119,27 @@ function capped<T>(
     };
 }
 
-/** An agent as the table model orders it: its level, and where that stands against its bar. */
-function rankOf(agent: LocalAgentResult): HarnessMatrixRowRank {
-    const j = agent.judgement;
-    if (j.state !== 'JUDGED') return { discoveredId: agent.discoveredId, level: null, barStatus: 'NOT_JUDGED' };
-    return { discoveredId: agent.discoveredId, level: j.level, barStatus: j.shortfall ? 'BELOW_BAR' : 'AT_BAR' };
-}
-
 /**
  * Which agents the matrix shows when the run holds more than it can: the ones
- * that most need a reader, in the table model's order (`compareHarnessMatrixRows`):
- * not judged first, then below their bar, then the lowest level; within each,
- * in order of id (the order the results list them in).
+ * that most need a reader, in the table model's order (`compareHarnessMatrixRows`
+ * over the model's own rows): not judged first, then below their bar, then the
+ * lowest level; within each, in order of id (the order the results list them in).
  */
-function matrixSelection(agents: readonly LocalAgentResult[]): readonly LocalAgentResult[] {
+function matrixSelection(agents: readonly LocalAgentResult[], rows: ReadonlyMap<string, HarnessMatrixRowRank>): readonly LocalAgentResult[] {
     if (agents.length <= MATRIX_MAX_AGENTS) return agents;
+    const notJudged = (agent: LocalAgentResult): HarnessMatrixRowRank => ({ discoveredId: agent.discoveredId, level: null, barStatus: 'NOT_JUDGED' });
     return agents
-        .map((agent): [LocalAgentResult, HarnessMatrixRowRank] => [agent, rankOf(agent)])
+        .map((agent): [LocalAgentResult, HarnessMatrixRowRank] => [agent, rows.get(agent.discoveredId) ?? notJudged(agent)])
         .sort(([, a], [, b]) => compareHarnessMatrixRows(a, b))
         .slice(0, MATRIX_MAX_AGENTS)
         .map(([agent]) => agent);
 }
 
-// ── Fixed tables: every class and code on the page comes from one of these ──
-
-interface CellStyle {
-    readonly code: string;
-    readonly cls: string;
-    readonly text: string;
-}
-
-/** How each of the table model's seven cell states is drawn. A `Record`, so a new state is a compile error here. */
-const CELL_STYLE: Readonly<Record<HarnessMatrixCellState, CellStyle>> = {
-    EVIDENCED: { code: 'E', cls: 'c-e', text: 'Evidenced: a source observed it' },
-    DECLARED: { code: 'D', cls: 'c-d', text: 'Evidenced on what the operator declared in the inventory, not observed' },
-    MET_UNEVIDENCED: { code: 'M', cls: 'c-m', text: 'Reported met without evidence; counts as not met' },
-    NOT_MET: { code: 'N', cls: 'c-n', text: 'Not met: a source saw it fail' },
-    NOT_MET_DECLARED: { code: 'n', cls: 'c-n', text: 'Not met on what the operator declared in the inventory; no source saw it fail' },
-    UNANSWERED: { code: '·', cls: 'c-u', text: 'Unanswered: a configured reader could have reported it and none did; counts as not met' },
-    NOT_READABLE: { code: '–', cls: 'c-x', text: 'Not readable: nothing this run was configured to read could have reported it; counts as not met' },
-};
-
-/** In the table model's order. */
-const LEGEND: readonly CellStyle[] = HARNESS_MATRIX_CELL_STATES.map((state) => CELL_STYLE[state]);
-
-/** A cell the results do not hold reads as unanswered. */
-const cellStyle = (cell: LocalCriterionCell | undefined): CellStyle => CELL_STYLE[cell === undefined ? 'UNANSWERED' : harnessMatrixCellState(cell)];
-
-const SEVERITY_CLASS: Readonly<Record<string, string>> = { LOW: 'sev-low', MEDIUM: 'sev-medium', HIGH: 'sev-high', CRITICAL: 'sev-critical' };
-const SEVERITY_ORDER: Readonly<Record<string, number>> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
-
-/** The subject of a finding that names no one agent, by code: a spending finding is about a registration several agents share. */
-const SUBJECT_WITHOUT_AGENT: Readonly<Record<string, string>> = {
-    SPENDING_AGENT_UNDECLARED: 'One registration, several agents',
-};
-
-const REACH_TEXT: Readonly<Record<string, string>> = {
-    READ_ONLY: 'Read only',
-    WRITE_OR_EXTERNAL: 'Write or external',
-    UNKNOWN: 'Unknown',
-};
-
-const REGISTRATION_TEXT: Readonly<Record<string, string>> = {
-    NONE: 'Not registered',
-    DECLARED_INVENTORY: 'Declared by the operator',
-    OBSERVED_REGISTER: 'In the Inflect register',
-};
-
-const ESTATE_REGISTRATION_TEXT: Readonly<Record<string, string>> = {
-    NONE: 'Nothing: no inventory was supplied and the Inflect register was not read',
-    INVENTORY: 'The operator’s inventory (declared by the operator, not observed)',
-    INFLECT_REGISTER: 'The Inflect register',
-    BOTH: 'The Inflect register, and the operator’s inventory (declared by the operator)',
-};
-
-const UNREADABLE_TEXT: Readonly<Record<string, string>> = {
-    NO_READER: 'No reader in scanent reports this criterion',
-    READER_NOT_CONFIGURED: 'A reader exists; this run did not configure it',
-};
-
-const UNBOUND_TEXT: Readonly<Record<string, string>> = {
-    OWN_SOURCE_INCOMPLETE: 'The source that listed it was not read in full',
-    IDENTITY_SOURCE_INCOMPLETE: 'A source that could name the agent it is bound to was not read in full',
-};
-
 /** Twenty-one fixed widths; a bar's class is picked by its share, never written from data. */
 const BAR_STEPS = 20;
 
-function fixed(table: Readonly<Record<string, string>>, key: string, fallback: string): string {
-    return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : fallback;
-}
-
-function levelName(level: HarnessLevel): string {
-    return fixed(HARNESS_LEVEL_NAMES, level, '');
-}
-
-function plural(n: number, one: string, many: string): string {
-    return `${n} ${n === 1 ? one : many}`;
-}
-
-/** `H2.credential_bound` → `credential bound`: the id's own words, for a column head. */
-function criterionWords(criterion: string): string {
-    return criterion.slice(criterion.indexOf('.') + 1).replace(/_/g, ' ');
-}
-
-/** A reason code and a sentence for it. The code is always shown beside the sentence. */
-function reasonSentence(code: string): string {
-    const [head, kind, reason] = code.split(':');
-    if (head === 'SOURCE_INCOMPLETE' && kind !== undefined) {
-        return reason === 'NOT_LISTED'
-            ? `It was found through ${kind}, which the report does not list as a source`
-            : `A source it was found through, ${kind}, was not read in full (${reason ?? 'no reason given'})`;
-    }
-    if (head === 'VERDICT_SOURCE_INCOMPLETE' && kind !== undefined) {
-        return `${kind}, which reports on agents other sources find, was not read in full (${reason ?? 'no reason given'})`;
-    }
-    if (head === 'OTHER_SOURCE_INCOMPLETE' && kind !== undefined) {
-        return `Another source, ${kind}, was not read in full; it does not bear on this agent`;
-    }
-    return 'See the code';
-}
+/** A cell the results do not hold reads as unanswered. */
+const cellStyle = (cell: LocalCriterionCell | undefined): CellStyle => CELL_STYLE[cell === undefined ? 'UNANSWERED' : harnessMatrixCellState(cell)];
 
 // ── Sections ──
 
@@ -307,7 +252,7 @@ ${rows}
 
 function emptyEstate(r: LocalResults): SafeHtml {
     const finding = r.findings.find((f) => f.code === 'EMPTY_SCAN');
-    return html`<section id="summary" aria-labelledby="summary-h">
+    return html`<section id="summary" class="dup" aria-labelledby="summary-h">
 <h2 id="summary-h">Estate summary</h2>
 <div class="callout bad">
 <p><strong>This scan found no agents. That is a finding, not a clean result.</strong></p>
@@ -334,7 +279,7 @@ function summary(r: LocalResults): SafeHtml {
 <td class="barcell"><span class="bar w-${step}"></span></td>
 </tr>`;
     });
-    return html`<section id="summary" aria-labelledby="summary-h">
+    return html`<section id="summary" class="dup" aria-labelledby="summary-h">
 <h2 id="summary-h">Estate summary</h2>
 <dl class="stats">
 ${stat('Agents found', e.agentCount, identities === undefined || identities.length === 0 ? '' : 'agents and automated identities')}
@@ -366,7 +311,14 @@ function agentLabel(agent: LocalAgentResult): SafeHtml {
         : html`<span class="name">${agent.declared.name}</span> <span class="decl">(name declared by the operator)</span><br><code class="id">${agent.discoveredId}</code>`;
 }
 
-function matrixRow(agent: LocalAgentResult, order: readonly HarnessCriterionId[]): SafeHtml {
+/** The bar cell: the bar, and where the model says the agent stands against it. */
+function barTag(row: HarnessMatrixRow | undefined): SafeHtml {
+    const standing = row === undefined ? 'NOT_JUDGED' : standingOf(row);
+    if (standing === 'NO_BAR') return html`<span class="tag plain">${STANDING_TEXT.NO_BAR}</span>`;
+    return html`<span class="tag ${standing === 'BELOW_BAR' ? 'bad' : 'ok'}">${STANDING_TEXT[standing]}</span>`;
+}
+
+function matrixRow(agent: LocalAgentResult, order: readonly HarnessCriterionId[], row: HarnessMatrixRow | undefined): SafeHtml {
     const j = agent.judgement;
     const pays = (agent.paymentCapabilities ?? []).length > 0 ? html`<br><span class="tag warn">Code calls a payment client</span>` : '';
     const cells = new Map(agent.criteria.map((c) => [c.criterion, c]));
@@ -379,7 +331,7 @@ function matrixRow(agent: LocalAgentResult, order: readonly HarnessCriterionId[]
     const level =
         j.state === 'JUDGED'
             ? html`<td class="lvl"><strong>${j.level}</strong> ${levelName(j.level)}${j.level === j.observedLevel ? '' : html`<br><span class="decl">${j.observedLevel} on observation alone; the rest is declared by the operator</span>`}</td>
-<td class="lvl">${j.bar} <span class="tag ${j.shortfall ? 'bad' : 'ok'}">${j.shortfall ? 'Below bar' : 'At bar'}</span></td>`
+<td class="lvl">${j.bar} ${barTag(row)}</td>`
             : html`<td class="lvl"><span class="tag warn">Not judged</span></td>
 <td class="lvl"><span class="tag warn">Not judged</span></td>`;
     return html`<tr>
@@ -394,11 +346,12 @@ ${order.map((criterion) => {
 </tr>`;
 }
 
-function matrix(r: LocalResults): SafeHtml {
+function matrix(r: LocalResults, model: HarnessMatrixModel): SafeHtml {
+    const rows = new Map(model.rows.map((row) => [row.discoveredId, row]));
     const levels = r.ladder.levels.filter((level) => r.ladder.criteria[level].length > 0);
     const order = levels.flatMap((level) => r.ladder.criteria[level]);
-    const shown = matrixSelection(r.agents);
-    return html`<section id="matrix" aria-labelledby="matrix-h">
+    const shown = matrixSelection(r.agents, rows);
+    return html`<section id="matrix" class="dup" aria-labelledby="matrix-h">
 <h2 id="matrix-h">Agents and criteria</h2>
 ${r.agents.length > MATRIX_MAX_AGENTS
         ? html`<p class="callout">This table shows the first ${MATRIX_MAX_AGENTS} of ${r.agents.length} agents: those not judged, then those below their bar, then the lowest levels, in order of their id within each. The counts above are over all ${r.agents.length}. The full list is in <code>${RUN_FILE_NAMES.agents}</code>.</p>`
@@ -424,7 +377,7 @@ ${order.map((criterion) => html`<th scope="col" class="crit"><span title="${crit
 </tr>
 </thead>
 <tbody>
-${shown.map((agent) => matrixRow(agent, order))}
+${shown.map((agent) => matrixRow(agent, order, rows.get(agent.discoveredId)))}
 </tbody>
 </table>
 </div>
@@ -453,19 +406,12 @@ ${shadow.shown.map((id) => {
                 })}
 </tbody>
 </table></div>`;
-    return html`<section id="shadow" aria-labelledby="shadow-h">
+    return html`<section id="shadow" class="dup" aria-labelledby="shadow-h">
 <h2 id="shadow-h">Shadow agents</h2>
 ${body}
 </section>`;
 }
 
-const MODEL_SIGN_TEXT: Readonly<Record<string, string>> = {
-    FOUND_IN_CODE: 'found in agent code',
-    FOUND_IN_RUNTIME: 'found in a tracing system',
-    FOUND_ON_MCP_SERVER: 'found on an MCP server',
-    LISTS_A_TOOL: 'lists a tool',
-    LISTS_A_MODEL: 'lists a model endpoint',
-};
 
 /**
  * The principals nothing names and nothing shows to run a model. They are not
@@ -478,7 +424,7 @@ function unregisteredIdentities(r: LocalResults): SafeHtml {
     const listed = capped(all, SECTION_MAX_ROWS, 'unregistered identities', 'in the order the results list them', RUN_FILE_NAMES.agents);
     const meaning = html`<p>An unregistered automated identity is a principal that no register or inventory names, and that shows no sign of a model: it was not ${MODEL_SIGN_TEXT.FOUND_IN_CODE.slice('found '.length)}, ${MODEL_SIGN_TEXT.FOUND_IN_RUNTIME.slice('found '.length)} or ${MODEL_SIGN_TEXT.FOUND_ON_MCP_SERVER.slice('found '.length)}, and its report lists no tool and no model endpoint. A build workflow that holds a key, or a service account, looks like this.</p>
 <p><strong>The scan cannot show that one of these runs no model.</strong> Each is a finding of medium severity, and none is held to the agent bar. If one is an agent, register it or add it to the inventory, and it is then scored as one. If it is not, it still needs an owner on record.</p>`;
-    return html`<section id="identities" aria-labelledby="identities-h">
+    return html`<section id="identities" class="dup" aria-labelledby="identities-h">
 <h2 id="identities-h">Unregistered identities</h2>
 ${meaning}
 ${all.length === 0
@@ -578,12 +524,9 @@ ${unbound.shown.map((c) => html`<tr><th scope="row"><code class="id">${c.ref}</c
 }
 
 function findings(r: LocalResults): SafeHtml {
-    const ordered = r.findings
-        .map((f, i): [LocalFinding, number] => [f, i])
-        .sort(([a, i], [b, k]) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9) || i - k)
-        .map(([f]) => f);
+    const ordered = findingsBySeverity(r.findings);
     const listed = capped(ordered, FINDINGS_MAX_ROWS, 'findings', 'most severe first', RUN_FILE_NAMES.findings);
-    return html`<section id="findings" aria-labelledby="findings-h">
+    return html`<section id="findings" class="dup" aria-labelledby="findings-h">
 <h2 id="findings-h">Findings</h2>
 ${ordered.length === 0
         ? html`<p>No finding was raised.${r.scan.complete ? '' : ' The scan is incomplete, so this is not a clean result.'}</p>`
@@ -620,6 +563,46 @@ ${inv.unmatched.length === 0
         ? ''
         : html`<p>Declared by the operator and not found by this scan. This is not a statement that they are gone: the scan may not read where they live.</p>
 ${unmatched.notice}<ul class="ids">${unmatched.shown.map((id) => html`<li><code class="id">${id}</code></li>`)}</ul>`}
+</section>`;
+}
+
+/**
+ * What changed since the run the output directory named as the latest, as the
+ * interactive view shows it, for a reader with no script and for print. Each
+ * list says how many it holds and shows at most `DRIFT_MAX_ROWS`. Whatever the
+ * comparison could not conclude is never worded as a change.
+ */
+function drift(d: DriftRecord): SafeHtml {
+    const list = <T>(title: string, part: { readonly total: number; readonly rows: readonly T[] }, line: (x: T) => SafeHtml, none: string): SafeHtml =>
+        html`<h3>${title} (${part.total})</h3>
+${part.total === 0
+            ? html`<p>${none}</p>`
+            : html`<ul>${part.rows.map((x) => html`<li>${line(x)}</li>`)}</ul>${part.total > part.rows.length ? html`<p class="note">The first ${part.rows.length} of ${part.total}.</p>` : ''}`}`;
+    const body =
+        d.kind === 'FIRST'
+            ? html`<p>This output directory held no earlier run, so there is nothing to compare with.</p>`
+            : d.kind === 'NOT_COMPARED'
+                ? html`<p class="callout">Not compared with ${d.scanId === null ? 'the previous run' : html`<code class="id">${d.scanId}</code>`}: ${d.text}.</p>`
+                : html`<p>Compared with <code class="id">${d.old.scanId}</code>, as of ${d.old.asOf} UTC (${d.old.complete ? 'complete' : 'incomplete'}, ${plural(d.old.agentCount, 'agent', 'agents')}). <strong>${d.outcomeText}</strong></p>
+<p>${plural(d.differences, 'difference', 'differences')}; ${plural(d.notConcludedCount, 'comparison', 'comparisons')} not concluded. The full comparison is <code>scanent diff</code> on the two results files.</p>
+${d.warnings.length === 0 ? '' : html`<ul class="callout">${d.warnings.map((w) => html`<li><code>${w.code}</code>: ${w.text}.</li>`)}</ul>`}
+${list('Levels', d.levels, (l) => html`<code class="id">${l.id}</code>: ${l.text}${l.from !== null && l.to !== null ? `, ${l.from} to ${l.to}` : ''}`, 'No level changed where both runs judged the agent.')}
+${list('New agents', d.added, (id) => html`<code class="id">${id}</code>`, 'None.')}
+${list('Gone', d.gone, (id) => html`<code class="id">${id}</code> (every source it was found through was read in full)`, 'None concluded gone.')}
+${list('Not seen, not concluded', d.notSeen, (x) => html`<code class="id">${x.id}</code>: ${x.why}`, 'None.')}
+${list('Completeness', { total: d.sources.length, rows: d.sources }, (x) => html`<code>${x.kind}</code> ${x.text}${x.from !== null || x.to !== null ? ` (${x.from ?? '-'} to ${x.to ?? '-'})` : ''}`, 'No source changed.')}
+${list('Findings', d.findings, (f) => html`<code>${f.code}</code> ${f.change === 'NOT_CONCLUDED' ? `no longer reported, not concluded (${f.why ?? 'UNKNOWN'})` : f.change.toLowerCase()} <code class="id">${f.ref}</code>`, 'No finding opened or closed.')}`;
+    return html`<section id="drift" class="dup" aria-labelledby="drift-h">
+<h2 id="drift-h">Since the previous run</h2>
+${body}
+</section>`;
+}
+
+/** The statements every rendering closes with: what the results do not say. */
+function limits(): SafeHtml {
+    return html`<section id="limits" aria-labelledby="limits-h">
+<h2 id="limits-h">What this page does not say</h2>
+<ul>${CAVEATS.map((c) => html`<li>${c}</li>`)}</ul>
 </section>`;
 }
 
@@ -742,12 +725,115 @@ details summary{cursor:pointer}
 .findings td:last-child{min-width:18rem}
 .vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
 .print-footer{display:none}
+[hidden]{display:none!important}
+html.js .dup{display:none}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.muted{color:var(--muted)}
+.small,.note{font-size:.84rem}
+.note{color:var(--muted)}
+.block{display:block}
+.tag.plain{color:var(--muted);background:var(--panel)}
+.dash{margin-top:2.25rem;border-top:1px solid var(--line);padding-top:1rem}
+.d-section{border-top:0;margin-top:2rem;padding-top:0}
+.dash>.d-section:first-child{margin-top:0}
+.btn{font:inherit;font-size:.88rem;padding:.35rem .75rem;border:1px solid var(--line);border-radius:.35rem;background:var(--panel);color:var(--text);cursor:pointer}
+.btn:hover:not([disabled]){border-color:var(--accent)}
+.btn[disabled]{opacity:.55;cursor:default}
+.linkish{font:inherit;padding:0;border:0;background:none;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:.15em}
+.hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(16rem,22rem);gap:1rem 2rem;align-items:start;background:var(--panel);border:1px solid var(--line);border-radius:.6rem;padding:1rem 1.25rem;margin:1rem 0}
+.eyebrow{margin:0;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.hero-big{font-size:1.9rem;font-weight:700;line-height:1.15;margin:.35rem 0}
+.hero-num{font-variant-numeric:tabular-nums}
+.bad-text{color:var(--bad)}
+.ladder{list-style:none;margin:0;padding:0;display:grid;gap:.15rem}
+.ladder-row{display:grid;grid-template-columns:minmax(0,10.5rem) minmax(3rem,1fr) 3rem;gap:.5rem;align-items:center;width:100%;font:inherit;font-size:.82rem;text-align:left;padding:.2rem .35rem;border:1px solid transparent;border-radius:.3rem;background:none;color:var(--text);cursor:pointer}
+.ladder-row:hover{border-color:var(--line);background:var(--bg)}
+.ladder-level{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ladder-n{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.meter{display:block;height:.6rem;background:var(--bg);border:1px solid var(--line);border-radius:.3rem;overflow:hidden}
+.meter-fill{display:block;height:100%;background:var(--accent);min-width:0}
+.meter-fill.out{background:var(--muted);opacity:.5}
+.meter-fill.bad{background:var(--bad)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.6rem;margin:1rem 0}
+.tile{display:flex;flex-direction:column;align-items:flex-start;gap:.1rem;font:inherit;text-align:left;padding:.65rem .8rem;border:1px solid var(--line);border-left:.3rem solid var(--line);border-radius:.45rem;background:var(--panel);color:var(--text);cursor:pointer}
+.tile:hover{border-color:var(--accent)}
+.tile.bad{border-left-color:var(--bad)}
+.tile.warn{border-left-color:var(--warn)}
+.tile-num{font-size:1.6rem;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile-label{font-weight:600;font-size:.9rem}
+.tile-note{color:var(--muted);font-size:.78rem}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(19rem,1fr));gap:1rem;margin:1.5rem 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:.6rem;padding:.9rem 1rem;margin:0}
+.card h3{margin:0 0 .5rem}
+.d-section .card{margin:1rem 0}
+.chart{display:block;width:100%;height:auto;max-height:15rem}
+.ch-grid{stroke:var(--line);stroke-width:1}
+.ch-axis{fill:var(--muted);font-size:11px}
+.ch-value{fill:var(--text);font-size:11px;font-weight:600}
+.ch-mark{fill:var(--muted);font-size:9px}
+.ch-label{fill:var(--text);font-size:11px}
+.ch-bar{fill:var(--accent)}
+.ch-bar.out{fill:var(--muted);opacity:.45}
+.ch-bar.nj{fill:var(--warn)}
+.ch-bar.sev-critical,.ch-bar.sev-high{fill:var(--bad)}
+.ch-bar.sev-medium{fill:var(--warn)}
+.ch-bar.sev-low{fill:var(--muted)}
+.ch-reach{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:4 3}
+.ch-hit{cursor:pointer}
+.ch-hit:focus-visible rect{stroke:var(--text);stroke-width:2.5}
+.ch-hit:hover rect{opacity:.85}
+.sources{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.sources li{display:grid;grid-template-columns:minmax(0,1fr);gap:.15rem}
+.src-n{font-size:.8rem;color:var(--muted)}
+.drift-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:.25rem 1.5rem}
+.drift-col h3{margin-top:.8rem}
+.plain-list{list-style:none;padding:0;margin:.3rem 0}
+.plain-list li{margin:.25rem 0}
+.toolbar{display:flex;flex-wrap:wrap;gap:.5rem .75rem;align-items:flex-end;margin:.75rem 0;padding:.6rem .75rem;background:var(--panel);border:1px solid var(--line);border-radius:.45rem}
+.field{display:flex;flex-direction:column;gap:.15rem;font-size:.8rem;min-width:0}
+.field label,.label-spacer{color:var(--muted);font-weight:600}
+.field input,.field select{font:inherit;font-size:.88rem;padding:.3rem .45rem;border:1px solid var(--line);border-radius:.3rem;background:var(--bg);color:var(--text);max-width:16rem}
+.field input[type=search]{width:16rem;max-width:100%}
+.count{font-size:.85rem;color:var(--muted);margin:.4rem 0}
+.pager{display:flex;flex-wrap:wrap;gap:.5rem .75rem;align-items:flex-end;margin:.6rem 0}
+.page-of{font-size:.85rem;color:var(--muted);padding-bottom:.4rem}
+.empty{padding:1rem;color:var(--muted)}
+.agent-btn{font:inherit;font-weight:500;padding:0;border:0;background:none;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:.15em;overflow-wrap:anywhere}
+.badges .tag{margin:.2rem .25rem 0 0}
+.badges{display:block}
+.cb{font:inherit;font-weight:700;width:100%;min-width:1.6rem;padding:.15rem 0;border:0;background:none;color:inherit;cursor:pointer}
+.cell.inline{display:inline-block;min-width:1.4rem;border:1px solid var(--line);border-radius:.2rem}
+.matrix td.cell{padding:.25rem .15rem}
+.dash .matrix td.lvl{white-space:normal;min-width:9rem}
+.dash .matrix td.lvl .tag{white-space:nowrap}
+.drawer-back{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(40rem,100%);overflow-y:auto;background:var(--bg);color:var(--text);border-left:1px solid var(--line);box-shadow:-.5rem 0 1.5rem rgba(0,0,0,.25);z-index:21;padding:0 1.1rem 2rem}
+.drawer-head{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:1rem;background:var(--bg);border-bottom:1px solid var(--line);padding:.8rem 0;z-index:1}
+.drawer-head h2{margin:0;padding:0;font-size:1.15rem;overflow-wrap:anywhere}
+body.drawer-open{overflow:hidden}
+.kv{display:grid;grid-template-columns:minmax(8rem,12rem) minmax(0,1fr);gap:.35rem 1rem;margin:.75rem 0}
+.kv dt{color:var(--muted);font-size:.85rem}
+.kv dd{margin:0;overflow-wrap:anywhere}
+.tags .tag{margin-right:.3rem}
+.crit-table td,.crit-table th{font-size:.85rem}
+.ev{overflow-wrap:anywhere}
+@media (max-width:40rem){
+body{padding:1rem .75rem 3rem}
+.hero{grid-template-columns:1fr}
+.hero-big{font-size:1.5rem}
+.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+.kv{grid-template-columns:1fr}
+.field input[type=search]{width:100%}
+.toolbar .field{flex:1 1 9rem}
+.field select{max-width:100%}
+}
 footer.end{margin-top:2.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--line);padding-top:.75rem}
 @media print{
 :root{--bg:#ffffff;--panel:#ffffff;--text:#000000;--muted:#333333;--line:#888888;--accent:#000000;--ok:#000000;--ok-bg:#ffffff;--bad:#000000;--bad-bg:#ffffff;--warn:#000000;--warn-bg:#ffffff;--decl:#000000;--decl-bg:#ffffff}
 html{font-size:10.5pt}
 body{max-width:none;padding:0 0 2.2em}
-.skip,nav.contents{display:none}
+.skip,nav.contents,#dash,.drawer,.drawer-back{display:none!important}
+html.js .dup{display:block}
 section{break-before:auto;break-inside:auto}
 #matrix{break-before:page}
 h2,h3,caption{break-after:avoid}
@@ -765,23 +851,54 @@ details::details-content{content-visibility:visible;display:block}
 </style>`;
 
 /** The page. A function of the results alone. */
-export function renderSummaryHtml(results: LocalResults): string {
+/** The style block's own text, between its tags: what its CSP hash is over. */
+export const STYLE_TEXT = htmlText(STYLE_ELEMENT).slice('<style>'.length, -'</style>'.length);
+
+/**
+ * The page's Content-Security-Policy. Nothing may be loaded, fetched,
+ * connected to, framed or submitted; the one inline script and the one style
+ * block run because their hashes are named; the script may not hand a string
+ * to an HTML sink (Trusted Types, where the browser has them).
+ */
+export const PAGE_CSP = [
+    "default-src 'none'",
+    `script-src ${cspHashSource(PAGE_SCRIPT)}`,
+    `style-src ${cspHashSource(STYLE_TEXT)}`,
+    "connect-src 'none'",
+    "img-src 'none'",
+    "font-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "require-trusted-types-for 'script'",
+].join('; ');
+
+/**
+ * The page. A function of the results and, for a run written to a directory,
+ * of what the run knew of the run before it (`context.previous`).
+ */
+export function renderSummaryHtml(results: LocalResults, context: SummaryContext = {}): string {
     const r = results;
+    const model = harnessMatrixOfResults(r);
+    const data = summaryPageData(r, context);
     const title = r.scan.estate === null ? `scanent results: ${r.scan.id}` : `scanent results: ${r.scan.estate}, ${r.scan.id}`;
+    const driftSection = data.drift === null ? [] : [['drift', 'Since the previous run', drift(data.drift)] as const];
     const sections: readonly (readonly [string, string, SafeHtml])[] = r.estate.empty
         ? [
               ['completeness', 'Completeness', completeness(r)],
               ['coverage', 'Not evidenced', coverage(r)],
               ['summary', 'Summary', emptyEstate(r)],
+              ...driftSection,
               ['findings', 'Findings', findings(r)],
               ...(r.inventory === null ? [] : [['inventory', 'Inventory', inventory(r)] as const]),
               ['provenance', 'Provenance', provenance(r)],
+              ['limits', 'Limits', limits()],
           ]
         : [
               ['completeness', 'Completeness', completeness(r)],
               ['coverage', 'Not evidenced', coverage(r)],
               ['summary', 'Summary', summary(r)],
-              ['matrix', 'Agents and criteria', matrix(r)],
+              ...driftSection,
+              ['matrix', 'Agents and criteria', matrix(r, model)],
               ['shadow', 'Shadow agents', shadowAgents(r)],
               // Absent for results written before the member existed: there, every unregistered principal is a shadow agent.
               ...(r.estate.unregisteredIdentities === undefined ? [] : [['identities', 'Unregistered identities', unregisteredIdentities(r)] as const]),
@@ -791,14 +908,19 @@ export function renderSummaryHtml(results: LocalResults): string {
               ['findings', 'Findings', findings(r)],
               ...(r.inventory === null ? [] : [['inventory', 'Inventory', inventory(r)] as const]),
               ['provenance', 'Provenance', provenance(r)],
+              ['limits', 'Limits', limits()],
           ];
+    // The interactive view goes after what could not be read and what could
+    // not be evidenced, so a reader meets those first with or without it.
+    const view = html`<div id="dash" class="dash" hidden></div>`;
+    const [first, second, ...rest] = sections;
     // The style block is this module's own constant text, built as the
     // literal part of a template, so nothing scanned can enter it.
     const page = html`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="${PAGE_CSP}">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
@@ -813,10 +935,15 @@ ${sections.map(([id, label]) => html`<li><a href="#${id}">${label}</a></li>`)}
 </ul>
 </nav>
 <main id="main">
-${sections.map(([, , body]) => body)}
+${first[2]}
+${second[2]}
+${view}
+${rest.map(([, , body]) => body)}
 </main>
 <footer class="end">Scan <code>${r.scan.id}</code>, as of ${r.scan.asOf} UTC. Ladder <code>${r.ladder.version}</code>.</footer>
 <p class="print-footer">Scan ${r.scan.id}, as of ${r.scan.asOf} UTC</p>
+${scriptElement('json', scriptJson(data), 'scan-data')}
+${scriptElement('code', PAGE_SCRIPT)}
 </body>
 </html>
 `;

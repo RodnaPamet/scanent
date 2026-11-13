@@ -1415,10 +1415,14 @@ the scanner.
 Measured on a generated estate of 5,000 agents and 10,000 credentials read
 through every source kind, with fakes in place of the network (so this is the
 scanner's own cost): the scan took 0.8 s over 1,645 requests and grew the heap
-by 54 MiB; scoring and rendering took 1.9 s and grew it to 366 MiB, because
-`results.json` (33.7 MiB) holds every criterion of every agent. The signed
-report was 3.8 MiB and `summary.html` 5.3 MiB. Allow 1 GiB of memory for a run
-of that size.
+by 54 MiB; scoring and rendering took 7.2 s and allocated 870 MiB on the way
+(144 MiB of it still held after a collection), because `results.json`
+(33.7 MiB) holds every criterion of every agent, `summary.html` (11.8 MiB)
+carries every agent for its interactive view, and `report.pdf` (0.3 MiB) is
+laid out line by line. The signed report was 3.8 MiB. Rendering a 5,000-agent
+run alone peaked at 1.1 GiB resident (1.08 GiB before `report.pdf` and the
+page's interactive view were added). The Compose file and the chart set a
+limit of 1.5 GiB for that reason.
 
 ### Long tests and the soak
 
@@ -1475,8 +1479,9 @@ The file output writes one directory per run and a pointer to the newest:
       results.json               the local results (schema `scanent-results/1`)
       agents.csv
       findings.csv
-      summary.html
-      manifest.json              the names, sizes and SHA-256 of the other five
+      summary.html               the results to read in a browser; interactive with JavaScript on
+      report.pdf                 the same results as a document
+      manifest.json              the names, sizes and SHA-256 of the other six
 ```
 
 A run is rendered in memory, checked, written under a temporary name and
@@ -1491,8 +1496,19 @@ oldest runs beyond that number are removed, and only a directory whose name is
 a scan id and that holds a `manifest.json`.
 
 Before the first byte is written, the results are walked for any string with a
-secret's shape, and each rendered file is checked again as one text. A hit
-refuses the whole run and names the member or the file, never the value.
+secret's shape, and so is the data `summary.html` carries for its script
+(which also holds the comparison with the previous run); each rendered text
+file is checked again as one text, and `report.pdf` by every string written
+into it. A hit refuses the whole run and names the member or the file, never
+the value.
+
+Before a run is written, the run `latest.json` names is read back and compared
+with it by `scanent diff`'s rules, for the page's and the PDF's "Since the
+previous run" section. No flag is needed: the directory already records its
+previous run. A pointer or results file that cannot be read as one, or a pair
+the comparison refuses (another scanner, another ladder, a time that is not
+earlier), is stated on the page as not compared, with the reason, and the run
+is written all the same.
 
 For a source that was not read in full, the run's own results add what the
 signed report does not carry: `detail`, why it stopped in the scanner's fixed
@@ -1553,10 +1569,31 @@ What the results say, and do not:
   Both members are optional, so a file written before them still reads.
 - **An empty scan is a finding** (`EMPTY_SCAN`), never a clean result.
 
-`summary.html` is one self-contained file: no script, no image, no font, no
-link to anywhere, and a Content-Security-Policy that makes the browser hold
-that. Every scanned string is escaped. It prints, and follows the reader's
-light or dark setting.
+`summary.html` is one self-contained file: one style block, one JSON data block
+and one inline script, and no image, no font, no link to anywhere and no
+request. Its Content-Security-Policy allows exactly that script and that style
+by their SHA-256 hashes (`script-src` and `style-src`), and nothing else:
+`default-src`, `connect-src`, `img-src`, `font-src`, `base-uri` and
+`form-action` are `'none'`, there is no `unsafe-inline` or `unsafe-eval`, and
+Trusted Types are required where the browser has them. Every scanned string is
+escaped in the markup, and the data block is written so nothing in it can end
+the element. It prints, and follows the reader's light or dark setting.
+
+Every section is rendered into the file, so with JavaScript off the page is
+complete. With JavaScript on, the script builds an interactive view from the
+data block, after the completeness and coverage sections, from rows the shared
+table model computed: a summary band, charts of levels, findings by severity
+and coverage per source, the comparison with the previous run, the agent table
+with search, filters, sorting and pages, a panel for each agent and each cell,
+the shadow list and a findings table. It decides nothing about what a row
+says. Printing shows the plain page.
+
+`report.pdf` says the same, in the same order, from the same data: written in
+the scanner's process by pdfkit (see
+[sbom-and-licences.md](security-pack/sbom-and-licences.md#the-pdf-library)), in
+the standard PDF fonts, with the scan's own time as its dates, so the same
+results give the same bytes. It lists the first 500 agents and gives the first
+100 a section of their own.
 
 The page is capped so that it opens on a large estate; the other files are
 never shortened. The matrix shows at most 500 agents, each list of shadow
@@ -1566,8 +1603,10 @@ many the run holds and which file holds the rest (`agents.csv`,
 `findings.csv` or `results.json`). Above its cap the matrix shows the agents
 that most need a reader: those not judged, then those below their bar, then
 the lowest levels. The counts at the top of the page are always over the whole
-run. A run under every cap is rendered exactly as before. Measured on a
-5,000-agent run, the page is 5.4 MiB.
+run. A run under every cap renders every row. The interactive view is given
+every agent and every finding (the first 2,500 findings with their
+descriptions), so its filters see the whole run. Measured on a 5,000-agent
+run, the page is 12.1 MiB, of which the plain sections are 5.4 MiB.
 
 Each agent in `results.json` carries `toolEvidenceSources`: the sources that
 must have been read in full before the agent's report is evidence that it
@@ -1706,7 +1745,8 @@ absence of package managers and TypeScript source, `public-key`, a dry-run
 scan of a two-agent estate verified inside the image through the image's own
 contract module (`deploy/smoke-verify.js`), that a scan with nowhere to
 post exits non-zero, and that `scan --dry-run --out /out` on the read-only
-root with one writable mount writes the six files of a run and that a second
+root with one writable mount writes the seven files of a run (`report.pdf` a
+PDF, written in the image by its own library) and that a second
 run leaves the first as it was. It then runs as the invoking user (`--user`,
 with `--userns=keep-id` beside it when `CONTAINER_RUNTIME=podman`) into an output
 directory of mode 0700 and reads the run back without the container, gives the

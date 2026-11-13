@@ -22,7 +22,12 @@ interface LicenceCheck {
     ALLOWED: readonly string[];
     OWN_LICENCE: string;
     productionPackages(lock: unknown): { key: string; name: string; version: string; lockLicence?: string }[];
-    checkLicences(lock: unknown, readManifest: (key: string) => { license?: unknown } | null): { checked: { key: string; licence: string }[]; problems: string[] };
+    LICENCE_READ_FROM_FILE: Readonly<Record<string, { version: string; licence: string; file: string; mustContain: readonly string[] }>>;
+    checkLicences(
+        lock: unknown,
+        readManifest: (key: string) => { license?: unknown } | null,
+        readText?: (key: string, file: string) => string | null,
+    ): { checked: { key: string; licence: string }[]; problems: string[] };
 }
 interface ReproducibleBuild {
     hashBuild(root: string): Map<string, string>;
@@ -121,14 +126,49 @@ describe('scripts/check-licences.js', () => {
     it('passes on this repository as installed, over the packages the image carries', () => {
         const out = execFileSync(process.execPath, [path.join(REPO, 'scripts/check-licences.js')], { encoding: 'utf8' });
         expect(out).toMatch(/licences: \d+ production packages, all allowed\n$/);
-        // What the image's build copies: the three packages and the four dependencies they declare.
+        // What the image's build copies: the three packages, the four dependencies they declared before
+        // report.pdf, and pdfkit with the packages it brings.
         const names = out
             .trim()
             .split('\n')
             .slice(0, -1)
             .map((line) => line.replace(/^\S+\s+/, '').replace(/@[^@]+$/, ''))
             .sort();
-        expect(names).toEqual(['argparse', 'js-yaml', 'packages/contract', 'packages/report', 'packages/scanner', 'typescript', 'zod']);
+        expect(names).toEqual([
+            '@noble/ciphers', '@noble/hashes', '@swc/helpers', 'argparse', 'base64-js', 'base64-js', 'brotli', 'clone', 'dfa', 'fast-deep-equal', 'fflate',
+            'fontkit', 'js-yaml', 'linebreak', 'packages/contract', 'packages/report', 'packages/scanner', 'pako', 'pdfkit', 'png-js', 'restructure',
+            'tiny-inflate', 'typescript', 'unicode-properties', 'unicode-trie', 'zod',
+        ]);
+    });
+
+    describe('a licence read from the package\'s own licence file', () => {
+        const withPng = (version = '2.0.0') => lock({ 'node_modules/png-js': { version } });
+        const manifests = installed({ 'node_modules/png-js': {} });
+        const mit = ['MIT License', '', 'Copyright (c) 2017 Devon Govett', '', 'Permission is hereby granted, free of charge, to any person obtaining a copy', 'of this software'].join('\n');
+        const reading = (text: string | null) => (key: string, file: string) => (key === 'node_modules/png-js' && file === 'LICENSE' ? text : null);
+
+        it('is accepted for the listed package at the listed version when its file holds the words', () => {
+            const { checked, problems } = licences.checkLicences(withPng(), manifests, reading(mit));
+            expect(problems).toEqual([]);
+            expect(checked.find((c) => c.key === 'node_modules/png-js')?.licence).toBe('MIT');
+            expect(licences.LICENCE_READ_FROM_FILE['png-js']).toMatchObject({ version: '2.0.0', licence: 'MIT', file: 'LICENSE' });
+            expect(licences.ALLOWED).toContain(licences.LICENCE_READ_FROM_FILE['png-js'].licence);
+        });
+
+        it.each([
+            ['another version, which nobody has read', withPng('2.0.1'), reading(mit)],
+            ['a file without the words', withPng(), reading('All rights reserved.')],
+            ['a file that cannot be read', withPng(), reading(null)],
+            ['no way to read a file at all', withPng(), undefined],
+        ])('is refused for %s', (_label, lockfile, reader) => {
+            expect(licences.checkLicences(lockfile, manifests, reader).problems).toEqual(['node_modules/png-js: states no licence']);
+        });
+
+        it('is never read for a package that is not listed', () => {
+            const read = jest.fn(() => mit);
+            expect(licences.checkLicences(lock(), installed({ 'node_modules/zod': {} }), read).problems).toEqual(['node_modules/zod: states no licence']);
+            expect(read).not.toHaveBeenCalled();
+        });
     });
 });
 

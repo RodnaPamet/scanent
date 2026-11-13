@@ -223,9 +223,14 @@ describe('docs/security-pack/sbom-and-licences.md', () => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { productionPackages, checkLicences, ALLOWED } = require(path.join(REPO, 'scripts/check-licences.js')) as {
         productionPackages: (lock: unknown) => { key: string; version: string }[];
-        checkLicences: (lock: unknown, readManifest: (key: string) => unknown) => { checked: unknown[]; problems: string[] };
+        checkLicences: (
+            lock: unknown,
+            readManifest: (key: string) => unknown,
+            readText?: (key: string, file: string) => string | null,
+        ) => { checked: { key: string; licence: string }[]; problems: string[] };
         ALLOWED: readonly string[];
     };
+    const readText = (key: string, file: string): string | null => (exists(`${key}/${file}`) ? read(`${key}/${file}`) : null);
     const lock: unknown = JSON.parse(read('package-lock.json'));
     const manifest = (key: string): { name: string; version: string; license: string } =>
         JSON.parse(read(`${key}/package.json`)) as { name: string; version: string; license: string };
@@ -238,17 +243,19 @@ describe('docs/security-pack/sbom-and-licences.md', () => {
             .split('\n')
             .slice(2)
             .map((line) => line.split('|').slice(1, 4).map((cell) => cell.trim().replace(/`/g, '')));
+        // The licence the gate reads: the manifest's, or for a package whose manifest states none, its licence file's.
+        const gate = new Map(checkLicences(lock, (key) => (exists(`${key}/package.json`) ? manifest(key) : null), readText).checked.map((c) => [c.key, c.licence]));
         const expected = productionPackages(lock).map(({ key, version }) => {
             const m = manifest(key);
             expect(m.version).toBe(version);
-            return [m.name, version, m.license];
+            return [m.name, version, gate.get(key)];
         });
         expect(expected.length).toBeGreaterThanOrEqual(4);
         expect(rows).toEqual(expected);
     });
 
     it('every licence in the table passes the gate, and the page lists the gate\'s allowlist exactly', () => {
-        expect(checkLicences(lock, (key) => (exists(`${key}/package.json`) ? manifest(key) : null)).problems).toEqual([]);
+        expect(checkLicences(lock, (key) => (exists(`${key}/package.json`) ? manifest(key) : null), readText).problems).toEqual([]);
         const listed = /with no expression evaluated:\n\n([\s\S]*?)\n\n/.exec(text);
         expect(listed).not.toBeNull();
         expect([...(listed as RegExpExecArray)[1].matchAll(/`([^`]+)`/g)].map((m) => m[1])).toEqual([...ALLOWED]);

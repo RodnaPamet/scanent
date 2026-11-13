@@ -179,7 +179,13 @@ describe('2. scheduled scans of the example, written with retention', () => {
             everyHours: 1,
             log,
             now: () => clock,
-            sleep: async (ms) => void (clock += ms),
+            // A real sleep is a timer, so the event loop turns between runs. The fake one turns it too:
+            // without that the whole soak is one chain of microtasks, and every Node stream a run made
+            // (the PDF is written through one) waits for a turn that never comes before it can be freed.
+            sleep: async (ms) => {
+                clock += ms;
+                await new Promise((resolve) => setImmediate(resolve));
+            },
             maxRuns: RUNS,
             run: async () => {
                 const result = await scanAndDeliver({ config, env: ENV, log, fetchImpl: noFetch, now: () => clock, outputs: [{ kind: 'file', dir, retainRuns: RETAIN }] });
@@ -206,7 +212,7 @@ describe('2. scheduled scans of the example, written with retention', () => {
         const runs = readdirSync(join(dir, 'runs'));
         expect(runs).toHaveLength(RETAIN);
         for (const run of runs) {
-            expect(readdirSync(join(dir, 'runs', run)).sort()).toEqual(['agents.csv', 'findings.csv', 'manifest.json', 'report.signed.json', 'results.json', 'summary.html']);
+            expect(readdirSync(join(dir, 'runs', run)).sort()).toEqual(['agents.csv', 'findings.csv', 'manifest.json', 'report.pdf', 'report.signed.json', 'results.json', 'summary.html']);
         }
     });
 

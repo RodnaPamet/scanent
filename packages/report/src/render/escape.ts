@@ -122,3 +122,23 @@ export function htmlText(value: SafeHtml): string {
     if (text === undefined) throw new Error('not a fragment built by html');
     return text;
 }
+
+/**
+ * The two script elements the page carries, and no other way for a string to
+ * become markup. Each one checks that its text cannot end the element it sits
+ * in, and throws otherwise:
+ *
+ *   json  `<script type="application/json" id="...">`, for data written by
+ *         `scriptJson`, which holds no `<` at all. A data block is never run.
+ *   code  `<script>`, for the page's own constant script text, which holds no
+ *         `</script`, no `<!--` and no `<script`.
+ *
+ * The id is one of the page's own fixed names, checked to be one.
+ */
+export function scriptElement(kind: 'json' | 'code', text: string, id?: string): SafeHtml {
+    if (kind === 'json' && text.includes('<')) throw new Error('a data block may hold no "<"');
+    if (kind === 'code' && /<\/script|<!--|<script/i.test(text)) throw new Error('a script may not hold anything that ends or opens an element');
+    if (id !== undefined && !/^[a-z][a-z-]{0,31}$/.test(id)) throw new Error('not a fixed element id');
+    const open = kind === 'json' ? `<script type="application/json"${id === undefined ? '' : ` id="${id}"`}>` : '<script>';
+    return fragment(`${open}${text}</script>`);
+}

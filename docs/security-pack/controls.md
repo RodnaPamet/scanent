@@ -72,7 +72,7 @@ documentation, not against real services: see
 | Control | Enforced in | Proven by | Limit |
 |---|---|---|---|
 | `summary.html` escapes every value; markup can only come from the template | `packages/report/src/render/escape.ts` (`escapeHtml`, `html`), `packages/report/src/render/html.ts` (`renderSummaryHtml`) | `packages/report/tests/html.test.ts` | |
-| The page holds no script and loads nothing from the network | `packages/report/src/render/html.ts` (`renderSummaryHtml`) | `packages/report/tests/html.test.ts` | |
+| The page loads nothing from the network: its one inline script and one style block run by their SHA-256 hashes, and its CSP allows nothing else | `packages/report/src/render/html.ts` (`renderSummaryHtml`) | `packages/report/tests/html.test.ts` | |
 | A CSV cell that starts with a formula character is neutralised | `packages/report/src/render/csv.ts` (`csvCell`) | `packages/report/tests/csv.test.ts` | |
 | Text printed to a terminal has control and bidirectional characters written as visible escapes, never as the characters themselves | `packages/report/src/render/escape.ts` (`terminalLine`, `isBidiControl`) | `packages/report/tests/diff.test.ts`, `packages/scanner/tests/diff-command.test.ts` | |
 | Run directories are `0750` and files `0640`; a run is written to a temporary directory and renamed into place, and is never replaced | `packages/scanner/src/file-output.ts` (`RUN_DIR_MODE`, `RUN_FILE_MODE`, `writeRun`) | `packages/scanner/tests/file-output.test.ts`, steps 6 and 7 of `deploy/smoke.sh` | Risk 11: every output but the signed report is unsigned |

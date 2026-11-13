@@ -3,7 +3,9 @@
  *
  *   1. Nothing a scanner or an operator controls becomes markup: every string
  *      is escaped, wherever it lands.
- *   2. The page loads nothing: one file, one style block, no script.
+ *   2. The page loads nothing: one file, one style block, one JSON data block
+ *      and one inline script, each allowed by the Content-Security-Policy by
+ *      hash and nothing else.
  *   3. Completeness comes first, and what could not be judged is said, not
  *      scored: no level for an agent that was not judged, no clean bill for
  *      an empty scan.
@@ -14,12 +16,16 @@
  * "Inside a tag" is decided by a small tokenizer below, not by a guess at the
  * surrounding text.
  */
+import { createHash } from 'node:crypto';
+
 import { LADDER_VERSION } from '@rodnapamet/scanent-contract/harness-contract';
 import { ALL_HARNESS_CRITERIA } from '@rodnapamet/scanent-contract/harness-ladder';
 
 import { escapeHtml, html, htmlText, joinHtml, type SafeHtml } from '../src/render/escape';
 import { RUN_FILE_NAMES } from '../src/render/files';
-import { MATRIX_MAX_AGENTS, renderSummaryHtml } from '../src/render/html';
+import { MATRIX_MAX_AGENTS, PAGE_CSP, renderSummaryHtml } from '../src/render/html';
+import { PAGE_DATA_SCHEMA } from '../src/render/page-data';
+import { PAGE_SCRIPT } from '../src/render/page-script';
 import { scoreReportLocally } from '../src/results/score';
 import type { LocalResults } from '../src/results/types';
 import { fullRow, input, inventoryOf, standaloneBody, withSource } from './helpers/fixtures';
@@ -32,9 +38,11 @@ interface Tag {
 }
 interface Parsed {
     readonly tags: readonly Tag[];
-    /** Text between tags, outside the style block, entities left as written. */
+    /** Text between tags, outside the style block and the scripts, entities left as written. */
     readonly text: readonly string[];
     readonly style: readonly string[];
+    /** The text of each script element, in order. */
+    readonly scripts: readonly string[];
 }
 
 /** Tokenize a page into tags, text and style blocks. Throws on markup it cannot read. */
@@ -42,6 +50,7 @@ function tokenize(page: string): Parsed {
     const tags: Tag[] = [];
     const text: string[] = [];
     const style: string[] = [];
+    const scripts: string[] = [];
     let i = 0;
     while (i < page.length) {
         const lt = page.indexOf('<', i);
@@ -77,19 +86,29 @@ function tokenize(page: string): Parsed {
             style.push(page.slice(j, end));
             j = end;
         }
+        // A script's text is raw: it ends at the first "</script", whatever came before.
+        if (m[2].toLowerCase() === 'script' && m[1] === '') {
+            const end = page.toLowerCase().indexOf('</script', j);
+            if (end < 0) throw new Error('an unterminated script');
+            scripts.push(page.slice(j, end));
+            j = end;
+        }
         i = j;
     }
-    return { tags, text, style };
+    return { tags, text, style, scripts };
 }
 
 const ALLOWED_TAGS = new Set([
     'html', 'head', 'meta', 'title', 'style', 'body', 'a', 'header', 'p', 'h1', 'h2', 'h3', 'dl', 'div', 'dt', 'dd', 'code', 'strong', 'nav', 'ul', 'li', 'main',
-    'section', 'table', 'caption', 'thead', 'tbody', 'tr', 'th', 'td', 'span', 'br', 'details', 'summary', 'footer',
+    'section', 'table', 'caption', 'thead', 'tbody', 'tr', 'th', 'td', 'span', 'br', 'details', 'summary', 'footer', 'script',
 ]);
 const ALLOWED_ATTRS = new Set([
     'lang', 'charset', 'http-equiv', 'content', 'name', 'class', 'href', 'id', 'aria-labelledby', 'aria-label', 'aria-hidden', 'scope', 'colspan', 'rowspan', 'title',
-    'tabindex', 'role',
+    'tabindex', 'role', 'type', 'hidden',
 ]);
+
+/** The page with its two script elements removed: what a reader with no script sees, and what is checked for words. */
+const staticOf = (page: string): string => page.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '');
 
 const PAYLOADS = [
     '<script>alert(1)</script>',
@@ -113,11 +132,19 @@ function assertSafe(page: string): Parsed {
             expect(ALLOWED_ATTRS).toContain(name);
             expect(name.startsWith('on')).toBe(false);
             if (name === 'href') expect(value).toMatch(/^#[a-z-]+$/);
-            if (name !== 'title' && name !== 'aria-label' && name !== 'content') expect(value).toMatch(/^[A-Za-z0-9 #_.=,;'-]*$/);
+            if (name !== 'title' && name !== 'aria-label' && name !== 'content' && name !== 'type') expect(value).toMatch(/^[A-Za-z0-9 #_.=,;'-]*$/);
+            if (name === 'type') expect(value).toBe('application/json');
         }
     }
     expect(parsed.style).toHaveLength(1);
     expect(parsed.tags.filter((t) => t.name === 'style' && !t.closing)).toHaveLength(1);
+    // Two scripts: the data block, which holds no "<" and parses as the page's data, and the page's own constant script.
+    const scripts = parsed.tags.filter((t) => t.name === 'script' && !t.closing);
+    expect(scripts.map((t) => [...t.attrs.entries()])).toEqual([[['type', 'application/json'], ['id', 'scan-data']], []]);
+    expect(parsed.scripts).toHaveLength(2);
+    expect(parsed.scripts[0]).not.toContain('<');
+    expect((JSON.parse(parsed.scripts[0]) as { schema: string }).schema).toBe(PAGE_DATA_SCHEMA);
+    expect(parsed.scripts[1]).toBe(PAGE_SCRIPT);
     return parsed;
 }
 
@@ -129,7 +156,8 @@ describe('1. scanned strings never become markup', () => {
             // The payload is on the page, and only in its escaped form.
             expect(page).toContain(escapeHtml(payload));
             if (escapeHtml(payload) !== payload) expect(page).not.toContain(payload);
-            expect(page).not.toMatch(/<script|<img|<iframe|<link|<object|<embed|<form|<base/i);
+            expect(staticOf(page)).not.toMatch(/<script|<img|<iframe|<link|<object|<embed|<form|<base/i);
+            expect(page.match(/<script/g)).toHaveLength(2);
         }
     });
 
@@ -184,12 +212,13 @@ describe('1. scanned strings never become markup', () => {
 });
 
 describe('2. one self-contained file', () => {
-    const pages = [plainResults(), inventoryResults(), notJudgedResults(), emptyResults()].map(renderSummaryHtml);
+    const pages = [plainResults(), inventoryResults(), notJudgedResults(), emptyResults()].map((r) => renderSummaryHtml(r));
 
-    it('has no script, link, image, frame, import, url() or event handler, and one style block', () => {
+    it('has no link, image, frame, import, url() or event handler; one style block, one data block and one script', () => {
         for (const page of pages) {
             const { tags, style } = assertSafe(page);
-            expect(tags.some((t) => ['script', 'link', 'img', 'iframe', 'object', 'embed', 'base'].includes(t.name))).toBe(false);
+            expect(tags.some((t) => ['link', 'img', 'iframe', 'object', 'embed', 'base', 'form', 'svg'].includes(t.name))).toBe(false);
+            expect(tags.filter((t) => t.name === 'script' && !t.closing)).toHaveLength(2);
             expect(style[0]).not.toMatch(/url\(|@import|@font-face|expression\(|javascript:/i);
             expect(page).not.toMatch(/\ssrc=/);
             expect(page).not.toMatch(/\sstyle=/);
@@ -203,12 +232,46 @@ describe('2. one self-contained file', () => {
         }
     });
 
-    it('tells the browser to load nothing and send no referrer', () => {
+    it('tells the browser to load nothing, to run only this script and this style, and to send no referrer', () => {
+        const hash = (text: string): string => `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`;
         for (const page of pages) {
-            expect(page).toContain('<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'">');
+            const { style, scripts } = tokenize(page);
+            expect(page).toContain(`<meta http-equiv="Content-Security-Policy" content="${escapeHtml(PAGE_CSP)}">`);
+            const directives = new Map(PAGE_CSP.split('; ').map((d) => [d.slice(0, d.indexOf(' ')), d.slice(d.indexOf(' ') + 1)]));
+            expect(directives.get('default-src')).toBe("'none'");
+            expect(directives.get('connect-src')).toBe("'none'");
+            expect(directives.get('img-src')).toBe("'none'");
+            expect(directives.get('base-uri')).toBe("'none'");
+            expect(directives.get('form-action')).toBe("'none'");
+            // The script and the style run by the hash of exactly the text the page carries, and nothing else does.
+            expect(directives.get('script-src')).toBe(hash(scripts[1]));
+            expect(directives.get('style-src')).toBe(hash(style[0]));
+            expect(PAGE_CSP).not.toMatch(/unsafe-|nonce-|data:|https?:|\*/);
             expect(page).toContain('<meta name="referrer" content="no-referrer">');
             expect(page).toContain('<meta charset="utf-8">');
             expect(page).toContain('<meta name="viewport"');
+        }
+    });
+
+    it('the script is constant text that parses, holds nothing that ends its element, and reaches no network, storage or HTML sink', () => {
+        expect(PAGE_SCRIPT).not.toMatch(/`|\$\{|<\/|<!--|<script/i);
+        expect(() => new Function(PAGE_SCRIPT)).not.toThrow();
+        for (const banned of ['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write', 'eval(', 'new Function', 'fetch(', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'sendBeacon', 'localStorage', 'sessionStorage', 'indexedDB', 'import(', 'setTimeout', 'setInterval', 'postMessage', 'window.open', 'location.href', '.src']) {
+            expect(`${banned}: ${PAGE_SCRIPT.includes(banned)}`).toBe(`${banned}: false`);
+        }
+        // The one address it sets is a link it checks again to be https.
+        expect(PAGE_SCRIPT.match(/href:/g)).toHaveLength(1);
+        expect(PAGE_SCRIPT).toContain("e.h.indexOf('https://') === 0");
+    });
+
+    it('a page whose script does not run is the static page: the interactive view is hidden until the script has built it', () => {
+        for (const page of pages) {
+            expect(page).toContain('<div id="dash" class="dash" hidden></div>');
+            const { style } = tokenize(page);
+            expect(style[0]).toContain('[hidden]{display:none!important}');
+            // What the view repeats is hidden only once the script has marked the page, and printing shows it again.
+            expect(style[0]).toContain('html.js .dup{display:none}');
+            expect(style[0]).toMatch(/@media print\{[\s\S]*#dash,\.drawer,\.drawer-back\{display:none!important\}\nhtml\.js \.dup\{display:block\}/);
         }
     });
 });
@@ -304,7 +367,7 @@ describe('3. honest states', () => {
     });
 
     it('completeness comes before every other section', () => {
-        for (const page of [plainResults(), inventoryResults(), notJudgedResults(), emptyResults()].map(renderSummaryHtml)) {
+        for (const page of [plainResults(), inventoryResults(), notJudgedResults(), emptyResults()].map((r) => renderSummaryHtml(r))) {
             const offsets = [...page.matchAll(/<section id="([a-z]+)"/g)].map((m) => [m[1], m.index] as const);
             expect(offsets[0][0]).toBe('completeness');
             expect(offsets[1][0]).toBe('coverage');

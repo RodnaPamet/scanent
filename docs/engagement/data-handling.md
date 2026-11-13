@@ -59,6 +59,7 @@ Each scan writes one new folder. Nothing already written is changed.
 | File | What it is | Who it is for | Can contain |
 |---|---|---|---|
 | `summary.html` | One page to open in a browser. It loads nothing from the internet | Anyone reading the results | Agent identifiers, owner identifiers, findings, and the name, owner and purpose you declared for an agent if you supplied a list |
+| `report.pdf` | The same results as a document | Anyone reading the results | The same as `summary.html` |
 | `agents.csv` | One row per agent, for a spreadsheet | Analysts | The same |
 | `findings.csv` | One row per finding | Whoever fixes findings | Agent identifiers and references to credentials (where a credential is kept, never its value) |
 | `results.json` | Everything above, as data | Tools | The same as the page |

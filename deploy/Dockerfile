@@ -8,9 +8,11 @@
 # compiled JavaScript of the three packages that run (packages/contract,
 # packages/report and packages/scanner, each `dist/`), their manifests, LICENSE and NOTICE, and the
 # production dependencies the lockfile gives them, as published: zod, js-yaml
-# (with argparse) and typescript. `typescript` is a run-time dependency on
-# purpose: the `code` source reads an estate's JavaScript and TypeScript with
-# its parser. There is no TypeScript source of scanent's, no compiler step at
+# (with argparse), typescript, and pdfkit with the packages it brings.
+# `typescript` is a run-time dependency on purpose: the `code` source reads an
+# estate's JavaScript and TypeScript with its parser. `pdfkit` writes
+# `report.pdf` in the scanner's own process: plain JavaScript, no native
+# module and no browser, so it needs nothing from the base image. There is no TypeScript source of scanent's, no compiler step at
 # start, no test tooling and no package manager. The runtime base is
 # distroless: it holds no shell and no package manager to begin with.
 #
@@ -68,7 +70,7 @@ RUN --mount=type=secret,id=ca,required=false \
     && test -f packages/scanner/dist/cli.js \
     && test -f node_modules/@rodnapamet/scanent-contract/dist/harness-contract.js \
     && test -f node_modules/@scanent/report/dist/results/score.js \
-    && (cd packages/scanner && node -e "for (const m of ['@rodnapamet/scanent-contract/harness-contract', 'js-yaml', 'typescript', 'zod']) require(m)") \
+    && (cd packages/scanner && node -e "for (const m of ['@rodnapamet/scanent-contract/harness-contract', 'js-yaml', 'pdfkit', 'typescript', 'zod']) require(m)") \
     && (cd packages/scanner && node -e "require('@scanent/report/results/score')") \
     && (cd packages/report && node -e "for (const m of ['@rodnapamet/scanent-contract/harness-ladder', 'zod']) require(m)") \
     && (cd packages/contract && node -e "require('zod')")
