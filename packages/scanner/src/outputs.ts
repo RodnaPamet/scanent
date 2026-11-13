@@ -14,7 +14,7 @@
  * written before anything leaves it. Each output is attempted whatever
  * happened to the others, and a run is delivered only when every one was.
  */
-import type { HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
+import type { HarnessReportBodyV4 } from '@rodnapamet/scanent-contract/harness-contract';
 import type { ParsedInventory } from '@scanent/report/results/inventory';
 
 import type { OutputConfig, ScannerConfig } from './config';
@@ -81,7 +81,7 @@ export interface DeliveryResult {
     /** True only when every output in effect was delivered. */
     readonly ok: boolean;
     readonly delivered: readonly { readonly kind: OutputKind; readonly ok: boolean }[];
-    readonly scan: { readonly raw: string; readonly body: HarnessReportBodyV3 };
+    readonly scan: { readonly raw: string; readonly body: HarnessReportBodyV4 };
 }
 
 /** What a failed output is logged as: our own refusals in full (they hold paths only), anything else by its name and code. */

@@ -1,7 +1,7 @@
 # The findings, and what to do about each
 
 A finding is one thing the scan saw that somebody should look at. There are
-eight kinds. This page says, for each: what it means, why it matters, what to
+nine kinds. This page says, for each: what it means, why it matters, what to
 do, and who usually owns the fix.
 
 Three things are true of every finding:
@@ -20,12 +20,13 @@ Three things are true of every finding:
 | Code | Severity | Can a scan on its own raise it? |
 |---|---|---|
 | `SHADOW_AGENT` | HIGH | Yes |
-| `UNREGISTERED_IDENTITY` | MEDIUM | Yes. Only a scan's own results raise it: a system that receives the report calls the same account a shadow agent |
+| `UNREGISTERED_IDENTITY` | MEDIUM | Yes |
 | `UNPINNED_WRITE_TOOL` | HIGH | Yes |
 | `HARNESS_SHORTFALL` | HIGH, or MEDIUM for an agent that only reads | Yes |
 | `EMPTY_SCAN` | HIGH | Yes |
 | `INCOMPLETE_SOURCE` | MEDIUM | Yes |
 | `ORPHAN_CREDENTIAL` | MEDIUM | Yes |
+| `SPENDING_AGENT_UNDECLARED` | HIGH | Yes, for every listed agent whose code can pay. A scan on its own cannot see a spending limit, so it cannot tell which have one |
 | `LEVEL_DROP` | MEDIUM | No. Only a system that remembers earlier scans can |
 <!-- /guide:findings -->
 
@@ -273,6 +274,49 @@ system in full and no longer sees the credential unused.
 
 **Who usually owns it.** The owner of the application or repository that
 holds the credential.
+
+## `SPENDING_AGENT_UNDECLARED`
+
+**What it means.** An agent on your list (in your inventory, or in an Inflect
+register) has code that calls a payment client: a library that lets a
+program pay for something on its own. Today the scanner knows the payer side
+of the x402 payment protocol: the packages `x402-fetch`, `x402-axios`,
+`@x402/fetch` and `@x402/axios` for JavaScript and TypeScript, and `x402` for
+Python. The finding names each place in the code, as a file and a line. It
+never names an amount, a wallet or a key: the scanner does not read them.
+
+**A scan on its own cannot see a spending limit.** Where the agent has one,
+it is kept in an Inflect register, which the scanner does not read, and an
+inventory has no place for one. So a scan on its own raises this finding for
+every listed agent whose code can pay, and the finding says that it saw no
+limit, not that there is none. An Inflect tenant closes it when the agent has
+a limit that a second person has reviewed.
+
+**Why it matters.** An agent that can pay can spend money nobody approved.
+Somebody should have said how much it may spend, where, and until when, and
+somebody else should have checked that.
+
+**What to do.**
+
+1. Ask the agent's owner whether the agent is meant to pay at all.
+2. If it is: write down the limit (how much per payment and per period,
+   which sellers, until when) and have a second person review it. In an
+   Inflect tenant that is the agent's spending authority.
+3. If it is not: remove the payment client from the agent's code.
+
+**When it closes.** A later scan that no longer sees the payment client does
+not close it. The scanner reads one file at a time and cannot follow code
+that wraps the payment client somewhere else, so not seeing it is no proof
+that the agent cannot pay. Close it yourself once you have dealt with it. In
+an Inflect tenant it closes when a reviewed spending limit is on record, and
+a later scan opens it again only if it sees the payment client again.
+
+An agent found in code that is on no list gets `SHADOW_AGENT` and not this
+finding: put it on the list first. The scan's results still show, for every
+agent, whether its code calls a payment client.
+
+**Who usually owns it.** The owner of the agent, with whoever approves
+spending in your organisation.
 
 ## `LEVEL_DROP`
 

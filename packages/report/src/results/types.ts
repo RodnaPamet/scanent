@@ -21,9 +21,9 @@
  *
  * Types and the schema id: nothing else runs from this module.
  */
-import type { HarnessFindingCode, HarnessSourceKind, IntakeConflict, StoredReach } from '@rodnapamet/scanent-contract/harness-findings';
+import type { HarnessFindingCode, HarnessSourceKind, IntakeConflict, ModelSign, StoredReach } from '@rodnapamet/scanent-contract/harness-findings';
 import type { CriterionState, HarnessCriterionId, HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
-import type { HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
+import type { HarnessPaymentCapability, HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 
 import type { ParsedInventory } from './inventory';
 
@@ -111,25 +111,28 @@ export type UnreadableWhy = 'NO_READER' | 'READER_NOT_CONFIGURED';
 export type UnboundNotConcludedWhy = 'OWN_SOURCE_INCOMPLETE' | 'IDENTITY_SOURCE_INCOMPLETE';
 
 /**
- * What a scan read that suggests a principal runs a model: it was found in
- * agent code, in a tracing system or on an MCP server, or its report lists a
- * tool or a model endpoint. A credential's NAME is not one: a secret called
- * after a model provider is a guess about what holds it (owner decision,
- * 2026-11-13).
+ * What a scan read that suggests a principal runs a model, and the type of
+ * one: the contract's own (`MODEL_SIGNS` in `harness-findings`), re-exported.
+ * A credential's NAME is not one: a secret called after a model provider is a
+ * guess about what holds it.
  */
-export const MODEL_SIGNS = ['FOUND_IN_CODE', 'FOUND_IN_RUNTIME', 'FOUND_ON_MCP_SERVER', 'LISTS_A_TOOL', 'LISTS_A_MODEL'] as const;
-export type ModelSign = (typeof MODEL_SIGNS)[number];
+export { MODEL_SIGNS, type ModelSign } from '@rodnapamet/scanent-contract/harness-findings';
 
 /**
- * A finding only the local results raise, beside the contract's. An
- * UNREGISTERED_IDENTITY is a principal no register or inventory names and
- * that shows no sign of a model: a CI workflow, a service account. The
- * contract's planner calls it a shadow agent; these results do not, and do
- * not hold it to the agent bar. The signed report is the contract's and is
- * unchanged.
+ * A finding the local results carry. Every code is the contract planner's:
+ * UNREGISTERED_IDENTITY, once raised here alone, is the planner's own since
+ * the contract carried it, so a tenant and a standalone run class a principal
+ * the same way. The local results rewrite some descriptions (who could have
+ * named the agent, what this run could not read) and never a code.
  */
-export const LOCAL_FINDING_CODES = ['UNREGISTERED_IDENTITY'] as const;
-export type LocalFindingCode = HarnessFindingCode | (typeof LOCAL_FINDING_CODES)[number];
+export type LocalFindingCode = HarnessFindingCode;
+
+/**
+ * One place an agent's code calls a payment client, as `/4` reports it: the
+ * protocol, the library and the `code://` locator of the call. Never an
+ * amount, a wallet or a key.
+ */
+export type LocalPaymentCapability = HarnessPaymentCapability;
 
 export interface LocalSourceResult {
     readonly kind: HarnessSourceKind;
@@ -213,6 +216,17 @@ export interface LocalAgentResult {
      * shadow agent, as that file's own findings do.
      */
     readonly modelSigns?: readonly ModelSign[];
+    /**
+     * Where the agent's code calls a payment client (`/4`). THREE STATES, as
+     * the report has them: `null` is NOT REPORTED (a `/2` or `/3` report, or
+     * an agent no code read reported); `[]` is a code read that saw no payment
+     * client called in the agent's own file, which is what that reader saw and
+     * never evidence that the agent cannot pay; entries are what it saw.
+     *
+     * OPTIONAL, because a file written before the member existed has none; a
+     * reader treats it absent as NOT REPORTED.
+     */
+    readonly paymentCapabilities?: readonly LocalPaymentCapability[] | null;
     readonly reach: StoredReach;
     /** Every criterion, in ladder order. */
     readonly criteria: readonly LocalCriterionCell[];
@@ -295,6 +309,12 @@ export interface LocalResults {
          * principal is in `shadowAgents`.
          */
         readonly unregisteredIdentities?: readonly string[];
+        /**
+         * Agents whose code calls a payment client (`/4`), sorted. Empty when
+         * none was seen, which says nothing about the agents no code read
+         * reported. OPTIONAL, for a file written before the member existed.
+         */
+        readonly payingAgents?: readonly string[];
         readonly orphanCredentials: readonly { readonly ref: string; readonly sourceKind: string }[];
         /** Seen unbound, and the planner could not open a finding. */
         readonly unboundNotConcluded: readonly {

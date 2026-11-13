@@ -61,6 +61,8 @@ function standalonePrior(body: HarnessReportBody): PriorHarnessState {
         openOrphanCredentials: new Set(),
         intakeClaims: new Map(),
         registeredAgentIds: new Set(body.agents.flatMap((a) => (a.registeredAgentId === null ? [] : [a.registeredAgentId]))),
+        spendingAuthority: new Map(),
+        onRecordAsAgent: new Set(),
     };
 }
 
@@ -102,36 +104,36 @@ describe('1. the contract decides', () => {
     });
 
     /**
-     * The planner's findings as the local results state them: unchanged, but
-     * for a principal nothing names and nothing shows to run a model. Its
-     * SHADOW_AGENT is an UNREGISTERED_IDENTITY, and it has no HARNESS_SHORTFALL.
-     * Written from the plan alone, without the scorer's own helper.
+     * The principals the planner classes as unregistered identities, written
+     * from the plan's facts alone, without the planner's or the scorer's
+     * helper: no link, and no sign of a model.
      */
-    function expectedLocally(plan: ReturnType<typeof planHarnessScan>): [string, string, string, string, string][] {
-        const identities = new Set(
-            plan.agents
-                .filter(
-                    (a) =>
-                        a.linkBasis === null
-                        && !(a.discoveredVia as readonly string[]).some((kind) => ['code', 'runtime', 'mcp'].includes(kind))
-                        && a.tools.length === 0
-                        && (a.models === null || a.models.length === 0),
-                )
-                .map((a) => a.discoveredId),
-        );
-        return plan.assert.flatMap((f): [string, string, string, string, string][] => {
-            const id = [...identities].find((identity) => f.sourceRef === `SHADOW_AGENT:${identity}` || f.sourceRef === `HARNESS_SHORTFALL:${identity}`);
-            if (id === undefined) return [[f.sourceRef, f.code, f.severity, f.type, f.title]];
-            if (f.code === 'HARNESS_SHORTFALL') return [];
-            return [[`UNREGISTERED_IDENTITY:${id}`, 'UNREGISTERED_IDENTITY', 'MEDIUM', 'OBSERVATION', `Unregistered automated identity ${id}`]];
-        });
+    function identitiesOf(plan: ReturnType<typeof planHarnessScan>): string[] {
+        return plan.agents
+            .filter(
+                (a) =>
+                    a.linkBasis === null
+                    && !(a.discoveredVia as readonly string[]).some((kind) => ['code', 'runtime', 'mcp'].includes(kind))
+                    && a.tools.length === 0
+                    && (a.models === null || a.models.length === 0),
+            )
+            .map((a) => a.discoveredId);
     }
 
-    it.each(bodies)('%s: the findings are the planner\'s, in its order, but for an unregistered identity', (_label, make) => {
+    it.each(bodies)('%s: the findings are the planner\'s, in its order, with its codes, keys and severities', (_label, make) => {
         const body = make();
         const results = scoreReportLocally(input(body));
         const plan = planHarnessScan(body, standalonePrior(body));
-        expect(results.findings.map((f) => [f.sourceRef, f.code, f.severity, f.type, f.title])).toEqual(expectedLocally(plan));
+        expect(plan.agents.filter((a) => a.unregisteredIdentity).map((a) => a.discoveredId)).toEqual(identitiesOf(plan));
+        expect(results.findings.map((f) => [f.sourceRef, f.code, f.severity, f.type])).toEqual(
+            plan.assert.map((f) => [f.sourceRef, f.code, f.severity, f.type]),
+        );
+        // A title is the planner's, but where the planner states what the register holds.
+        for (const [i, f] of results.findings.entries()) {
+            if (f.code !== 'SPENDING_AGENT_UNDECLARED') expect(f.title).toBe(plan.assert[i].title);
+        }
+        // An unregistered identity is held to no bar, so no shortfall is raised for it.
+        for (const id of identitiesOf(plan)) expect(results.findings.some((f) => f.sourceRef === `HARNESS_SHORTFALL:${id}`)).toBe(false);
     });
 
     it('states the estate a register reads as the planner words it', () => {

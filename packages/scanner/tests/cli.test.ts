@@ -18,7 +18,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
-import { HARNESS_CONTRACT_V3, harnessKeyFingerprint, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { HARNESS_CONTRACT_V4, harnessKeyFingerprint, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { main, run, USAGE_HINT } from '../src/cli';
 import { ConfigError } from '../src/config';
 import { publicKeyFingerprint, rawPublicKeyHex } from '../src/report';
@@ -123,7 +123,7 @@ describe('3. scan', () => {
         const verified = verifyAndParseHarnessReport(raw, [PUBLIC_HEX]);
         expect(verified).toMatchObject({ ok: true, complete: true });
         const report = JSON.parse(raw) as { contract: string; body?: unknown };
-        expect(JSON.stringify(report)).toContain(HARNESS_CONTRACT_V3);
+        expect(JSON.stringify(report)).toContain(HARNESS_CONTRACT_V4);
         expect(raw).toContain('code:example/support/agent.py#');
         // The root's path names a checkout; only its label is reported.
         expect(raw).not.toContain(REPO);

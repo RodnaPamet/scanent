@@ -10,7 +10,18 @@ import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 
 import * as contract from '../src/harness-contract';
-import { HARNESS_CONTRACT_IDS, HARNESS_CONTRACT_V1, HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3, SOURCE_KINDS, SOURCE_KINDS_V2, SOURCE_KINDS_V3 } from '../src/harness-contract-rules';
+import {
+    HARNESS_CONTRACT_IDS,
+    HARNESS_CONTRACT_V1,
+    HARNESS_CONTRACT_V2,
+    HARNESS_CONTRACT_V3,
+    HARNESS_CONTRACT_V4,
+    PAYMENT_CLIENT_LIBRARIES,
+    PAYMENT_PROTOCOLS,
+    SOURCE_KINDS,
+    SOURCE_KINDS_V2,
+    SOURCE_KINDS_V3,
+} from '../src/harness-contract-rules';
 import { HARNESS_FINDING_CODES } from '../src/harness-findings';
 import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LEVELS, shortfallBarFor } from '../src/harness-ladder';
 import { validV3ReportBody } from './helpers/agent-harness-fake-scanner';
@@ -41,7 +52,7 @@ const codesIn = (cell: string): string[] => [...cell.matchAll(/`([^`]+)`/g)].map
 describe('docs/contract.md', () => {
     it('lists every contract id, and which are accepted', () => {
         const table = rows('ids');
-        expect(table.map((r) => code(r[0]))).toEqual([HARNESS_CONTRACT_V1, HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3]);
+        expect(table.map((r) => code(r[0]))).toEqual([HARNESS_CONTRACT_V1, HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3, HARNESS_CONTRACT_V4]);
         const accepted = table.filter((r) => r[1].startsWith('Accepted')).map((r) => code(r[0]));
         expect(accepted).toEqual([...HARNESS_CONTRACT_IDS]);
         expect(table.find((r) => code(r[0]) === HARNESS_CONTRACT_V1)?.[1]).toContain('Retired');
@@ -52,6 +63,12 @@ describe('docs/contract.md', () => {
         expect(table.map((r) => code(r[0]))).toEqual([...SOURCE_KINDS]);
         expect(table.filter((r) => code(r[1]) === '/2').map((r) => code(r[0]))).toEqual([...SOURCE_KINDS_V2]);
         expect(table.filter((r) => code(r[1]) === '/3').map((r) => code(r[0]))).toEqual(SOURCE_KINDS_V3.filter((k) => !(SOURCE_KINDS_V2 as readonly string[]).includes(k)));
+    });
+
+    it('lists the payment protocols and client libraries a /4 capability can name, in order', () => {
+        const table = rows('payment-libraries');
+        expect(table.map((r) => code(r[0]))).toEqual([...PAYMENT_CLIENT_LIBRARIES]);
+        expect([...new Set(table.map((r) => code(r[1])))]).toEqual([...PAYMENT_PROTOCOLS]);
     });
 
     it('lists every incomplete reason, in order', () => {
@@ -119,7 +136,7 @@ describe('docs/contract.md', () => {
     it('names the functions it refers to, and each is one the contract exports', async () => {
         const modules = [contract, await import('../src/harness-contract-rules'), await import('../src/harness-findings'), await import('../src/harness-ladder'), await import('../src/canonical-json')];
         const exported = new Set(modules.flatMap((m) => Object.keys(m)));
-        const referred = ['verifyAndParseHarnessReport', 'isScanComplete', 'looksLikeSecret', 'firstSecretShapedMember', 'canonicalJson', 'scoreHarness', 'collapseVerdicts', 'levelAtLeast', 'shortfallBarFor', 'planHarnessScan', 'toolEvidenceSourcesOf', 'LADDER_VERSION'];
+        const referred = ['verifyAndParseHarnessReport', 'isScanComplete', 'looksLikeSecret', 'containsCardNumber', 'firstSecretShapedMember', 'firstSecretShapedPath', 'canonicalJson', 'scoreHarness', 'collapseVerdicts', 'levelAtLeast', 'shortfallBarFor', 'planHarnessScan', 'toolEvidenceSourcesOf', 'LADDER_VERSION'];
         for (const name of referred) {
             expect(DOC).toContain(`\`${name}\``);
             expect(exported.has(name)).toBe(true);

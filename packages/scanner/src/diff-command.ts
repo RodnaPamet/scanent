@@ -123,7 +123,7 @@ function loadDiffSideValue(raw: string, side: 'old' | 'new', trustKey: string | 
         const named = typeof object.schema === 'string' && /^scanent-results\/\d{1,4}$/.test(object.schema) ? JSON.stringify(object.schema) : 'a schema this version does not know';
         throw new DiffInputError(`${side}: the file names ${named} as its schema; this version reads ${RESULTS_SCHEMA}`);
     }
-    throw new DiffInputError(`${side}: the file names no schema; this version reads ${RESULTS_SCHEMA} files and signed ${HARNESS_CONTRACT_IDS.join(' and ')} reports`);
+    throw new DiffInputError(`${side}: the file names no schema; this version reads ${RESULTS_SCHEMA} files and signed ${HARNESS_CONTRACT_IDS.slice(0, -1).join(', ')} and ${HARNESS_CONTRACT_IDS[HARNESS_CONTRACT_IDS.length - 1]} reports`);
 }
 
 interface DiffArgs {

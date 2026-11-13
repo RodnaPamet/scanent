@@ -10,6 +10,13 @@
  * (`NOT_CONCLUDED`), and a level is compared only where both runs judged the
  * agent.
  *
+ * What an agent's code was seen to call to pay (`/4`) is compared only where
+ * both runs read it: a run that did not report it (an older contract, an
+ * agent no code read reported, a results file written before the member)
+ * leaves the comparison not concluded. And a payment client no longer seen
+ * is a change in what was seen, never "can no longer pay": the code source
+ * reads one file at a time.
+ *
  * Whatever could not be concluded is listed in `notConcluded`, and a diff
  * with no difference and a non-empty list is `SAME_AS_FAR_AS_COMPARED`, never
  * `SAME`: "nothing changed" is not reported on a partial read.
@@ -105,7 +112,11 @@ export interface CriterionChange {
 
 export interface AttributeChange {
     readonly discoveredId: string;
-    readonly attribute: 'reach' | 'bar' | 'shortfall' | 'registration';
+    /**
+     * `payment`: what the agent's code was seen to call to pay, as `NONE_SEEN`
+     * or `CAN_PAY: <library> at <locator>; …`. Only where both runs reported it.
+     */
+    readonly attribute: 'reach' | 'bar' | 'shortfall' | 'registration' | 'payment';
     readonly from: string;
     readonly to: string;
 }
@@ -179,6 +190,15 @@ function readInFull(r: LocalResults): boolean {
     return r.sources.length > 0 && r.sources.every((s) => s.status === 'COMPLETE');
 }
 
+/** What an agent's code was seen to call to pay, as one comparable string; null when the run did not report it. */
+export function paymentStateOf(agent: Pick<LocalAgentResult, 'paymentCapabilities'>): string | null {
+    const caps = agent.paymentCapabilities;
+    if (caps === undefined || caps === null) return null;
+    if (caps.length === 0) return 'NONE_SEEN';
+    const sites = caps.map((c) => `${c.library} at ${c.at}`).sort(byCodeUnit);
+    return `CAN_PAY: ${sites.join('; ')}`;
+}
+
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 function sourceStates(r: LocalResults): Map<string, { status: SourceReadState; reason: string | null }> {
@@ -198,6 +218,10 @@ function findingStillOpenWhy(
     onOlderRule: () => void,
 ): string | null {
     const complete = readInFull(next);
+    // The planner's rule: no scan closes it, complete or not, and whatever the
+    // agent now shows. A payment client not seen is what one file's read did
+    // not see; only a reviewed spending authority, which no scan reads, does.
+    if (finding.code === 'SPENDING_AGENT_UNDECLARED') return 'NOT_CLOSED_BY_A_SCAN';
     if (finding.discoveredId !== null) {
         const agent = nextAgents.get(finding.discoveredId);
         if (agent === undefined) return gone.has(finding.discoveredId) ? 'AGENT_GONE' : 'AGENT_NOT_SEEN';
@@ -378,6 +402,14 @@ export function diffResults(prev: LocalResults, next: LocalResults, opts: { read
         if (a.reach !== b.reach) attributes.push({ discoveredId: id, attribute: 'reach', from: a.reach, to: b.reach });
         if (a.registration.basis !== b.registration.basis) {
             attributes.push({ discoveredId: id, attribute: 'registration', from: a.registration.basis, to: b.registration.basis });
+        }
+        const paidBefore = paymentStateOf(a);
+        const paidNow = paymentStateOf(b);
+        if (paidBefore !== null && paidNow !== null) {
+            if (paidBefore !== paidNow) attributes.push({ discoveredId: id, attribute: 'payment', from: paidBefore, to: paidNow });
+        } else if (paidBefore !== paidNow) {
+            // One run reported it and the other did not: nothing is compared.
+            notConcluded.push(`PAYMENT_NOT_COMPARED:${id}`);
         }
         const cellsBefore = new Map(a.criteria.map((c) => [c.criterion, c]));
         for (const cell of b.criteria) {

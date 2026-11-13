@@ -15,7 +15,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { looksLikeSecret, type HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
+import { looksLikeSecret, type HarnessReportBodyV4 } from '@rodnapamet/scanent-contract/harness-contract';
 import { renderAgentsCsv, renderFindingsCsv } from '@scanent/report/render/csv';
 import { renderSummaryHtml } from '@scanent/report/render/html';
 import { renderResultsJson } from '@scanent/report/render/results-json';
@@ -102,7 +102,7 @@ describe('through a source', () => {
     });
 
     it.each(CANARIES)('%s in any string a source reports: the report is not signed, so nothing is delivered', (_label, canary) => {
-        const { signature: _signature, ...body } = JSON.parse(clean.raw) as HarnessReportBodyV3 & { signature: unknown };
+        const { signature: _signature, ...body } = JSON.parse(clean.raw) as HarnessReportBodyV4 & { signature: unknown };
         const keys = loadSigningKey(ENV.SCANNER_SIGNING_KEY);
         expect(() => signReport(body, keys)).not.toThrow();
         // The contract refuses a secret-shaped credential reference in its schema; every other string by the walk.

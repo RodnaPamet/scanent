@@ -18,6 +18,15 @@
  *                          scanner's builder takes that member from the
  *                          register source alone, so the row exists
  *   intakeClaims           one per inventory row that names an agent in the scan
+ *   spendingAuthority      none: the scanner reads no spending authority a
+ *                          register holds, and an inventory has no place for
+ *                          one. So a registered agent whose code pays raises
+ *                          SPENDING_AGENT_UNDECLARED here, and its text says
+ *                          that this run saw no authority, not that none exists
+ *   onRecordAsAgent        none: nothing is on record before this run, so a
+ *                          principal with no sign of a model and no
+ *                          registration is an unregistered identity, whether
+ *                          or not the scan was complete
  *
  * THE INVENTORY TAKES THE PLANNER'S "REGISTER'S OWN RECORD" PATH on purpose.
  * The rules on that path are the ones an inventory should have: a link the
@@ -41,7 +50,9 @@ import {
     planHarnessScan,
     shadowRefOf,
     shortfallRefOf,
+    spendingUndeclaredRefOf,
     toolEvidenceSourcesOf,
+    unregisteredIdentityRefOf,
     type HarnessSourceKind,
     type IntakeClaim,
     type PlannedAgent,
@@ -73,7 +84,6 @@ import {
     type LocalResults,
     type ReaderKind,
     type RegistrationBasis,
-    type ModelSign,
     type ScoreInput,
 } from './types';
 
@@ -109,35 +119,15 @@ export function coverageOf(
     return { readable, coverage: { reachableLevel, unreadable } };
 }
 
-/** What the report says of one principal that suggests it runs a model. In the order of `MODEL_SIGNS`. */
-export function modelSignsOf(agent: Pick<PlannedAgent, 'discoveredVia' | 'tools' | 'models'>): ModelSign[] {
-    const via = agent.discoveredVia as readonly string[];
-    const signs: ModelSign[] = [];
-    if (via.includes('code')) signs.push('FOUND_IN_CODE');
-    if (via.includes('runtime')) signs.push('FOUND_IN_RUNTIME');
-    if (via.includes('mcp')) signs.push('FOUND_ON_MCP_SERVER');
-    if (agent.tools.length > 0) signs.push('LISTS_A_TOOL');
-    if (agent.models !== null && agent.models.length > 0) signs.push('LISTS_A_MODEL');
-    return signs;
-}
-
-export function unregisteredIdentityRefOf(discoveredId: string): string {
-    return `UNREGISTERED_IDENTITY:${discoveredId}`;
-}
-
 /**
- * The finding for a principal nothing names and nothing shows to run a model,
- * in place of the planner's SHADOW_AGENT. It is still a finding: an identity
- * nobody has classified does not leave the results.
+ * The planner's UNREGISTERED_IDENTITY text for a run whose registrations come
+ * from what this run read: the register source, the operator's inventory,
+ * both or neither. Code, severity and key are the planner's.
  */
-function unregisteredIdentityFinding(agent: PlannedAgent, where: string, registerRead: boolean, inventorySupplied: boolean): Omit<LocalFinding, 'discoveredId'> {
+function localIdentityFinding(finding: PlannedFinding, agent: PlannedAgent, where: string, registerRead: boolean, inventorySupplied: boolean): PlannedFinding {
     const names = registerRead && inventorySupplied ? 'the register or the operator\'s inventory' : registerRead ? 'the register' : inventorySupplied ? 'the operator\'s inventory' : 'any register or inventory this run read';
     return {
-        code: 'UNREGISTERED_IDENTITY',
-        sourceRef: unregisteredIdentityRefOf(agent.discoveredId),
-        severity: 'MEDIUM',
-        type: 'OBSERVATION',
-        title: `Unregistered automated identity ${agent.discoveredId}`,
+        ...finding,
         description:
             `A scan (${where}) found ${agent.discoveredId} via ${agent.discoveredVia.join(', ')}. It is not in ${names}. `
             + 'Nothing the scan read shows that it runs a model: it was not found in agent code, in a tracing system or on an MCP server, '
@@ -158,6 +148,35 @@ function localShadowFinding(finding: PlannedFinding, agent: PlannedAgent, where:
               + 'Add it to the inventory, or retire the principal.'
             : `${found} For this run no inventory was supplied, so no agent can be shown as registered. `
               + 'Supply an inventory that names the agents the estate knows, or retire the principal.',
+    };
+}
+
+/** How many payment call sites a finding names before it stops listing; the planner's own number. */
+const MAX_PAYMENT_SITES_NAMED = 10;
+
+/**
+ * The planner's SPENDING_AGENT_UNDECLARED text for a run that reads no
+ * spending authority. The planner's says the register holds none; this run
+ * cannot know that, so the text says what was seen, and what was not read.
+ */
+function localSpendingFinding(finding: PlannedFinding, paying: readonly PlannedAgent[], where: string, registerRead: boolean): PlannedFinding {
+    const sites = paying.flatMap((p) => (p.paymentCapabilities ?? []).map((c) => `${c.library} at ${c.at}`));
+    const named = sites.slice(0, MAX_PAYMENT_SITES_NAMED);
+    const more = sites.length > MAX_PAYMENT_SITES_NAMED ? ` and ${sites.length - MAX_PAYMENT_SITES_NAMED} more` : '';
+    const ids = paying.map((p) => p.discoveredId).join(', ');
+    const registeredIn = paying.every((p) => p.linkBasis === 'INTAKE') ? 'in the operator\'s inventory' : 'in the register';
+    return {
+        ...finding,
+        title: `Agent ${ids} can pay, and this run saw no spending authority for it`,
+        description:
+            `A scan (${where}) read the code of ${ids} and found it calling a payment client: ${named.join('; ')}${more}. `
+            + `The agent is registered ${registeredIn}. This run read no spending authority for it: the scanner does not read `
+            + `the spending authorities a register holds${registerRead ? '' : ' (and no register was read)'}, and an inventory has no place for one. `
+            + 'So this says the code can pay; it does not show that no authority was declared. '
+            + 'If a reviewed spending authority for the agent is on record, this finding is answered there. If not, declare one '
+            + '(how much it may spend, where, and until when) and have a second person review it, or remove the payment client '
+            + 'from the agent. A scan that no longer sees the payment client does not close it, because a static read cannot '
+            + 'show that an agent has no other way to pay.',
     };
 }
 
@@ -200,6 +219,8 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
         openOrphanCredentials: new Set(),
         registeredAgentIds: new Set(body.agents.flatMap((a) => (a.registeredAgentId === null ? [] : [a.registeredAgentId]))),
         intakeClaims,
+        spendingAuthority: new Map(),
+        onRecordAsAgent: new Set(),
     });
 
     const configured: ReaderKind[] = [...input.readers.configuredSources, ...(inventory === null ? [] : (['inventory'] as const))];
@@ -254,7 +275,8 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
                 ref: planned.registeredAgentId,
             },
             judgement,
-            modelSigns: modelSignsOf(planned),
+            modelSigns: [...planned.modelSigns],
+            paymentCapabilities: planned.paymentCapabilities === null ? null : [...planned.paymentCapabilities],
             reach: planned.reach,
             criteria,
             counts: {
@@ -273,29 +295,36 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
     const agentOfRef = new Map<string, string>();
     for (const a of plan.agents) {
         agentOfRef.set(shadowRefOf(a.discoveredId), a.discoveredId);
+        agentOfRef.set(unregisteredIdentityRefOf(a.discoveredId), a.discoveredId);
         agentOfRef.set(shortfallRefOf(a.discoveredId), a.discoveredId);
         agentOfRef.set(`UNPINNED_WRITE_TOOL:${a.discoveredId}`, a.discoveredId);
     }
+    // A spending finding is keyed by the register row. It is about an agent
+    // when exactly one paying agent is linked to that row, and about the row
+    // otherwise.
+    const payingByRow = new Map<string, PlannedAgent[]>();
+    for (const a of plan.agents) {
+        if (a.registeredAgentId === null || (a.paymentCapabilities ?? []).length === 0) continue;
+        payingByRow.set(a.registeredAgentId, [...(payingByRow.get(a.registeredAgentId) ?? []), a]);
+    }
+    const payingOfRef = new Map<string, PlannedAgent[]>();
+    for (const [row, paying] of payingByRow) {
+        payingOfRef.set(spendingUndeclaredRefOf(row), paying);
+        if (paying.length === 1) agentOfRef.set(spendingUndeclaredRefOf(row), paying[0].discoveredId);
+    }
     const where = `scan ${body.scan.id}, scanner ${scanner}`;
     const levelOf = new Map(agents.map((a) => [a.discoveredId, a.judgement]));
-    // Named by nothing, and showing no sign of a model: an automated identity, not a shadow agent.
-    const unregisteredIdentities = new Set(
-        agents.filter((a) => a.registration.basis === 'NONE' && (a.modelSigns ?? []).length === 0).map((a) => a.discoveredId),
-    );
+    // The planner's class: named by nothing, and showing no sign of a model. Held to no bar.
+    const unregisteredIdentities = new Set(plan.agents.filter((a) => a.unregisteredIdentity).map((a) => a.discoveredId));
     const findings: LocalFinding[] = [];
     for (const planned of plan.assert) {
         const discoveredId = agentOfRef.get(planned.sourceRef) ?? null;
         let finding = planned;
-        if (discoveredId !== null && unregisteredIdentities.has(discoveredId)) {
-            // It is not held to the agent bar, so no finding says it is below one.
-            if (planned.code === 'HARNESS_SHORTFALL') continue;
-            if (planned.code === 'SHADOW_AGENT') {
-                findings.push({
-                    ...unregisteredIdentityFinding(plannedById.get(discoveredId) as PlannedAgent, where, registerRead, inventory !== null),
-                    discoveredId,
-                });
-                continue;
-            }
+        if (planned.code === 'UNREGISTERED_IDENTITY' && discoveredId !== null) {
+            finding = localIdentityFinding(planned, plannedById.get(discoveredId) as PlannedAgent, where, registerRead, inventory !== null);
+        }
+        if (planned.code === 'SPENDING_AGENT_UNDECLARED') {
+            finding = localSpendingFinding(planned, payingOfRef.get(planned.sourceRef) ?? [], where, registerRead);
         }
         if (planned.code === 'HARNESS_SHORTFALL' && discoveredId !== null) {
             // Its title states a level, and none may be stated for this agent.
@@ -417,6 +446,7 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
             unregisteredIdentities: findings
                 .flatMap((f) => (f.code === 'UNREGISTERED_IDENTITY' && f.discoveredId !== null ? [f.discoveredId] : []))
                 .sort(byCodeUnit),
+            payingAgents: agents.filter((a) => (a.paymentCapabilities ?? []).length > 0).map((a) => a.discoveredId),
             orphanCredentials,
             unboundNotConcluded,
             // Every intake claim here is an inventory row, whose id (`inventory:row-<n>`)

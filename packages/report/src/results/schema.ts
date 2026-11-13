@@ -20,10 +20,11 @@
 import { z } from 'zod';
 
 import { HARNESS_FINDING_CODES } from '@rodnapamet/scanent-contract/harness-findings';
-import { SOURCE_KINDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
+import { PAYMENT_CLIENT_LIBRARIES, PAYMENT_PROTOCOLS, SOURCE_KINDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
+import { MAX_PAYMENT_CAPABILITIES_PER_AGENT } from '@rodnapamet/scanent-contract/harness-contract';
 import { ALL_HARNESS_CRITERIA, HARNESS_LEVELS, isHarnessCriterionId, type HarnessCriterionId } from '@rodnapamet/scanent-contract/harness-ladder';
 
-import { LOCAL_FINDING_CODES, MODEL_SIGNS, RESULTS_SCHEMA, type LocalResults } from './types';
+import { MODEL_SIGNS, RESULTS_SCHEMA, type LocalResults } from './types';
 
 const MAX_TEXT = 4_096;
 const id = z.string().min(1).max(256);
@@ -34,6 +35,15 @@ const level = z.enum(HARNESS_LEVELS);
 const sourceKind = z.enum(SOURCE_KINDS);
 const criterion = z.custom<HarnessCriterionId>((v) => typeof v === 'string' && isHarnessCriterionId(v), 'not a criterion of the ladder');
 const reader = z.union([sourceKind, z.literal('inventory')]);
+
+/** One `/4` payment capability, held to the contract's closed lists and its `code://` locator. */
+const PaymentCapabilitySchema = z
+    .object({
+        protocol: z.enum(PAYMENT_PROTOCOLS),
+        library: z.enum(PAYMENT_CLIENT_LIBRARIES),
+        at: z.string().min(1).max(512).refine((v) => v.startsWith('code://'), 'a payment capability is located by a code:// locator'),
+    })
+    .strict();
 
 const CellSchema = z
     .object({
@@ -82,6 +92,8 @@ const AgentSchema = z
         judgement: JudgementSchema,
         // Added in 0.13.0, and optional: a results file written before it carries none.
         modelSigns: z.array(z.enum(MODEL_SIGNS)).max(MODEL_SIGNS.length).optional(),
+        // Added with `/4`, and optional: a results file written before it carries none.
+        paymentCapabilities: z.array(PaymentCapabilitySchema).max(MAX_PAYMENT_CAPABILITIES_PER_AGENT).nullable().optional(),
         reach: z.enum(['READ_ONLY', 'WRITE_OR_EXTERNAL', 'UNKNOWN']),
         criteria: z.array(CellSchema).length(ALL_HARNESS_CRITERIA.length),
         counts: z
@@ -109,7 +121,7 @@ const AgentSchema = z
 
 const FindingSchema = z
     .object({
-        code: z.enum([...HARNESS_FINDING_CODES, ...LOCAL_FINDING_CODES]),
+        code: z.enum(HARNESS_FINDING_CODES),
         sourceRef: z.string().min(1).max(1_024),
         severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
         type: z.enum(['NONCONFORMITY', 'OBSERVATION']),
@@ -205,6 +217,8 @@ export const LocalResultsSchema: z.ZodType<LocalResults> = z
                 shadowAgents: z.array(id),
                 // Added in 0.13.0, and optional, as `modelSigns` is.
                 unregisteredIdentities: z.array(id).optional(),
+                // Added with `/4`, and optional, as `unregisteredIdentities` is.
+                payingAgents: z.array(id).optional(),
                 orphanCredentials: z.array(z.object(credentialSeen).strict()),
                 unboundNotConcluded: z.array(
                     z.object({ ...credentialSeen, why: z.enum(['OWN_SOURCE_INCOMPLETE', 'IDENTITY_SOURCE_INCOMPLETE']) }).strict(),
@@ -244,6 +258,21 @@ export const LocalResultsSchema: z.ZodType<LocalResults> = z
         }
         if (r.estate.shadowAgents.some((shadow) => identities.has(shadow))) {
             ctx.addIssue({ code: 'custom', message: 'a principal is a shadow agent or an unregistered identity, not both', path: ['estate', 'shadowAgents'] });
+        }
+        // The paying agents are exactly the listed agents whose own facts name a payment capability.
+        if (r.estate.payingAgents !== undefined) {
+            const paying = r.agents.filter((a) => (a.paymentCapabilities ?? []).length > 0).map((a) => a.discoveredId);
+            const listed = r.estate.payingAgents;
+            if (new Set(listed).size !== listed.length || listed.length !== paying.length || new Set([...listed, ...paying]).size !== paying.length) {
+                ctx.addIssue({
+                    code: 'custom',
+                    message: 'the paying agents are the listed agents that report a payment capability',
+                    path: ['estate', 'payingAgents'],
+                });
+            }
+        }
+        if (r.agents.some((a) => a.paymentCapabilities != null && new Set(a.paymentCapabilities.map((c) => `${c.library}\u0000${c.at}`)).size !== a.paymentCapabilities.length)) {
+            ctx.addIssue({ code: 'custom', message: 'each payment capability appears once', path: ['agents'] });
         }
         if (r.agents.some((a) => a.modelSigns !== undefined && new Set(a.modelSigns).size !== a.modelSigns.length)) {
             ctx.addIssue({ code: 'custom', message: 'a model sign appears once', path: ['agents'] });

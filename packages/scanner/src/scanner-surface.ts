@@ -17,7 +17,7 @@
 import { createHash } from 'crypto';
 
 import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
-import { HARNESS_CONTRACT_V3 } from '@rodnapamet/scanent-contract/harness-contract';
+import { HARNESS_CONTRACT_V4 } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
@@ -47,6 +47,9 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * 0.13.0: the `code` source reads agents built directly on a model provider's
  * SDK (Anthropic, OpenAI, Gemini, Bedrock), which changes what it reports and
  * no file operation, so the surface and its hash are as they were.
+ * Not yet released, and the version is the release's to choose: reports under
+ * `inflect-agent-harness/4`, with the `code` source's payment-capability fact.
+ * The contract id is part of the surface, so the manifest hash moves with it.
  */
 export const SCANNER_VERSION = '0.13.2';
 
@@ -56,7 +59,7 @@ export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-sc
 export const SCANNER_SURFACE = {
     name: SCANNER_NAME,
     version: SCANNER_VERSION,
-    contract: HARNESS_CONTRACT_V3,
+    contract: HARNESS_CONTRACT_V4,
     reads: [
         { source: 'entra-sp', product: 'entra', method: 'GET', origin: GRAPH_ORIGIN, paths: [...ENTRA_READ_PATHS] },
         { source: 'okta-app', product: 'okta', method: 'GET', paths: [...OKTA_READ_PATHS] },

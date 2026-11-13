@@ -130,8 +130,12 @@ export function renderDiffText(diff: ResultsDiff): string {
             d.criteria.filter((c) => !c.concluded).map((c) => `${c.discoveredId} ${c.criterion}: ${cell(c.from)} -> ${cell(c.to)}`),
         ),
         ...section(
-            'Reach, bar, shortfall and registration',
-            d.attributes.map((a) => `${a.discoveredId} ${a.attribute}: ${a.from} -> ${a.to}`),
+            'Reach, bar, shortfall, registration and payment',
+            d.attributes.map((a) =>
+                a.attribute === 'payment'
+                    ? `${a.discoveredId} payment client: ${a.from} -> ${a.to}${a.to === 'NONE_SEEN' ? '  (none seen in the agent\'s own file; not evidence that it cannot pay)' : ''}`
+                    : `${a.discoveredId} ${a.attribute}: ${a.from} -> ${a.to}`,
+            ),
         ),
         ...section(
             'Orphan credentials',

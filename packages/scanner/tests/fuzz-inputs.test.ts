@@ -33,7 +33,7 @@ import { DiffInputError, loadDiffSide, MAX_DIFF_INPUT_BYTES, runDiff } from '../
 import { EXIT } from '../src/exit-codes';
 import { decodeCsvRecords, decodeInventoryCsv, loadInventoryFile, MAX_INVENTORY_BYTES } from '../src/inventory-file';
 import { rawPublicKeyHex, signReport } from '../src/report';
-import { validV3ReportBody } from '../../contract/tests/helpers/agent-harness-fake-scanner';
+import { validV4ReportBody } from '../../contract/tests/helpers/agent-harness-fake-scanner';
 import { fullEstateConfig } from './helpers/doctor-world';
 import { CANARIES, scanExample } from './helpers/output-fixtures';
 import { forAll, FUZZ_ITERATIONS, mutateJson, randomJson, type Rng, TEST_TIMEOUT_MS } from './helpers/prng';
@@ -366,7 +366,7 @@ describe('4. the inputs of a diff', () => {
 describe('5. the contract', () => {
     const pair = generateKeyPairSync('ed25519');
     const KEY = rawPublicKeyHex(pair.publicKey);
-    const signed = signReport(validV3ReportBody(), pair);
+    const signed = signReport(validV4ReportBody(), pair);
 
     const bodyOf = (raw: string): unknown => {
         const { signature: _signature, ...body } = JSON.parse(raw) as Record<string, unknown>;

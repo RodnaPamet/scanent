@@ -88,7 +88,22 @@ export const AGENTS_CSV_LEADING_COLUMNS = [
     'tools',
     'writeCapableTools',
     'unpinnedWriteTools',
+    'paymentCapabilities',
 ] as const;
+
+/**
+ * The `paymentCapabilities` cell: `NOT_REPORTED` when the run did not say (a
+ * report before `/4`, an agent no code read reported, a file written before
+ * the member), `NONE_SEEN` when a code read saw no payment client in the
+ * agent's own file (which is not "cannot pay"), and otherwise each place,
+ * `<library> at <locator>`, separated by `;`.
+ */
+export function csvPaymentCapabilities(agent: Pick<LocalAgentResult, 'paymentCapabilities'>): string {
+    const caps = agent.paymentCapabilities;
+    if (caps === undefined || caps === null) return 'NOT_REPORTED';
+    if (caps.length === 0) return 'NONE_SEEN';
+    return caps.map((c) => `${c.library} at ${c.at}`).join(';');
+}
 
 /**
  * What a principal is, on what the run read: registered (by a register or
@@ -131,6 +146,7 @@ function agentRow(agent: LocalAgentResult): (string | number)[] {
         agent.counts.tools,
         agent.counts.writeCapableTools,
         agent.counts.unpinnedWriteTools,
+        csvPaymentCapabilities(agent),
         ...ALL_HARNESS_CRITERIA.map((criterion) => {
             const cell = cells.get(criterion);
             return cell === undefined ? 'UNANSWERED' : csvCriterionState(cell);
