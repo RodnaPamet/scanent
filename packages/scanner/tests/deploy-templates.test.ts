@@ -1757,6 +1757,32 @@ describe('the release workflow', () => {
         expect(names.indexOf('The tagged commit is on main')).toBeGreaterThan(0);
     });
 
+    it('a tag with no release notes is refused before anything is installed, and the release points at them', () => {
+        const gates = release.jobs.gates;
+        const names = steps(gates).map((s) => String(s.name ?? s.uses ?? ''));
+        const notes = steps(gates).find((s) => s.name === 'The release has its notes') as Json;
+        expect(notes.if).toBe("github.event_name == 'push' && github.ref_type == 'tag'");
+        expect(names.indexOf('The release has its notes')).toBeGreaterThan(names.indexOf('The tagged commit is on main'));
+        expect(names.indexOf('The release has its notes')).toBeLessThan(names.indexOf('Install'));
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scanent-notes-'));
+        try {
+            const check = (ref: string) => spawnSync('bash', ['-c', String(notes.run)], { cwd: dir, encoding: 'utf8', env: { PATH: process.env.PATH ?? '', REF_NAME: ref } });
+            // No page, and an empty one: refused, naming the file.
+            expect(check('v9.9.9').status).not.toBe(0);
+            expect(check('v9.9.9').stderr).toContain('docs/releases/9.9.9.md is missing or empty');
+            fs.mkdirSync(path.join(dir, 'docs/releases'), { recursive: true });
+            fs.writeFileSync(path.join(dir, 'docs/releases/9.9.9.md'), '');
+            expect(check('v9.9.9').status).not.toBe(0);
+            fs.writeFileSync(path.join(dir, 'docs/releases/9.9.9.md'), '# scanent 9.9.9\n');
+            expect(check('v9.9.9').status).toBe(0);
+            // Another version's page does not stand in.
+            expect(check('v9.9.8').status).not.toBe(0);
+        } finally {
+            fs.rmSync(dir, { recursive: true, force: true });
+        }
+        expect(scripts(release.jobs.release)).toContain('are in docs/releases/${VERSION}.md.');
+    });
+
     it('the on-main check passes a commit main holds and refuses one it does not, in a real repository', () => {
         const onMain = steps(release.jobs.gates).find((s) => s.name === 'The tagged commit is on main') as Json;
         const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'scanent-on-main-'));

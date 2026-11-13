@@ -112,6 +112,19 @@ jobs:
           fi
           echo "on main: $GITHUB_SHA"
 
+      # What changed, what was run before the tag and what has not been tested
+      # are written in the repository before the tag is pushed. The release's
+      # own text points at that page, so a release without it is refused here.
+      - name: The release has its notes
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes="docs/releases/${REF_NAME#v}.md"
+          test -s "$notes" || { echo "$notes is missing or empty: write the release notes before the tag" >&2; exit 1; }
+          echo "release notes: $notes"
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # The version the image runs, and the one ci.yml runs the coverage gate on.
@@ -877,7 +890,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$REF_NAME" --verify-tag --title "scanent ${VERSION}" \
-            --notes "Image: ${IMAGE_REPOSITORY}:${VERSION} (linux/amd64, linux/arm64), signed by this repository's release workflow, with an SBOM and build provenance attached. The air-gapped bundle, its SHA-256, the SBOM of each image, the signed list of the bundle's checksums, and the build provenance of the manifest, of each image and of the bundle are attached. The report contract is published to GitHub Packages as @rodnapamet/scanent-contract@${VERSION}, with build provenance. docs/verify-a-release.md has the commands that check each of them." \
+            --notes "Image: ${IMAGE_REPOSITORY}:${VERSION} (linux/amd64, linux/arm64), signed by this repository's release workflow, with an SBOM and build provenance attached. The air-gapped bundle, its SHA-256, the SBOM of each image, the signed list of the bundle's checksums, and the build provenance of the manifest, of each image and of the bundle are attached. The report contract is published to GitHub Packages as @rodnapamet/scanent-contract@${VERSION}, with build provenance. docs/verify-a-release.md has the commands that check each of them. What changed in this version, what was run before the tag and what has not been tested are in docs/releases/${VERSION}.md." \
             "scanent-${VERSION}-airgap.tar" "scanent-${VERSION}-airgap.tar.sha256" \
             "scanent-${VERSION}-linux-amd64.cdx.json" "scanent-${VERSION}-linux-arm64.cdx.json" \
             "scanent-${VERSION}-airgap.SHA256SUMS" "scanent-${VERSION}-airgap.SHA256SUMS.sigstore.json" \
