@@ -27,7 +27,7 @@ import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LE
 import { HARNESS_MATRIX_CELL_STATES } from '../src/harness-matrix-model';
 import { validV3ReportBody } from './helpers/agent-harness-fake-scanner';
 import * as integrationsRules from '../src/integrations-contract-rules';
-import { INTEGRATION_FINDING_CODES, INTEGRATION_FINDING_SEVERITY, INTEGRATION_NOT_CONCLUDED_WHY } from '../src/integrations-findings';
+import { INTEGRATION_FINDING_CODES, INTEGRATION_FINDING_SEVERITY, INTEGRATION_NOT_CONCLUDED_WHY, integrationFindingSeverity } from '../src/integrations-findings';
 import { PERMISSION_CLASSES } from '../src/integrations-scopes';
 
 const DOC = readFileSync(resolve(__dirname, '..', '..', '..', 'docs', 'contract.md'), 'utf8');
@@ -178,7 +178,13 @@ describe('docs/contract.md', () => {
     it('lists the integration finding codes with the planner\'s severities, why a question is not concluded, and the permission classes', () => {
         const findings = rows('integrations-finding-codes');
         expect(findings.map((r) => code(r[0]))).toEqual([...INTEGRATION_FINDING_CODES]);
-        for (const [c, severity] of findings) expect([c, severity]).toEqual([c, INTEGRATION_FINDING_SEVERITY[code(c) as (typeof INTEGRATION_FINDING_CODES)[number]]]);
+        for (const [c, severity] of findings) {
+            // The default first; then each product whose severity differs, by its kind.
+            const k = code(c) as (typeof INTEGRATION_FINDING_CODES)[number];
+            const overrides = integrationsRules.INTEGRATIONS_SOURCE_KINDS.filter((kind) => integrationFindingSeverity(k, kind) !== INTEGRATION_FINDING_SEVERITY[k]);
+            const want = [INTEGRATION_FINDING_SEVERITY[k], ...overrides.map((kind) => `${integrationFindingSeverity(k, kind)} for \`${kind}\``)].join('; ');
+            expect([c, severity]).toEqual([c, want]);
+        }
         expect(rows('integrations-not-concluded').map((r) => code(r[0]))).toEqual([...INTEGRATION_NOT_CONCLUDED_WHY]);
         expect(codesIn(block('integrations-permission-classes'))).toEqual([...PERMISSION_CLASSES]);
     });

@@ -52,6 +52,14 @@ export const WHAT_IS_READ: Readonly<Record<string, string>> = {
         "One application's application permissions: the app role's id and the API it is on. No display name is kept",
     'entra-integrations /beta/reports/servicePrincipalSignInActivities':
         "Each application's last sign-in, kept to the day. Only when `readSignInActivity` is set; a beta report of Microsoft Graph",
+    'okta-integrations /api/v1/apps':
+        "Every application of the org: id, the definition's name key (to leave out Okta's own Admin Console, End-User Dashboard and Browser Plugin, which are counted and not reported), label (kept only when printable and not secret-shaped), status and sign-on mode. No credentials, settings or profile are kept",
+    'okta-integrations /api/v1/apps/{app}/grants':
+        "One application's consent grants: the Okta API scope of each, and whether it is active. Who consented (`userId`), the client id and the issuer are dropped",
+    'github-integrations /orgs/{org}/installations':
+        "The organisation's GitHub App installations: installation and app ids, the app's slug, its permissions and their levels, its repository selection, its events and whether it is suspended",
+    'github-integrations /orgs/{org}/hooks':
+        "The organisation's webhooks: id, events, whether active, the creation date, and the target's HOST. The URL is reduced to its host where it is read; its path, its query and the hook's secret are never kept, logged or reported",
 };
 
 /** Requests each API offers that the scanner never makes. Each is off the declared surface; a test holds that. */
@@ -95,6 +103,18 @@ export const NEVER_REQUESTED: Readonly<Record<ScannerSourceKind, readonly { read
         { method: 'GET', path: '/v1.0/users/{id}', why: 'the person who consented is not read; a grant made for named people is a count' },
         { method: 'GET', path: '/v1.0/auditLogs/signIns', why: "sign-in records of people are not read; only each application's own last sign-in is" },
     ],
+    'okta-integrations': [
+        { method: 'GET', path: '/api/v1/apps/{app}/credentials/secrets', why: 'returns client secrets' },
+        { method: 'DELETE', path: '/api/v1/apps/{app}/grants/{grant}', why: 'revokes a grant' },
+        { method: 'GET', path: '/api/v1/logs', why: "the System Log is not read; it is where Okta keeps an application's use, which is why \"unused\" is not concluded for Okta" },
+        { method: 'GET', path: '/api/v1/users/{user}', why: 'the person who consented is not read' },
+    ],
+    'github-integrations': [
+        { method: 'GET', path: '/orgs/{org}/hooks/{hook}/config', why: "returns a webhook's configuration, its URL included" },
+        { method: 'GET', path: '/orgs/{org}/hooks/{hook}/deliveries', why: 'returns what was sent to a webhook' },
+        { method: 'DELETE', path: '/orgs/{org}/installations/{installation}', why: 'uninstalls an app' },
+        { method: 'GET', path: '/orgs/{org}/audit-log', why: 'the audit log is not read; it is where an installation\'s use is, which is why "unused" is not concluded for GitHub' },
+    ],
 };
 
 const LANGSMITH_HOSTS = Object.values(LANGSMITH_CLOUD_ORIGINS).map((origin) => new URL(origin).hostname);
@@ -105,6 +125,7 @@ function readHostsOf(kind: ScannerSourceKind): string {
     if (fixed.length > 0) return fixed.join(', ');
     switch (kind) {
         case 'okta-app':
+        case 'okta-integrations':
             return `the Okta org you configure, which must be on ${OKTA_HOST_SUFFIXES.map((s) => `\`*${s}\``).join(' or ')}`;
         case 'vault':
             return `each vault you configure, which must be on \`*${AZURE_KEY_VAULT_HOST_SUFFIX}\``;

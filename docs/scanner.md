@@ -594,7 +594,10 @@ The same image holds a second scanner (`docs/design/scanners.md`): the
 applications in it, and whether anybody owns those grants. Which scanners a
 run runs follows from the sources configured: each source kind belongs to
 exactly one (`packages/scanner/src/scanners.ts`). The integrations scanner has
-one source kind today, `entra-integrations`; Okta and GitHub are later steps.
+three source kinds: `entra-integrations`, `okta-integrations` and
+`github-integrations`. Each product's applications are reported in its own
+shape, with the members its documented API answers; every output names the
+product of each application.
 
 **It runs with the agent scanner or on its own.** A configuration with
 integrations sources and no agent source runs the integrations scanner alone
@@ -642,7 +645,8 @@ planned over; it is a setting of the results and is not in the signed report.
 directory's own and other directories', except Microsoft's own first-party
 applications, which are the platform. Managed identities, legacy and social
 principals and disabled principals are counted in `rows` and reported as
-nothing.
+nothing. How many of Microsoft's own applications were left out is in the
+results' notes on the source (`excluded`), and on the page and in the PDF.
 
 **What is read, all by GET on `graph.microsoft.com`, after one
 client-credentials exchange:**
@@ -673,12 +677,91 @@ permissions are high-privilege is a written table
 know, or one on another API, is listed and never called high or low.
 [guide/findings.md](guide/findings.md#integration-findings) explains each.
 
+### `okta-integrations`
+
+```json
+{
+  "kind": "okta-integrations",
+  "orgUrl": "https://acme.okta.com",
+  "apiTokenEnv": "OKTA_API_TOKEN"
+}
+```
+
+It may name the same org and the same token variable as `okta-app`: an SSWS
+token of a user holding the Read-only Administrator role only. The host is the
+org's, which must be on `okta.com` or `oktapreview.com`.
+
+| Request | What is kept |
+|---|---|
+| `GET /api/v1/apps?limit=200` | Every application of the org: its id, label (under the display-name rule), status and sign-on mode. Paged by the `Link` header. Okta's own apps are left out (below) |
+| `GET /api/v1/apps/{appId}/grants` | Each application's consent grants: the scope of each active one. A revoked grant is read and not reported. Who consented, the client id and the issuer are dropped. Four applications are read at a time |
+
+**Which applications.** Every application the org lists, except Okta's own
+first-party apps, which every org holds: the Okta Admin Console, the Okta
+End-User Dashboard and the Okta Browser Plugin. They are the platform, as
+Microsoft's own applications are in Entra. They are told apart by the app
+definition's `name` key (`saasure`, `okta_enduser`, `okta_browser_plugin`),
+which Okta sets, never by a label an administrator can type; Okta's API
+reference does not list these keys. They are read, counted in `rows`, and
+reported as nothing; how many were left out is in the results' notes on the
+source (`excluded`), and on the page and in the PDF.
+
+Okta's documented app object has no owner, no publisher verification (nothing
+marks an Okta Integration Network app) and no last use, which is in the System
+Log only. So `INTEGRATION_NO_OWNER`, `INTEGRATION_UNVERIFIED_PUBLISHER` and
+`INTEGRATION_UNUSED` are never raised for Okta: the planner lists each as not
+concluded for the source (`OWNER_NOT_EXPOSED`, `PUBLISHER_NOT_EXPOSED`,
+`SIGN_IN_NOT_EXPOSED`). Which Okta scopes are high is the table
+`OKTA_SCOPE_CLASSES`: every `.manage` scope writes, and the directory reads
+(`okta.users.read`, `okta.groups.read`, `okta.apps.read`, roles, policies and
+the like) are high; `okta.logs.read` and the org's own settings are not. A
+`429` from Okta's rate limiter ends the read `RATE_LIMITED`.
+
+### `github-integrations`
+
+```json
+{
+  "kind": "github-integrations",
+  "organization": "acme",
+  "tokenEnv": "GITHUB_INTEGRATIONS_TOKEN"
+}
+```
+
+A fine-grained token made by an owner of the organisation, whose resource
+owner is the organisation, with the organisation permissions Administration:
+Read-only and Webhooks: Read-only. GitHub answers both endpoints for an owner
+only. It is a token of its own: `cicd`'s token is scoped to repositories.
+
+| Request | What is kept |
+|---|---|
+| `GET /orgs/{org}/installations?per_page=100` | Each GitHub App installation: its id, the app's id and slug, its permissions and their levels, its repository selection, its events, and whether it is suspended. Paged by the `Link` header; the `total_count` every page declares must not change and must equal what was read |
+| `GET /orgs/{org}/hooks?per_page=100` | Each organisation webhook: its id, events, whether active, the day it was created, and the HOST of its target. The URL is reduced to its host where the response is read; its path, query, user info and the hook's secret are never kept, logged or written |
+
+The installation response names no owner of an installation, no publisher
+verification and no last use, so the same three findings are not concluded
+for GitHub, as for Okta. An organisation read in full with no installation
+raises `INTEGRATION_EMPTY_INVENTORY` at LOW, not HIGH (owner decision,
+2026-11-13): an organisation with no app is possible, and the finding asks for
+the token to be confirmed. Which permissions are high is the table
+`GITHUB_PERMISSION_CLASSES`: any `write` or `admin` level is a write whatever
+the name; a read of repository content (`contents`, `pull_requests`,
+`issues`, `discussions`, `actions`, `packages`, secret-scanning alerts) or of
+members and administration is high; metadata and secret names are not; a read
+the table does not list (projects and webhooks among them) is unknown. The webhooks are
+a list of their own in the results, with no finding in this version. GitHub
+answers a rate limit with `429`, or with `403` and `x-ratelimit-remaining: 0`
+or a `retry-after`; the wire reads all three as `RATE_LIMITED`, and any other
+`403` as `AUTH_FAILED`.
+
 **Its outputs.** `results.json` gains an `integrations` section (optional, so a
 results file without one reads as before), the run directory gains
 `report.integrations.signed.json`, `integrations.csv` (one row per
-application) and `integration-findings.csv`, and `summary.html` and
-`report.pdf` gain an "Integrations" section. A page or a PDF of an agents-only
-run holds none of it.
+application, its product in the second column; a question the product does
+not answer is `NOT_EXPOSED`, another product's column `n/a`) and
+`integration-findings.csv` (with a `product` column), and `summary.html` and
+`report.pdf` gain an "Integrations" section: a product column in each table,
+what was not concluded grouped by product, and a GitHub source's webhooks by
+host. A page or a PDF of an agents-only run holds none of it.
 
 **On its own**, a run's directory holds `report.integrations.signed.json`,
 `results.json`, `integrations.csv`, `integration-findings.csv`,
@@ -1317,6 +1400,8 @@ holds it equal to the hosts a full scan contacts.
 | `inflect-register`, and the `inflect` output | The tenant's host |
 | `code` | None |
 | `entra-integrations` (the integrations scanner) | `login.microsoftonline.com`, `graph.microsoft.com` |
+| `okta-integrations` (the integrations scanner) | The org's host |
+| `github-integrations` (the integrations scanner) | `api.github.com` |
 
 `lines` (the default) prints, for each scanner that reaches a host, a heading
 line (`# agent scanner`, `# integrations scanner`) and then `host:443`,

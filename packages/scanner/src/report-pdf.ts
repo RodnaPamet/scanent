@@ -38,7 +38,19 @@ import PDFDocument from 'pdfkit';
 import type { HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 import { MATRIX_MAX_AGENTS } from '@scanent/report/render/html';
 import { INTEGRATION_RUN_FILE_NAMES, INTEGRATIONS_ONLY_RUN_FILE_NAMES } from '@scanent/report/render/files';
-import { applicationsByConcern, INTEGRATIONS_COLUMNS, integrationCells, NOT_CONCLUDED_TEXT, NOT_SEEN_TEXT } from '@scanent/report/render/integrations-page';
+import {
+    applicationsByConcern,
+    exclusionText,
+    INTEGRATIONS_COLUMNS,
+    integrationCells,
+    NOT_CONCLUDED_TEXT,
+    NOT_SEEN_TEXT,
+    notConcludedByProduct,
+    permissionPlace,
+    productOfKind,
+    webhookLine,
+} from '@scanent/report/render/integrations-page';
+import { productOfApplicationId } from '@rodnapamet/scanent-contract/integrations-contract-rules';
 import { findingRef, summaryPageData, type AgentRecord, type IntegrationsPreviousRun, type SummaryContext, type SummaryPageData } from '@scanent/report/render/page-data';
 import { criterionWords, PREVIOUS_NOT_COMPARED_TEXT } from '@scanent/report/render/words';
 import type { IntegrationsOnlyResults, LocalIntegrationsResults, LocalResults } from '@scanent/report/results/types';
@@ -601,7 +613,7 @@ function integrationsSection(w: Writer, i: LocalIntegrationsResults, opts: { rea
     if (opts.alone !== true) w.page();
     w.heading('Integrations', 2);
     w.para(
-        `What the directories this run read have granted to applications, and whether anybody owns those grants: the report ${i.report.file}, contract ${i.contract}, ${opts.alone === true ? "signed with the scanner's key" : 'signed with the same key as the agent report'}.`,
+        `What the directories and organisations this run read (${i.sources.map((s) => productOfKind(s.kind)).join(', ')}) have granted to applications, and whether anybody owns those grants: the report ${i.report.file}, contract ${i.contract}, ${opts.alone === true ? "signed with the scanner's key" : 'signed with the same key as the agent report'}.`,
     );
     w.para(i.complete ? 'Complete. Every integrations source was read in full.' : 'Incomplete: not everything the integrations sources hold was read. A finding below is real; an absence is not a clean result.', {
         font: BOLD,
@@ -610,16 +622,26 @@ function integrationsSection(w: Writer, i: LocalIntegrationsResults, opts: { rea
     w.facts([['Integrations report SHA-256', i.report.sha256]], ['Integrations report SHA-256']);
     w.table(
         [
-            { title: 'Source', width: 120, mono: true },
-            { title: 'Status', width: 70 },
-            { title: 'Reason', width: 100, mono: true },
-            { title: 'Rows read', width: 60 },
-            { title: 'Applications', width: 70 },
-            { title: 'Sign-in activity', width: 79 },
+            { title: 'Source', width: 105, mono: true },
+            { title: 'Product', width: 70 },
+            { title: 'Status', width: 55 },
+            { title: 'Reason', width: 85, mono: true },
+            { title: 'Rows read', width: 45 },
+            { title: 'Applications', width: 55 },
+            { title: 'Sign-in activity', width: 84 },
         ],
-        i.sources.map((s) => [s.kind, s.status === 'COMPLETE' ? 'Complete' : 'Incomplete', s.reason ?? '', String(s.rows), String(s.applications), `${s.signInActivity.status}${s.signInActivity.reason === null ? '' : ` ${s.signInActivity.reason}`}`]),
+        i.sources.map((s) => [
+            s.kind,
+            productOfKind(s.kind),
+            s.status === 'COMPLETE' ? 'Complete' : 'Incomplete',
+            s.reason ?? '',
+            String(s.rows),
+            String(s.applications),
+            s.kind === 'entra-integrations' ? `${s.signInActivity.status}${s.signInActivity.reason === null ? '' : ` ${s.signInActivity.reason}`}` : `Not exposed by ${productOfKind(s.kind)}`,
+        ]),
     );
     for (const s of i.sources) if (s.detail !== undefined) w.para(`${s.kind} was not read in full: ${s.detail}.`, { size: 9 });
+    for (const s of i.sources) if (s.excluded !== undefined) w.para(exclusionText(s.kind, s.excluded), { size: 8.5, color: MUTED });
     w.facts([
         ['Applications', String(i.counts.applications)],
         ['High-privilege grant', String(i.counts.highPrivilege)],
@@ -635,18 +657,18 @@ function integrationsSection(w: Writer, i: LocalIntegrationsResults, opts: { rea
     w.capped(shown.length, findings.length, 'integration findings, most severe first', INTEGRATION_RUN_FILE_NAMES.findings);
     for (const f of shown) {
         w.ensure(40);
-        w.para(`${f.severity}  ${f.code}  ${f.applicationId ?? 'A source'}`, { font: BOLD, size: 9, gap: 1 });
+        w.para(`${f.severity}  ${f.code}  ${f.applicationId === null ? `A source (${productOfKind(f.sourceRef.slice(f.sourceRef.lastIndexOf(':') + 1))})` : `${productOfApplicationId(f.applicationId)}: ${f.applicationId}`}`, { font: BOLD, size: 9, gap: 1 });
         w.para(f.title, { size: 9, gap: 1 });
         w.para(f.description, { size: 8.5, color: MUTED, gap: 1 });
         w.para(`Reference ${f.sourceRef}`, { font: MONO, size: 7.5, color: MUTED, gap: 6 });
     }
     if (i.notConcluded.length > 0) {
         w.heading('Not concluded', 3);
-        const grouped = new Map<string, number>();
-        for (const n of i.notConcluded) grouped.set(`${n.code} ${n.why}`, (grouped.get(`${n.code} ${n.why}`) ?? 0) + 1);
-        for (const [key, n] of grouped) {
-            const [code, why] = key.split(' ');
-            w.bullet(`${code}: ${word(NOT_CONCLUDED_TEXT, why, 'see the code')} (${why}), ${plural(n, 'time', 'times')}.`, { size: 8.5 });
+        for (const p of notConcludedByProduct(i)) {
+            w.para(p.product, { font: BOLD, size: 9, gap: 2 });
+            for (const g of p.lines) {
+                w.bullet(`${g.code} ${g.scoped ? `for ${plural(g.n, 'application', 'applications')}` : 'for every application'}: ${word(NOT_CONCLUDED_TEXT, g.why, 'see the code')} (${g.why}).`, { size: 8.5 });
+            }
         }
     }
     w.heading('Applications', 3);
@@ -656,7 +678,7 @@ function integrationsSection(w: Writer, i: LocalIntegrationsResults, opts: { rea
     if (apps.length === 0) w.para(i.complete ? 'No application was reported. A directory read in full that holds none is a finding, not a clean result.' : 'No application was reported, and the read was not complete.');
     else {
         w.table(
-            INTEGRATIONS_COLUMNS.map((title, k) => ({ title, width: [110, 65, 45, 85, 70, 65, 59][k], mono: k === 0 })),
+            INTEGRATIONS_COLUMNS.map((title, k) => ({ title, width: [100, 45, 60, 40, 80, 65, 55, 54][k], mono: k === 0 })),
             listed.map(({ app, findings: own }) => integrationCells(app, own)),
             7,
         );
@@ -664,8 +686,17 @@ function integrationsSection(w: Writer, i: LocalIntegrationsResults, opts: { rea
     if (i.unknownPermissions.length > 0) {
         w.heading(`Permissions the classification does not know (${i.unknownPermissions.length})`, 3);
         w.para('Not called high and not called low: a person judges them.', { size: 9 });
-        for (const u of i.unknownPermissions.slice(0, PDF_LIST_MAX)) w.bullet(`${u.name} on ${u.resourceAppId ?? 'an API the read did not find'}`, { font: MONO, size: 8 });
+        for (const u of i.unknownPermissions.slice(0, PDF_LIST_MAX)) w.bullet(`${u.name} on ${permissionPlace(u)}`, { font: MONO, size: 8 });
         w.capped(Math.min(PDF_LIST_MAX, i.unknownPermissions.length), i.unknownPermissions.length, 'unknown permissions', 'results.json');
+    }
+    if (i.webhooks !== null) {
+        const hooks = i.webhooks.hooks;
+        w.heading(`GitHub organisation webhooks (${hooks.length})`, 3);
+        w.para('By target host only: a webhook URL can carry a secret in its path or query, so it is never kept. No finding is raised about a webhook in this version.', { size: 9 });
+        if (!i.webhooks.read) w.para('The webhooks were not listed in full: this is what was seen, not the whole list.', { size: 9, color: BAD });
+        if (hooks.length === 0) w.para(i.webhooks.read ? 'The organisation has no webhook.' : 'None was seen.', { size: 9 });
+        for (const h of hooks.slice(0, PDF_LIST_MAX)) w.bullet(webhookLine(h), { size: 8.5 });
+        w.capped(Math.min(PDF_LIST_MAX, hooks.length), hooks.length, 'webhooks', 'results.json');
     }
     if (opts.previous !== undefined) integrationsComparison(w, opts.previous);
 }
@@ -696,9 +727,9 @@ function integrationsComparison(w: Writer, previous: IntegrationsPreviousRun | n
         for (const x of all.slice(0, PDF_LIST_MAX)) w.bullet(line(x), { size: 8.5 });
         if (all.length > PDF_LIST_MAX) w.para(`The first ${PDF_LIST_MAX} of ${all.length}.`, { size: 8.5, color: MUTED });
     };
-    part('New applications', d.applications.added, (id) => id, 'None.');
-    part('Gone', d.applications.gone, (id) => `${id} (its source was read in full)`, 'None concluded gone.');
-    part('Not seen, not concluded', d.applications.notSeen, (x) => `${x.id}: ${word(NOT_SEEN_TEXT, x.why, x.why)}`, 'None.');
+    part('New applications', d.applications.added, (id) => `${productOfApplicationId(id)}: ${id}`, 'None.');
+    part('Gone', d.applications.gone, (id) => `${productOfApplicationId(id)}: ${id} (its source was read in full)`, 'None concluded gone.');
+    part('Not seen, not concluded', d.applications.notSeen, (x) => `${productOfApplicationId(x.id)}: ${x.id}: ${word(NOT_SEEN_TEXT, x.why, x.why)}`, 'None.');
     part(
         'Findings',
         d.findings,

@@ -8,7 +8,7 @@
  * question it asks. A scanner that ran in one run only is named, and nothing
  * about it is concluded.
  */
-import type { IntegrationsReportApplication, IntegrationsReportBody } from '@rodnapamet/scanent-contract/integrations-contract';
+import type { EntraIntegrationsApplication, IntegrationsReportBody } from '@rodnapamet/scanent-contract/integrations-contract';
 
 import { DIFF_SCHEMA, DiffRefused, diffExitCode } from '../src/diff/diff';
 import { diffIntegrations, INTEGRATIONS_DIFF_SCHEMA, type IntegrationsDiffInput } from '../src/diff/integrations-diff';
@@ -37,7 +37,7 @@ function side(b: IntegrationsReportBody, opts: { asOf?: string; estate?: string 
 }
 
 const later = (b: IntegrationsReportBody, opts: Parameters<typeof side>[1] = {}) => side(b, { asOf: T2, ...opts });
-const second = (over: Partial<IntegrationsReportApplication> = {}) => application({ id: APP2, appId: 'e0000007-0000-4000-8000-000000003686', displayName: 'Second', ...over });
+const second = (over: Partial<EntraIntegrationsApplication> = {}) => application({ id: APP2, appId: 'e0000007-0000-4000-8000-000000003686', displayName: 'Second', ...over });
 const findingsOf = (d: ReturnType<typeof diffIntegrations>, change: string) => d.findings.filter((f) => f.change === change).map((f) => f.code).sort();
 
 describe('the integrations, compared', () => {

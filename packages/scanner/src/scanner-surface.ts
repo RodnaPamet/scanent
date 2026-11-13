@@ -22,6 +22,8 @@ import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
 import { ENTRA_READ_PATHS, GRAPH_ORIGIN } from './sources/entra';
 import { ENTRA_INTEGRATIONS_READ_PATHS } from './sources/entra-integrations';
+import { GITHUB_INTEGRATIONS_READ_PATHS } from './sources/github-integrations';
+import { OKTA_INTEGRATIONS_READ_PATHS } from './sources/okta-integrations';
 import { GCP_IAM_ORIGIN, GCP_READ_PATHS, GOOGLE_OAUTH_ORIGIN, GOOGLE_TOKEN_PATH } from './sources/gcp-service-accounts';
 import { GITHUB_API_ORIGIN, GITHUB_READ_PATHS } from './sources/github-actions';
 import { CLIENT_CREDENTIALS_GRANT, HARNESS_REGISTER_TOOL, JWT_BEARER_GRANT, MCP_MESSAGES, TOKEN_EXCHANGE_GRANT, OPENSHELL_METHODS, OPENSHELL_PROFILE_SCOPE, OPENSHELL_READ_SCOPE, OPENSHELL_SERVICE } from './http';
@@ -52,7 +54,7 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * `inflect-agent-harness/4`, with the `code` source's payment-capability fact.
  * The contract id is part of the surface, so the manifest hash moves with it.
  * Since then, and in no release yet: the integrations scanner, its contract
- * `scanent-integrations/1` and its Entra reader. The surface is one for the
+ * `scanent-integrations/1` and its Entra, Okta and GitHub readers. The surface is one for the
  * image and names every scanner's requests, so an agents-only run's report
  * carries the new hash too; nothing else in it changed.
  */
@@ -103,6 +105,16 @@ export const SCANNER_SURFACE = {
                 ENTRA_INTEGRATIONS_READ_PATHS.appRoleAssignments,
                 ENTRA_INTEGRATIONS_READ_PATHS.signInActivity,
             ],
+        },
+        // `{app}` is one application's id. The org's host is configured, on Okta's own domains.
+        { source: 'okta-integrations', product: 'okta-integrations', method: 'GET', paths: [OKTA_INTEGRATIONS_READ_PATHS.apps, OKTA_INTEGRATIONS_READ_PATHS.grants] },
+        // `{org}` is the organisation's login. A webhook is read for its host alone.
+        {
+            source: 'github-integrations',
+            product: 'github-integrations',
+            method: 'GET',
+            origin: GITHUB_API_ORIGIN,
+            paths: [GITHUB_INTEGRATIONS_READ_PATHS.installations, GITHUB_INTEGRATIONS_READ_PATHS.hooks],
         },
     ],
     authenticates: [

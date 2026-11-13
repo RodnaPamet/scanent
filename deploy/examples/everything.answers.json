@@ -25,6 +25,8 @@
       "directoryId": "11111111-2222-4333-8444-555555555555",
       "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa",
       "readSignInActivity": true
-    }
+    },
+    { "kind": "okta-integrations", "orgUrl": "https://acme.okta.com" },
+    { "kind": "github-integrations", "organization": "acme" }
   ]
 }

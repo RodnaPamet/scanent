@@ -8,8 +8,8 @@ answers file beside it, and a test holds the three files to each other.
 | `code-only` | Agent code in local directories | The signing key |
 | `cloud-identities` | Entra, Azure Key Vault, Okta | The signing key and three more |
 | `ci-and-cloud` | GitHub Actions, Google Cloud service accounts | The signing key and two more |
-| `everything` | All nine sources a person can choose | The signing key and eight more |
-| `integrations` | Entra, read by both scanners: the agent scanner and the integrations scanner, with one application | The signing key and one more |
+| `everything` | All eleven sources a person can choose | The signing key and nine more |
+| `integrations` | Entra, Okta and GitHub, each read by both scanners: the agent scanner, and the integrations scanner with its three readers. Entra with one application and Okta with one token for both; GitHub with a token of its own for the organisation | The signing key and four more |
 | `integrations-only` | Entra, read by the integrations scanner alone: no agent source, so the agent scanner does not run and nothing is posted | The signing key and one more |
 
 For each `<name>`:

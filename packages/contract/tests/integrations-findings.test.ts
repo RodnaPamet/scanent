@@ -10,13 +10,13 @@ import {
     type IntegrationsPlan,
 } from '../src/integrations-findings';
 import { classifyPermission, GRAPH_PERMISSION_CLASSES, MICROSOFT_GRAPH_APP_ID, PERMISSION_CLASSES } from '../src/integrations-scopes';
-import type { IntegrationsReportApplication } from '../src/integrations-contract';
+import type { EntraIntegrationsApplication } from '../src/integrations-contract';
 import { application, body, GRAPH } from './helpers/integrations-bodies';
 
 const OTHER_API = '9e9e9e9e-0000-4000-8000-000000003686';
 const codes = (plan: IntegrationsPlan) => plan.findings.map((f) => f.code);
 const why = (plan: IntegrationsPlan, code: string) => plan.notConcluded.filter((n) => n.code === code).map((n) => n.why);
-const lowOnly = (over: Partial<IntegrationsReportApplication> = {}): IntegrationsReportApplication =>
+const lowOnly = (over: Partial<EntraIntegrationsApplication> = {}): EntraIntegrationsApplication =>
     application({
         delegatedGrants: { read: true, grants: [{ resourceAppId: GRAPH, consentType: 'AllPrincipals', principalCount: null, scopes: ['User.Read', 'openid'], unreadableScopes: 0 }] },
         applicationPermissions: { read: true, permissions: [] },
@@ -174,8 +174,8 @@ describe('what is not concluded, and why', () => {
         expect(why(plan, 'INTEGRATION_HIGH_PRIVILEGE_GRANT')).toEqual(['ONLY_UNKNOWN_PERMISSIONS']);
         expect(why(plan, 'INTEGRATION_UNVERIFIED_PUBLISHER')).toEqual(['ONLY_UNKNOWN_PERMISSIONS']);
         expect(plan.unknownPermissionNames).toEqual([
-            { resourceAppId: GRAPH, name: 'role:f0000001-0000-4000-8000-000000003686' },
-            { resourceAppId: OTHER_API, name: 'records.read' },
+            { via: 'APPLICATION', resourceAppId: GRAPH, name: 'role:f0000001-0000-4000-8000-000000003686' },
+            { via: 'DELEGATED', resourceAppId: OTHER_API, name: 'records.read' },
         ]);
     });
 

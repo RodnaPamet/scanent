@@ -29,6 +29,13 @@ const SOURCE_DEFAULTS: Readonly<Record<Exclude<SourceAnswer['kind'], 'mcp' | 'co
     cicd: { product: 'github-actions', envField: 'tokenEnv', envName: 'GITHUB_READ_TOKEN', file: false, what: 'GitHub: fine-grained token with Contents: Read-only and Secrets: Read-only.' },
     'gcp-sa': { product: 'gcp-iam', envField: 'keyEnv', envName: 'GCP_SCANNER_KEY', file: true, what: 'Google Cloud: the service-account key file (JSON). A file, because the key has line breaks.' },
     runtime: { product: 'langsmith', envField: 'apiKeyEnv', envName: 'LANGSMITH_API_KEY', file: false, what: 'LangSmith: service key holding the workspace Viewer role.' },
+    'okta-integrations': { envField: 'apiTokenEnv', envName: 'OKTA_API_TOKEN', file: false, what: 'Okta integrations: SSWS API token of a Read-only Administrator. It may be the okta-app token.' },
+    'github-integrations': {
+        envField: 'tokenEnv',
+        envName: 'GITHUB_INTEGRATIONS_TOKEN',
+        file: false,
+        what: "GitHub integrations: an organisation owner's fine-grained token with the organisation permissions Administration: Read-only and Webhooks: Read-only.",
+    },
     'entra-integrations': {
         envField: 'clientSecretEnv',
         envName: 'ENTRA_INTEGRATIONS_CLIENT_SECRET',

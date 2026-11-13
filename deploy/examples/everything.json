@@ -87,6 +87,16 @@
       "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa",
       "readSignInActivity": true,
       "clientSecretEnv": "ENTRA_INTEGRATIONS_CLIENT_SECRET"
+    },
+    {
+      "kind": "okta-integrations",
+      "orgUrl": "https://acme.okta.com",
+      "apiTokenEnv": "OKTA_API_TOKEN"
+    },
+    {
+      "kind": "github-integrations",
+      "organization": "acme",
+      "tokenEnv": "GITHUB_INTEGRATIONS_TOKEN"
     }
   ]
 }

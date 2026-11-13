@@ -64,9 +64,11 @@ export function hostsFor(config: ScannerConfig): HostEntry[] {
                 for (const url of s.vaultUrls) add(url, s.kind, 'read', 'configured');
                 break;
             case 'okta-app':
+            case 'okta-integrations':
                 add(s.orgUrl, s.kind, 'read', 'configured');
                 break;
             case 'cicd':
+            case 'github-integrations':
                 add(GITHUB_API_ORIGIN, s.kind, 'read', 'fixed');
                 break;
             case 'gcp-sa':

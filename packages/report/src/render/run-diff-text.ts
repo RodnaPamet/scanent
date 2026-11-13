@@ -9,6 +9,8 @@
  *
  * Every line is passed through `terminalLine`, as the agent diff's are.
  */
+import { productOfApplicationId } from '@rodnapamet/scanent-contract/integrations-contract-rules';
+
 import { renderDiffText } from './diff-text';
 import { terminalLine } from './escape';
 import type { DiffOutcome } from '../diff/diff';
@@ -77,9 +79,9 @@ export function integrationsDiffLines(d: IntegrationsDiff): string[] {
             }),
         ),
         ...section('Applications', [
-            ...d.applications.added.map((id) => `new        ${id}`),
-            ...d.applications.gone.map((id) => `gone       ${id}  (its source was read in full)`),
-            ...d.applications.notSeen.map((x) => `not seen   ${x.id}  (${NOT_SEEN_TEXT[x.why] ?? x.why}; nothing is concluded)`),
+            ...d.applications.added.map((id) => `new        ${id}  [${productOfApplicationId(id)}]`),
+            ...d.applications.gone.map((id) => `gone       ${id}  [${productOfApplicationId(id)}]  (its source was read in full)`),
+            ...d.applications.notSeen.map((x) => `not seen   ${x.id}  [${productOfApplicationId(x.id)}]  (${NOT_SEEN_TEXT[x.why] ?? x.why}; nothing is concluded)`),
         ]),
         ...section(
             'Findings',

@@ -378,7 +378,7 @@ describe('5. the declared surface', () => {
             ...surface,
             version: '0.12.0',
             contract: 'inflect-agent-harness/3',
-            reads: SCANNER_SURFACE.reads.filter((r) => r.source !== 'entra-integrations'),
+            reads: SCANNER_SURFACE.reads.filter((r) => r.source !== 'entra-integrations' && r.source !== 'okta-integrations' && r.source !== 'github-integrations'),
             authenticates: SCANNER_SURFACE.authenticates
                 .filter((entry) => entry.product !== 'entra-integrations')
                 .map((entry) => Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'grant'))),

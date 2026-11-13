@@ -127,14 +127,25 @@ no secret value requested, every bound reported, nothing dropped in silence.
 A source that needs a request that is not a read, or that returns secret
 values, is a design question to raise before any code.
 
-A source of an existing **other scanner** (the integrations scanner's next
-reader, Okta or GitHub) follows the same checklist, with three differences:
-its interface is `IntegrationsSource` (`packages/scanner/src/integrations-source.ts`),
-which returns applications rather than principals; step 10 does not apply,
-because no reader of another scanner reports a criterion (the criterion-readers
-test holds that it names none); and steps 15 to 19 are made in that scanner's
-own contract (`packages/contract/src/integrations-contract-rules.ts` and
-`integrations-contract.ts`, a new `scanent-integrations/<n>`).
+A source of an existing **other scanner** (the integrations scanner's Okta and
+GitHub readers are the worked examples) follows the same checklist, with four
+differences: its interface is `IntegrationsSource`
+(`packages/scanner/src/integrations-source.ts`), which returns applications
+rather than principals; step 10 does not apply, because no reader of another
+scanner reports a criterion (the criterion-readers test holds that it names
+none); step 12 is `INTEGRATIONS_ESTATE_SOURCES` beside `ESTATE_SOURCES`, and
+its end-to-end test is over all of that scanner's sources at once
+(`packages/scanner/tests/integrations-three-products.test.ts`); and steps 15
+to 19 are made in that scanner's own contract
+(`packages/contract/src/integrations-contract-rules.ts` and
+`integrations-contract.ts`), together with a classification table for the
+product's permissions (`packages/contract/src/integrations-scopes.ts`) and, for
+what the product's API does not record, its entry in
+`NOT_EXPOSED_BY_PRODUCT` (`integrations-findings.ts`), a record over every kind.
+The new kind takes a new `scanent-integrations/<n>` once `/1` is released. Okta
+and GitHub joined `/1` itself because no `/1` report had been released and
+every report of Entra alone reads as before
+([contract.md](../contract.md#its-body), "Why `/1` grew").
 
 ## How a new scanner is added
 
@@ -166,7 +177,7 @@ holds it:
 | Thing | Identifier today | How it changes |
 |---|---|---|
 | The scanner | `SCANNER_VERSION`, 0.14.0 | Raised with any change to what the scanner reads or reports. It is in every report, beside the hash of the declared request surface |
-| The integrations report contract | `scanent-integrations/1` is written, only for a run with an integrations source | A contract of its own beside the agent report's, with the same rules: a new id is a new strict schema |
+| The integrations report contract | `scanent-integrations/1` is written, only for a run with an integrations source | A contract of its own beside the agent report's, with the same rules: a new id is a new strict schema. Before its first release `/1` gained the Okta and GitHub kinds, each with an application shape of its own, without changing what a report of Entra alone says |
 | The report contract | `inflect-agent-harness/4` is written; `/2` and `/3` are accepted by the verifier; `/1` is retired and refused | A new id is a new strict schema beside the others, never a looser schema that reads several. An unknown member anywhere is a refusal. [The report contract](../contract.md) is the normative description, and a test holds it to the code |
 | The ladder | `LADDER_VERSION`, a hash over the levels, criteria and bars | It is not in the report. Results derived from a report carry it, and two sets of results compare level for level only when they carry the same one |
 | The results file | `scanent-results/1`; `scanent-results-integrations/1` for a run of the integrations scanner alone | Optional members have been added to `scanent-results/1` without a new id, the integrations section among them; `packages/scanner/tests/compat.test.ts` proves that files written by the earlier, unreleased 0.12.0 are still read. A run with no agent scan has a schema of its own rather than an agent results file with its agent members empty, which would read as a clean agent scan |

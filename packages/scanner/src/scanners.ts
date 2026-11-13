@@ -37,6 +37,8 @@ export const SCANNER_OF_SOURCE: Readonly<Record<ScannerSourceKind, ScannerId>> =
     code: 'agents',
     'gcp-sa': 'agents',
     'entra-integrations': 'integrations',
+    'okta-integrations': 'integrations',
+    'github-integrations': 'integrations',
 });
 
 /** Each scanner's report contract. */

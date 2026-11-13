@@ -42,6 +42,115 @@ export interface GithubRepoFixture {
     secretPageSize?: number;
 }
 
+/** A GitHub organisation, as its two integrations listings answer. */
+export interface GithubOrgFixture {
+    /** Pages of `/orgs/{org}/installations`; each page carries the total of every page. */
+    installations: unknown[][];
+    /** Pages of `/orgs/{org}/hooks`. */
+    hooks: unknown[][];
+}
+
+/** The organisation the integrations scanner's GitHub source reads. */
+export const GITHUB_ORG = 'acme';
+/** Its token: an owner's fine-grained token, apart from the repositories' read token. */
+export const GITHUB_INTEGRATIONS_TOKEN_VALUE = 'fake-github-integrations-token-value-s2';
+/** What a webhook's URL carries beyond its host, and its secret: none of them may reach any output. */
+export const GITHUB_HOOK_MARKERS = {
+    path: 'HookPathSecretMarker7f3',
+    query: 'HookQuerySecretMarker9c1',
+    userinfo: 'HookUserinfoMarker2b8',
+    secret: 'HookSecretValueMarker5d4',
+} as const;
+
+/** One installation as GitHub documents the response of "List app installations for an organization". */
+export function githubInstallation(over: Record<string, unknown>): Record<string, unknown> {
+    const id = over.id as number;
+    return {
+        id,
+        account: { login: GITHUB_ORG, id: 1, type: 'Organization' },
+        repository_selection: 'all',
+        access_tokens_url: `https://api.github.com/app/installations/${id}/access_tokens`,
+        repositories_url: 'https://api.github.com/installation/repositories',
+        html_url: `https://github.com/organizations/${GITHUB_ORG}/settings/installations/${id}`,
+        app_id: 9000 + id,
+        target_id: 1,
+        target_type: 'Organization',
+        permissions: { metadata: 'read' },
+        events: [],
+        created_at: '2025-03-01T00:00:00.000Z',
+        updated_at: '2026-03-01T00:00:00.000Z',
+        single_file_name: null,
+        has_multiple_single_files: false,
+        single_file_paths: [],
+        app_slug: `app-${id}`,
+        suspended_by: null,
+        suspended_at: null,
+        contact_email: 'apps@vendor.example',
+        ...over,
+    };
+}
+
+export function githubOrgFixture(): Record<string, GithubOrgFixture> {
+    return {
+        [GITHUB_ORG]: {
+            installations: [
+                [
+                    githubInstallation({
+                        id: 41,
+                        app_slug: 'acme-deploy-bot',
+                        repository_selection: 'selected',
+                        permissions: { metadata: 'read', contents: 'write', pull_requests: 'write' },
+                        events: ['push', 'pull_request'],
+                    }),
+                    githubInstallation({ id: 42, app_slug: 'chat-notifier', permissions: { metadata: 'read', issues: 'read', repository_projects: 'read' }, events: ['issues'] }),
+                ],
+                [
+                    githubInstallation({
+                        id: 43,
+                        app_slug: 'old-ci',
+                        permissions: { metadata: 'read', checks: 'read', statuses: 'read' },
+                        suspended_at: '2026-05-01T00:00:00.000Z',
+                        suspended_by: { login: 'jane-admin', id: 77, type: 'User' },
+                    }),
+                ],
+            ],
+            hooks: [
+                [
+                    {
+                        type: 'Organization',
+                        id: 7,
+                        name: 'web',
+                        active: true,
+                        events: ['push', 'pull_request'],
+                        config: {
+                            url: `https://hooks.chat.example/services/${GITHUB_HOOK_MARKERS.path}?token=${GITHUB_HOOK_MARKERS.query}`,
+                            content_type: 'json',
+                            insecure_ssl: '0',
+                            secret: GITHUB_HOOK_MARKERS.secret,
+                        },
+                        updated_at: '2026-02-01T10:00:00Z',
+                        created_at: '2026-01-04T10:00:00Z',
+                        url: `https://api.github.com/orgs/${GITHUB_ORG}/hooks/7`,
+                        ping_url: `https://api.github.com/orgs/${GITHUB_ORG}/hooks/7/pings`,
+                        deliveries_url: `https://api.github.com/orgs/${GITHUB_ORG}/hooks/7/deliveries`,
+                    },
+                    {
+                        type: 'Organization',
+                        id: 8,
+                        name: 'web',
+                        active: false,
+                        events: ['*'],
+                        config: { url: `https://${GITHUB_HOOK_MARKERS.userinfo}:pw@10.20.30.40:8443/in`, content_type: 'form', insecure_ssl: '1' },
+                        updated_at: '2025-12-01T10:00:00Z',
+                        created_at: '2025-12-01T10:00:00Z',
+                        url: `https://api.github.com/orgs/${GITHUB_ORG}/hooks/8`,
+                    },
+                ],
+            ],
+        },
+    };
+}
+
 export interface GcpProjectFixture {
     /** Pages of the accounts listing. */
     accounts: { uniqueId: string; email: string; disabled?: boolean; displayName?: string; description?: string }[][];
@@ -112,10 +221,12 @@ export interface EstateWorld {
 export function createEstateWorld(opts: {
     fakes?: Parameters<typeof createSourceFakes>[0];
     github?: Record<string, GithubRepoFixture>;
+    githubOrgs?: Record<string, GithubOrgFixture>;
     gcp?: Record<string, GcpProjectFixture>;
 } = {}): EstateWorld {
     const fakes = createSourceFakes(opts.fakes);
     const github = opts.github ?? githubFixture();
+    const githubOrgs = opts.githubOrgs ?? githubOrgFixture();
     const gcp = opts.gcp ?? gcpFixture();
     const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
         new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -158,6 +269,8 @@ export function createEstateWorld(opts: {
     };
 
     function githubAnswer(u: URL, method: string, headers: Headers): Response {
+        const org = /^\/orgs\/([^/]+)\/(installations|hooks)$/.exec(u.pathname);
+        if (org !== null) return githubOrgAnswer(u, method, headers, org[1], org[2] as 'installations' | 'hooks');
         if (headers.get('authorization') !== `Bearer ${GITHUB_TOKEN_VALUE}`) return json({ message: 'Bad credentials' }, 401);
         if (method !== 'GET') return json({ message: 'Method Not Allowed' }, 405);
         const m = /^\/repos\/([^/]+)\/([^/]+)(\/.*)?$/.exec(u.pathname);
@@ -187,6 +300,32 @@ export function createEstateWorld(opts: {
         }
         // The per-secret endpoint, which a reader must never ask.
         return json({ message: 'Not Found' }, 404);
+    }
+
+    /**
+     * The organisation's two integrations listings, as GitHub pages them: by
+     * `page`, with the next page in the `Link` header. A token that is not an
+     * owner's fine-grained token for the organisation is refused 403, as GitHub
+     * refuses one without the organisation permission.
+     */
+    function githubOrgAnswer(u: URL, method: string, headers: Headers, login: string, listing: 'installations' | 'hooks'): Response {
+        const auth = headers.get('authorization');
+        if (auth !== `Bearer ${GITHUB_INTEGRATIONS_TOKEN_VALUE}`) {
+            return auth === `Bearer ${GITHUB_TOKEN_VALUE}`
+                ? json({ message: 'Resource not accessible by personal access token', status: '403' }, 403)
+                : json({ message: 'Bad credentials' }, 401);
+        }
+        if (method !== 'GET') return json({ message: 'Method Not Allowed' }, 405);
+        const org = githubOrgs[login];
+        if (org === undefined) return json({ message: 'Not Found' }, 404);
+        const pages = org[listing];
+        const pageNo = Number(u.searchParams.get('page') ?? '1');
+        const items = pages[pageNo - 1] ?? [];
+        const link: Record<string, string> = pageNo < pages.length ? { link: `<https://api.github.com${u.pathname}?per_page=100&page=${pageNo + 1}>; rel="next"` } : {};
+        const rate = { 'x-ratelimit-limit': '5000', 'x-ratelimit-remaining': '4990', 'x-ratelimit-resource': 'core' };
+        return listing === 'installations'
+            ? json({ total_count: pages.flat().length, installations: items }, 200, { ...link, ...rate })
+            : json(items, 200, { ...link, ...rate });
     }
 
     function gcpAnswer(u: URL, method: string, headers: Headers): Response {
@@ -245,6 +384,13 @@ export const INTEGRATIONS_ESTATE_SOURCE = {
     readSignInActivity: true,
 } as const;
 
+/** The integrations scanner's three sources on the fake estate, each by its kind. Apart from `ESTATE_SOURCES`, whose every row is an agent source. */
+export const INTEGRATIONS_ESTATE_SOURCES = {
+    'entra-integrations': INTEGRATIONS_ESTATE_SOURCE,
+    'okta-integrations': { kind: 'okta-integrations', orgUrl: OKTA_ORG, apiTokenEnv: 'OKTA_API_TOKEN' },
+    'github-integrations': { kind: 'github-integrations', organization: GITHUB_ORG, tokenEnv: 'GITHUB_INTEGRATIONS_TOKEN' },
+} as const;
+
 export type EstateSourceKind = keyof typeof ESTATE_SOURCES;
 export const ESTATE_SOURCE_KINDS = Object.keys(ESTATE_SOURCES) as EstateSourceKind[];
 
@@ -278,6 +424,7 @@ export function estateEnv(): Record<string, string> {
         OKTA_API_TOKEN: OKTA_TOKEN_VALUE,
         AZURE_CLIENT_SECRET: AZURE_CLIENT_SECRET_VALUE,
         GITHUB_READ_TOKEN: GITHUB_TOKEN_VALUE,
+        GITHUB_INTEGRATIONS_TOKEN: GITHUB_INTEGRATIONS_TOKEN_VALUE,
         GCP_SCANNER_KEY: GCP_KEY_JSON,
         LANGSMITH_API_KEY: LANGSMITH_API_KEY_VALUE,
         MCP_TICKETS_TOKEN: MCP_TOKEN_VALUE,

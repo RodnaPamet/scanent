@@ -1,19 +1,21 @@
 # Several scanners in one scanent
 
-> **Status: decided; step 1 of the integrations scanner built (Entra), not
-> released (2026-11-13).** The owner decided the shape: one scanent with several
-> scanners, the integrations scanner first, then a vulnerability scanner, then
-> a static, model-assisted adversarial reviewer that sends nothing to a
-> client's agents. The owner's answers to this page's questions are under
-> "Decisions" at the end. Built so far: the platform split (scanners, one
-> declared surface grouped by scanner, one signed report per scanner), the
-> contract `scanent-integrations/1` with its planner, and its Entra reader
-> (`entra-integrations`) with the four decided findings and the empty
-> inventory, run with the agent scanner or on its own, compared run to run and
-> by `scanent diff`, with `doctor` and `hosts` grouped by scanner
-> ([scanner.md](../scanner.md#the-integrations-scanner)). Not built: the Okta
-> and GitHub readers, Inflect's ingest for the integrations report, the
-> vulnerability scanner and the adversarial reviewer.
+> **Status: decided; steps 1 and 2 of the integrations scanner built (Entra,
+> Okta and GitHub), not released (2026-11-13).** The owner decided the shape:
+> one scanent with several scanners, the integrations scanner first, then a
+> vulnerability scanner, then a static, model-assisted adversarial reviewer
+> that sends nothing to a client's agents. The owner's answers to this page's
+> questions are under "Decisions" at the end. Built so far: the platform split
+> (scanners, one declared surface grouped by scanner, one signed report per
+> scanner), the contract `scanent-integrations/1` with its planner, and its
+> three readers: Entra (`entra-integrations`), Okta (`okta-integrations`) and
+> GitHub (`github-integrations`, with the organisation's webhooks by host),
+> each raising the decided findings its product's API can answer and listing
+> the rest as not concluded with the reason; run with the agent scanner or on
+> its own, compared run to run and by `scanent diff`, with `doctor` and `hosts`
+> grouped by scanner ([scanner.md](../scanner.md#the-integrations-scanner)).
+> Not built: Inflect's ingest for the integrations report, the Google
+> Workspace reader, the vulnerability scanner and the adversarial reviewer.
 
 ## What exists today
 
@@ -174,3 +176,9 @@ Taken by the owner on 2026-11-13:
    required; a run of the integrations scanner alone writes no agent report
    and no agent section, and says on its page and in its PDF which scanners
    ran.
+8. **An empty GitHub organisation is a LOW finding** (2026-11-13). A GitHub
+   organisation read in full with no app installed and no webhook raises
+   `INTEGRATION_EMPTY_INVENTORY` at LOW, with text saying that an organisation
+   with no apps is possible and asking to confirm the token can see
+   installations. An empty Entra directory or Okta org stays HIGH
+   (`EMPTY_INVENTORY_SEVERITY`, `packages/contract/src/integrations-findings.ts`).

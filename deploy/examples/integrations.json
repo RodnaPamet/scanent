@@ -27,6 +27,29 @@
       "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa",
       "clientSecretEnv": "ENTRA_CLIENT_SECRET",
       "readSignInActivity": true
+    },
+    {
+      "kind": "okta-app",
+      "orgUrl": "https://acme.okta.com",
+      "apiTokenEnv": "OKTA_API_TOKEN"
+    },
+    {
+      "kind": "okta-integrations",
+      "orgUrl": "https://acme.okta.com",
+      "apiTokenEnv": "OKTA_API_TOKEN"
+    },
+    {
+      "kind": "cicd",
+      "product": "github-actions",
+      "repositories": [
+        "acme/payments-api"
+      ],
+      "tokenEnv": "GITHUB_READ_TOKEN"
+    },
+    {
+      "kind": "github-integrations",
+      "organization": "acme",
+      "tokenEnv": "GITHUB_INTEGRATIONS_TOKEN"
     }
   ]
 }

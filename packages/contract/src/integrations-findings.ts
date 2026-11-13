@@ -17,7 +17,9 @@
  *   INTEGRATION_UNUSED                LOW     it has not signed in within the
  *                                             window the client set
  *   INTEGRATION_EMPTY_INVENTORY       HIGH    a source read in full found no
- *                                             application at all
+ *                                             application at all; LOW for a
+ *                                             GitHub organisation, which can
+ *                                             truly have no app installed
  *
  * THE HONESTY RULES, the agent planner's, applied here:
  *
@@ -35,9 +37,16 @@
  *     a read of the wrong directory, or through a filtered view, looks like.
  *   • A FINDING IS ABOUT WHAT WAS SEEN. An application absent from a report is
  *     not concluded gone, unused or clean.
+ *   • WHAT A PRODUCT DOES NOT EXPOSE IS NOT CONCLUDED, PER PRODUCT. Okta's
+ *     documented app object has no owner, no publisher verification and no
+ *     last use; GitHub's installation response has none of the three either.
+ *     For those products the three findings are not concluded, once per
+ *     source, with a reason saying the product does not expose it, and never
+ *     raised: "no owner recorded" is not something either API can say.
  */
-import type { IntegrationsReportApplication, IntegrationsReportBody } from './integrations-contract';
-import { classifyPermission, type PermissionClass } from './integrations-scopes';
+import { applicationName, type IntegrationsReportApplication, type IntegrationsReportBody } from './integrations-contract';
+import { INTEGRATIONS_PRODUCT_TITLE, type IntegrationsSourceKind } from './integrations-contract-rules';
+import { classifyGithubPermission, classifyOktaScope, classifyPermission, type PermissionClass, type PermissionClassification } from './integrations-scopes';
 
 export const INTEGRATION_FINDING_CODES = [
     'INTEGRATION_HIGH_PRIVILEGE_GRANT',
@@ -57,6 +66,24 @@ export const INTEGRATION_FINDING_SEVERITY: Readonly<Record<IntegrationFindingCod
     INTEGRATION_UNUSED: 'LOW',
     INTEGRATION_EMPTY_INVENTORY: 'HIGH',
 });
+
+/**
+ * An empty inventory's severity, by the product it is about. HIGH for a
+ * directory and an Okta org, which in use always hold applications. LOW for a
+ * GitHub organisation: an organisation with no app
+ * installed is possible, so the finding asks for the token to be confirmed
+ * rather than calling the read wrong (docs/design/scanners.md, Decisions).
+ */
+export const EMPTY_INVENTORY_SEVERITY: Readonly<Record<IntegrationsSourceKind, IntegrationSeverity>> = Object.freeze({
+    'entra-integrations': 'HIGH',
+    'okta-integrations': 'HIGH',
+    'github-integrations': 'LOW',
+});
+
+/** A finding's severity for a product: `INTEGRATION_FINDING_SEVERITY`, but for an empty inventory, which is the product's. */
+export function integrationFindingSeverity(code: IntegrationFindingCode, kind: IntegrationsSourceKind): IntegrationSeverity {
+    return code === 'INTEGRATION_EMPTY_INVENTORY' ? EMPTY_INVENTORY_SEVERITY[kind] : INTEGRATION_FINDING_SEVERITY[code];
+}
 
 /** The window "unused" is measured over when the client sets none: the owner's default. */
 export const DEFAULT_UNUSED_DAYS = 90;
@@ -79,6 +106,12 @@ export const INTEGRATION_NOT_CONCLUDED_WHY = [
     'SIGN_IN_READ_INCOMPLETE',
     /** The source was not read in full and found nothing: an empty answer from a partial read concludes nothing. */
     'SOURCE_INCOMPLETE',
+    /** The product's API records no owner of an application (Okta, GitHub): "no owner" cannot be read from it. */
+    'OWNER_NOT_EXPOSED',
+    /** The product's API records no publisher verification (Okta, GitHub). */
+    'PUBLISHER_NOT_EXPOSED',
+    /** The product's API records no last use of an application, short of reading its logs (Okta, GitHub). */
+    'SIGN_IN_NOT_EXPOSED',
 ] as const;
 export type IntegrationNotConcludedWhy = (typeof INTEGRATION_NOT_CONCLUDED_WHY)[number];
 
@@ -100,11 +133,20 @@ export interface IntegrationNotConcluded {
     readonly why: IntegrationNotConcludedWhy;
 }
 
+/**
+ * How an application holds a permission: an Entra delegated grant or
+ * application permission, an Okta API scope consented to it, or a GitHub App
+ * installation's permission at a level.
+ */
+export const PERMISSION_VIAS = ['DELEGATED', 'APPLICATION', 'OKTA_SCOPE', 'GITHUB_PERMISSION'] as const;
+export type PermissionVia = (typeof PERMISSION_VIAS)[number];
+
 /** One permission an application holds, as the planner read it. */
 export interface PlannedPermission {
-    readonly via: 'DELEGATED' | 'APPLICATION';
+    readonly via: PermissionVia;
+    /** The Entra API the permission is on; null for Okta and GitHub, whose permissions are on the product's own API. */
     readonly resourceAppId: string | null;
-    /** The scope or role name; null when the read could not resolve the role. */
+    /** The scope or role name, a GitHub permission as `<name>:<level>`; null when the read could not resolve the role. */
     readonly name: string | null;
     readonly roleId: string | null;
     readonly classes: readonly PermissionClass[] | null;
@@ -132,9 +174,24 @@ export interface IntegrationsPlan {
     /** In a fixed order: by application id, then by code. Source findings first. */
     readonly findings: readonly PlannedIntegrationFinding[];
     readonly notConcluded: readonly IntegrationNotConcluded[];
-    /** Every permission name the table does not know, once per API, sorted. */
-    readonly unknownPermissionNames: readonly { readonly resourceAppId: string | null; readonly name: string }[];
+    /** Every permission name the tables do not know, once per product and API, sorted. */
+    readonly unknownPermissionNames: readonly { readonly via: PermissionVia; readonly resourceAppId: string | null; readonly name: string }[];
 }
+
+/** The findings each product's API cannot answer, and why: the not-concluded entries the planner writes once per source. */
+export const NOT_EXPOSED_BY_PRODUCT: Readonly<Record<IntegrationsSourceKind, readonly { readonly code: IntegrationFindingCode; readonly why: IntegrationNotConcludedWhy }[]>> = Object.freeze({
+    'entra-integrations': [],
+    'okta-integrations': [
+        { code: 'INTEGRATION_UNVERIFIED_PUBLISHER', why: 'PUBLISHER_NOT_EXPOSED' },
+        { code: 'INTEGRATION_NO_OWNER', why: 'OWNER_NOT_EXPOSED' },
+        { code: 'INTEGRATION_UNUSED', why: 'SIGN_IN_NOT_EXPOSED' },
+    ],
+    'github-integrations': [
+        { code: 'INTEGRATION_UNVERIFIED_PUBLISHER', why: 'PUBLISHER_NOT_EXPOSED' },
+        { code: 'INTEGRATION_NO_OWNER', why: 'OWNER_NOT_EXPOSED' },
+        { code: 'INTEGRATION_UNUSED', why: 'SIGN_IN_NOT_EXPOSED' },
+    ],
+});
 
 const byString = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -150,20 +207,44 @@ export const CLASS_WORDS: Readonly<Record<PermissionClass, string>> = Object.fre
     WRITE: 'a write',
 });
 
-/** The permissions an application holds, delegated then application, as read. */
-export function permissionsOf(app: Pick<IntegrationsReportApplication, 'delegatedGrants' | 'applicationPermissions'>): PlannedPermission[] {
+const classesOf = (c: PermissionClassification): readonly PermissionClass[] | null => (c.known ? c.classes : null);
+
+/** The permissions an application holds, as read: Entra's delegated then application, Okta's scopes, GitHub's permissions. */
+export function permissionsOf(app: IntegrationsReportApplication): PlannedPermission[] {
     const out: PlannedPermission[] = [];
+    if (app.sourceKind === 'okta-integrations') {
+        for (const scope of app.scopeGrants.scopes) out.push({ via: 'OKTA_SCOPE', resourceAppId: null, name: scope, roleId: null, classes: classesOf(classifyOktaScope(scope)) });
+        return out;
+    }
+    if (app.sourceKind === 'github-integrations') {
+        for (const g of app.permissions.grants) {
+            out.push({ via: 'GITHUB_PERMISSION', resourceAppId: null, name: `${g.name}:${g.level}`, roleId: null, classes: classesOf(classifyGithubPermission(g.name, g.level)) });
+        }
+        return out;
+    }
     for (const g of app.delegatedGrants.grants) {
         for (const scope of g.scopes) {
-            const c = classifyPermission(g.resourceAppId, scope);
-            out.push({ via: 'DELEGATED', resourceAppId: g.resourceAppId, name: scope, roleId: null, classes: c.known ? c.classes : null });
+            out.push({ via: 'DELEGATED', resourceAppId: g.resourceAppId, name: scope, roleId: null, classes: classesOf(classifyPermission(g.resourceAppId, scope)) });
         }
     }
     for (const p of app.applicationPermissions.permissions) {
-        const c = classifyPermission(p.resourceAppId, p.name);
-        out.push({ via: 'APPLICATION', resourceAppId: p.resourceAppId, name: p.name, roleId: p.roleId, classes: c.known ? c.classes : null });
+        out.push({ via: 'APPLICATION', resourceAppId: p.resourceAppId, name: p.name, roleId: p.roleId, classes: classesOf(classifyPermission(p.resourceAppId, p.name)) });
     }
     return out;
+}
+
+/** Whether every grant of an application was read, in its product's terms. */
+export function grantsReadInFull(app: IntegrationsReportApplication): boolean {
+    if (app.sourceKind === 'okta-integrations') return app.scopeGrants.read;
+    if (app.sourceKind === 'github-integrations') return app.permissions.read;
+    return app.delegatedGrants.read && app.applicationPermissions.read;
+}
+
+/** Permissions seen that could not be reported, in its product's terms. */
+export function unreadablePermissionsOf(app: IntegrationsReportApplication): number {
+    if (app.sourceKind === 'okta-integrations') return app.scopeGrants.unreadableScopes;
+    if (app.sourceKind === 'github-integrations') return app.permissions.unreadable;
+    return app.delegatedGrants.grants.reduce((n, g) => n + g.unreadableScopes, 0);
 }
 
 /** Whole days between two instants, never negative. */
@@ -178,11 +259,35 @@ export function integrationFindingRef(code: IntegrationFindingCode, subject: str
     return `${code}:${subject}`;
 }
 
-const permissionWords = (p: PlannedPermission): string => `${p.name ?? `role ${p.roleId ?? 'unknown'}`} (${p.via === 'DELEGATED' ? 'delegated' : 'application'})`;
+/** How a permission is held, in words. */
+export const VIA_WORDS: Readonly<Record<PermissionVia, string>> = Object.freeze({
+    DELEGATED: 'delegated',
+    APPLICATION: 'application',
+    OKTA_SCOPE: 'Okta scope',
+    GITHUB_PERMISSION: 'installation permission',
+});
+
+const permissionWords = (p: PlannedPermission): string => `${p.name ?? `role ${p.roleId ?? 'unknown'}`} (${VIA_WORDS[p.via]})`;
 
 function nameOf(app: IntegrationsReportApplication): string {
-    return app.displayName === null ? app.id : `${app.displayName} (${app.id})`;
+    const name = applicationName(app);
+    return name === null ? app.id : `${name} (${app.id})`;
 }
+
+/** Why an empty inventory is not clean, in each product's words. */
+const EMPTY_INVENTORY_WHY: Readonly<Record<IntegrationsSourceKind, string>> = Object.freeze({
+    'entra-integrations':
+        'That is not a clean result: a directory in use holds applications, and an empty answer is what a read of the wrong directory, ' +
+        'or one made through a credential that sees a filtered view, looks like. Check the directory id and the permissions the reading application holds.',
+    'okta-integrations':
+        'That is not a clean result: an Okta org in use holds applications, and an empty answer is what a read of the wrong org, ' +
+        'or one made with a token whose administrator sees a filtered view, looks like. Check the org URL and the role of the token\'s administrator.',
+    'github-integrations':
+        'An organisation with no app installed is possible, so this is a low finding, and still not a clean result: an empty answer is also what ' +
+        'a read of the wrong organisation, or one made with a token that cannot see its installations, looks like. Confirm the token can see ' +
+        "installations: it must be an organisation owner's, holding Administration: Read-only for the organisation. Then confirm in the " +
+        "organisation's settings (GitHub Apps) that no app is installed.",
+});
 
 /**
  * Plan one integrations report. `unusedDays` is the client's window for
@@ -196,7 +301,7 @@ export function planIntegrationsScan(body: IntegrationsReportBody, opts: { reado
     }
     const findings: PlannedIntegrationFinding[] = [];
     const notConcluded: IntegrationNotConcluded[] = [];
-    const unknown = new Map<string, { resourceAppId: string | null; name: string }>();
+    const unknown = new Map<string, { via: PermissionVia; resourceAppId: string | null; name: string }>();
 
     // ── The sources: an empty inventory, and sign-in activity not read ──
     for (const source of [...body.sources].sort((a, b) => byString(a.kind, b.kind))) {
@@ -206,19 +311,27 @@ export function planIntegrationsScan(body: IntegrationsReportBody, opts: { reado
                 findings.push({
                     code: 'INTEGRATION_EMPTY_INVENTORY',
                     sourceRef: integrationFindingRef('INTEGRATION_EMPTY_INVENTORY', source.kind),
-                    severity: INTEGRATION_FINDING_SEVERITY.INTEGRATION_EMPTY_INVENTORY,
+                    severity: integrationFindingSeverity('INTEGRATION_EMPTY_INVENTORY', source.kind),
                     applicationId: null,
                     title: `${source.kind} was read in full and holds no application`,
                     description:
-                        `The source ${source.kind} was read in full (${source.rows} rows) and reported no application a directory has granted access to. ` +
-                        'That is not a clean result: a directory in use holds applications, and an empty answer is what a read of the wrong directory, ' +
-                        'or one made through a credential that sees a filtered view, looks like. Check the directory id and the permissions the reading application holds.',
+                        `The source ${source.kind} (${INTEGRATIONS_PRODUCT_TITLE[source.kind]}) was read in full (${source.rows} rows) and reported no application it has granted access to` +
+                        (source.kind === 'github-integrations' && body.webhooks !== undefined
+                            ? body.webhooks.hooks.length === 0
+                                ? ', and the organisation has no webhook either. '
+                                : `; the organisation has ${body.webhooks.hooks.length === 1 ? 'one webhook' : `${body.webhooks.hooks.length} webhooks`}. `
+                            : '. ') +
+                        EMPTY_INVENTORY_WHY[source.kind],
                 });
             } else {
                 notConcluded.push({ code: 'INTEGRATION_EMPTY_INVENTORY', applicationId: null, sourceKind: source.kind, why: 'SOURCE_INCOMPLETE' });
             }
         }
-        if (source.signInActivity.status === 'NOT_READ' && apps.length > 0) {
+        if (apps.length === 0) continue;
+        const notExposed = NOT_EXPOSED_BY_PRODUCT[source.kind];
+        // What the product cannot answer is said once for every application of the source.
+        for (const n of notExposed) notConcluded.push({ code: n.code, applicationId: null, sourceKind: source.kind, why: n.why });
+        if (notExposed.length === 0 && source.signInActivity.status === 'NOT_READ') {
             notConcluded.push({ code: 'INTEGRATION_UNUSED', applicationId: null, sourceKind: source.kind, why: 'SIGN_IN_NOT_READ' });
         }
     }
@@ -231,12 +344,13 @@ export function planIntegrationsScan(body: IntegrationsReportBody, opts: { reado
         const unknownHere = permissions.filter((p) => p.classes === null);
         for (const p of unknownHere) {
             const name = p.name ?? `role:${p.roleId ?? ''}`;
-            unknown.set(`${p.resourceAppId ?? ''}\u0000${name}`, { resourceAppId: p.resourceAppId, name });
+            unknown.set(`${p.via}\u0000${p.resourceAppId ?? ''}\u0000${name}`, { via: p.via, resourceAppId: p.resourceAppId, name });
         }
-        const allRead = app.delegatedGrants.read && app.applicationPermissions.read;
-        const anyGrant = permissions.length > 0 || app.delegatedGrants.grants.some((g) => g.unreadableScopes > 0);
+        const allRead = grantsReadInFull(app);
+        const unreadable = unreadablePermissionsOf(app);
+        const anyGrant = permissions.length > 0 || unreadable > 0;
         const classes = PERMISSION_CLASS_ORDER.filter((c) => high.some((p) => p.classes?.includes(c)));
-        const privilege: PlannedApplication['privilege'] = high.length > 0 ? 'HIGH' : allRead && unknownHere.length === 0 && !app.delegatedGrants.grants.some((g) => g.unreadableScopes > 0) ? 'NOT_HIGH' : 'NOT_CONCLUDED';
+        const privilege: PlannedApplication['privilege'] = high.length > 0 ? 'HIGH' : allRead && unknownHere.length === 0 && unreadable === 0 ? 'NOT_HIGH' : 'NOT_CONCLUDED';
         const notHere = (code: IntegrationFindingCode, why: IntegrationNotConcludedWhy) =>
             notConcluded.push({ code, applicationId: app.id, sourceKind: app.sourceKind, why });
 
@@ -255,6 +369,12 @@ export function planIntegrationsScan(body: IntegrationsReportBody, opts: { reado
             });
         } else if (privilege === 'NOT_CONCLUDED') {
             notHere('INTEGRATION_HIGH_PRIVILEGE_GRANT', allRead ? 'ONLY_UNKNOWN_PERMISSIONS' : 'GRANTS_NOT_READ_IN_FULL');
+        }
+
+        // Publisher, owner and sign-in are Entra's to answer; for the other products the source-wide entries above say why not.
+        if (app.sourceKind !== 'entra-integrations') {
+            planned.push({ id: app.id, privilege, highPermissions: high, unknownPermissions: unknownHere, classes, anyGrant, usage: 'NOT_CONCLUDED', daysSinceSignIn: null });
+            continue;
         }
 
         // UNVERIFIED_PUBLISHER: only for another directory's application, and only on a high grant.
@@ -335,6 +455,6 @@ export function planIntegrationsScan(body: IntegrationsReportBody, opts: { reado
         applications: planned,
         findings,
         notConcluded,
-        unknownPermissionNames: [...unknown.values()].sort((a, b) => byString(a.resourceAppId ?? '', b.resourceAppId ?? '') || byString(a.name, b.name)),
+        unknownPermissionNames: [...unknown.values()].sort((a, b) => byString(a.via, b.via) || byString(a.resourceAppId ?? '', b.resourceAppId ?? '') || byString(a.name, b.name)),
     };
 }

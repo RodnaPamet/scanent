@@ -115,6 +115,8 @@ each on port 443. For the `everything` example they are:
 | `mcp` | `mcp.acme.example` |
 | `code` | none |
 | `entra-integrations` | `graph.microsoft.com`, `login.microsoftonline.com` |
+| `okta-integrations` | `acme.okta.com` |
+| `github-integrations` | `api.github.com` |
 <!-- hosts:end -->
 
 ### `networkPolicy.flavor: kubernetes` (default)

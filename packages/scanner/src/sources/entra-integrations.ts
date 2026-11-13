@@ -60,7 +60,7 @@ import {
     type ApplicationOrigin,
     type IntegrationsApplicationPermission,
     type IntegrationsDelegatedGrant,
-    type IntegrationsReportApplication,
+    type EntraIntegrationsApplication,
     type OwnerKind,
 } from '@rodnapamet/scanent-contract/integrations-contract';
 
@@ -86,6 +86,9 @@ export const ENTRA_INTEGRATIONS_READ_PATHS = {
     appRoleAssignments: '/v1.0/servicePrincipals/{id}/appRoleAssignments',
     signInActivity: '/beta/reports/servicePrincipalSignInActivities',
 } as const;
+
+/** What the results say was left out, in fixed words. */
+export const ENTRA_FIRST_PARTY_EXCLUSION = "Microsoft's own first-party applications, which every directory holds";
 
 /** The application permissions the identity the source reads with needs, and the one more for sign-in activity. */
 export const ENTRA_INTEGRATIONS_REQUIRED_ROLES = ['Application.Read.All', 'Directory.Read.All'] as const;
@@ -148,7 +151,7 @@ export function reportablePermission(v: unknown): string | null {
 const OWNER_TYPES: Readonly<Record<string, OwnerKind>> = { '#microsoft.graph.user': 'user', '#microsoft.graph.servicePrincipal': 'servicePrincipal' };
 
 /** The owners Graph expanded, by kind and id; null when the member was not returned at all. */
-function ownersOf(v: unknown): IntegrationsReportApplication['owners'] {
+function ownersOf(v: unknown): EntraIntegrationsApplication['owners'] {
     if (v === undefined) return null;
     const owners = arrayMember(v).map((o) => {
         const id = guid((o as { id?: unknown } | null)?.id);
@@ -161,7 +164,7 @@ function ownersOf(v: unknown): IntegrationsReportApplication['owners'] {
 }
 
 /** The credentials a service principal holds in this directory, by reference. A signing-only certificate is not one it signs in with. */
-function credentialsOf(sp: Record<string, unknown>, base: string, asOf: Date): IntegrationsReportApplication['credentials'] {
+function credentialsOf(sp: Record<string, unknown>, base: string, asOf: Date): EntraIntegrationsApplication['credentials'] {
     const out: { ref: string; ageDays: number | null; expires: boolean | null }[] = [];
     const add = (raw: unknown, kind: 'password' | 'certificate') => {
         const c = raw as { keyId?: unknown; startDateTime?: unknown; endDateTime?: unknown; usage?: unknown } | null;
@@ -191,7 +194,7 @@ function dayOf(v: unknown): string | null {
 }
 
 interface Mutable {
-    app: IntegrationsReportApplication;
+    app: EntraIntegrationsApplication;
     /** For an application of this directory: whether its registration's owners were read. */
     registrationSeen: boolean;
     grants: Map<string, { resourceId: string; consentType: 'AllPrincipals' | 'Principal'; principals: Set<string>; scopes: Set<string>; unreadable: number }>;
@@ -236,6 +239,7 @@ export function entraIntegrationsSource(opts: EntraIntegrationsSourceOptions): I
         product: 'entra',
         async read(ctx: SourceContext): Promise<IntegrationsSourceRead> {
             let rows = 0;
+            let excluded = 0;
             const apps = new Map<string, Mutable>();
             let signIn: SignInRead = { status: 'NOT_READ' };
             let registrationsRead = false;
@@ -259,11 +263,12 @@ export function entraIntegrationsSource(opts: EntraIntegrationsSourceOptions): I
                     delegatedGrants: { read: app.delegatedGrants.read, grants: grantsOf(grants) },
                 }));
                 applications.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-                if (stoppedBy === null) return { kind: KIND, status: 'COMPLETE', rows, signInActivity: signIn, applications };
+                const exclusion = { excluded: { count: excluded, what: ENTRA_FIRST_PARTY_EXCLUSION } };
+                if (stoppedBy === null) return { kind: KIND, status: 'COMPLETE', rows, signInActivity: signIn, applications, ...exclusion };
                 const err = stoppedBy instanceof SourceReadError ? stoppedBy : new SourceReadError('UNREACHABLE', 'the reader stopped on an error of its own');
                 // Sign-in activity that was asked for and never reached stopped with the source.
                 if (opts.readSignInActivity && signIn.status === 'NOT_READ') signIn = { status: 'INCOMPLETE', reason: err.reason, rows: 0, detail: 'the source stopped before sign-in activity was read' };
-                return { kind: KIND, status: 'INCOMPLETE', reason: err.reason, detail: err.message, rows, signInActivity: signIn, applications };
+                return { kind: KIND, status: 'INCOMPLETE', reason: err.reason, detail: err.message, rows, signInActivity: signIn, applications, ...exclusion };
             };
             try {
                 const token = await tokenOf(ctx, opts, directoryId);
@@ -291,7 +296,10 @@ export function entraIntegrationsSource(opts: EntraIntegrationsSourceOptions): I
 
                         const ownerOrg = guid(raw.appOwnerOrganizationId);
                         if (raw.servicePrincipalType !== 'Application' || raw.accountEnabled === false) continue;
-                        if (ownerOrg !== null && MICROSOFT_APP_OWNER_TENANTS.has(ownerOrg)) continue;
+                        if (ownerOrg !== null && MICROSOFT_APP_OWNER_TENANTS.has(ownerOrg)) {
+                            excluded += 1;
+                            continue;
+                        }
                         if (appId === null) throw new SourceReadError('PAGINATION_TORN', 'an application had no usable application id');
                         if (apps.size >= MAX_APPLICATIONS) throw new SourceReadError('BYTE_CAP', 'more applications than one report may carry');
                         const origin: ApplicationOrigin = ownerOrg === null ? 'UNKNOWN' : ownerOrg === directoryId ? 'THIS_DIRECTORY' : 'OTHER_DIRECTORY';

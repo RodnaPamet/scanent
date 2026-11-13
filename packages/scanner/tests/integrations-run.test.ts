@@ -114,8 +114,8 @@ describe('2. the results', () => {
         ]);
         // The reporting application holds a role on the third party's API, and a delegated scope there: unknown, listed, never high.
         expect(i?.unknownPermissions).toEqual([
-            { resourceAppId: 'e0000006-0000-4000-8000-000000003686', name: 'Records.Export.All' },
-            { resourceAppId: 'e0000006-0000-4000-8000-000000003686', name: 'records.read' },
+            { via: 'APPLICATION', resourceAppId: 'e0000006-0000-4000-8000-000000003686', name: 'Records.Export.All' },
+            { via: 'DELEGATED', resourceAppId: 'e0000006-0000-4000-8000-000000003686', name: 'records.read' },
         ]);
         // Nothing of it enters the agent results.
         expect(r.findings.every((f) => !f.code.startsWith('INTEGRATION_'))).toBe(true);
@@ -215,7 +215,8 @@ describe('3. the outputs', () => {
         expect(data).toEqual(JSON.parse(JSON.stringify(integrationsPageData(r.integrations as NonNullable<typeof r.integrations>))));
         // Worst first (a HIGH finding, then by id), and every cell decided before the script sees it.
         expect(data.rows.map((row) => [row.id.slice(-36), row.rank])).toEqual([[ENTRA.spReporting, 1], [ENTRA.spThirdParty, 1], [ENTRA.spSupport, 9]]);
-        expect(data.rows[1].cells[4]).toBe('High privilege: mail, a write');
+        expect(data.rows[1].cells[5]).toBe('High privilege: mail, a write');
+        expect(data.rows[1].cells[1]).toBe('Microsoft Entra ID');
         // The agents-only page names none of it.
         const agentsOnly = renderSummaryHtml(resultsOf(await scan(AGENTS_ONLY), AGENTS_ONLY));
         for (const absent of ['integrations', 'ijs', cspHashSource(INTEGRATIONS_SCRIPT)]) expect(agentsOnly).not.toContain(absent);
@@ -278,7 +279,7 @@ describe('4. nothing secret', () => {
     it.each(CANARIES)('%s planted in the integrations results refuses the whole run, by path, and writes nothing', async (_name, canary) => {
         const s = await scan();
         const r = resultsOf(s);
-        const planted: LocalResults = { ...r, integrations: { ...(r.integrations as NonNullable<LocalResults['integrations']>), unknownPermissions: [{ resourceAppId: null, name: canary }] } };
+        const planted: LocalResults = { ...r, integrations: { ...(r.integrations as NonNullable<LocalResults['integrations']>), unknownPermissions: [{ via: 'DELEGATED', resourceAppId: null, name: canary }] } };
         let thrown: unknown;
         try {
             writeRun({ dir }, { raw: s.raw, results: planted, integrationsRaw: s.integrations?.raw });
@@ -320,16 +321,22 @@ describe('5. the configuration', () => {
         ]);
     });
 
-    it('the integrations example, pointed at the fake directory, scans with both scanners on one secret and writes every file', async () => {
+    it('the integrations example, pointed at the fake estate, scans all three products with both scanners and writes every file', async () => {
         const example = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'deploy', 'examples', 'integrations.json'), 'utf8');
         const config = parseScannerConfig(
             JSON.parse(example.replaceAll('11111111-2222-4333-8444-555555555555', ENTRA_DIRECTORY_ID).replaceAll('66666666-7777-4888-8999-aaaaaaaaaaaa', '11111111-2222-3333-4444-555555555555').replace('"/out"', JSON.stringify(dir))),
         );
-        const env = { SCANNER_SIGNING_KEY: SIGNING_PEM, ENTRA_CLIENT_SECRET: estateEnv().ENTRA_CLIENT_SECRET };
+        // Entra's one secret and Okta's one token serve both scanners; GitHub's organisation has a token of its own.
+        const all = estateEnv();
+        const env = { SCANNER_SIGNING_KEY: SIGNING_PEM, ENTRA_CLIENT_SECRET: all.ENTRA_CLIENT_SECRET, OKTA_API_TOKEN: all.OKTA_API_TOKEN, GITHUB_READ_TOKEN: all.GITHUB_READ_TOKEN, GITHUB_INTEGRATIONS_TOKEN: all.GITHUB_INTEGRATIONS_TOKEN };
         const result = await scanAndDeliver({ config, env, log: capturedLog().log, fetchImpl: createEstateWorld().fetchImpl, resolveHost: PUBLIC_RESOLVER, now: () => NOW, outputs: config.outputs ?? [], loadInventory: () => null });
         expect(result.ok).toBe(true);
-        expect(agentsOf(result).body.population.sources).toEqual([expect.objectContaining({ kind: 'entra-sp', status: 'COMPLETE' })]);
-        expect(result.scan.integrations?.body.sources).toEqual([expect.objectContaining({ kind: 'entra-integrations', status: 'COMPLETE', signInActivity: { status: 'COMPLETE', rows: 3 } })]);
+        expect(agentsOf(result).body.population.sources.map((x) => [x.kind, x.status])).toEqual([['entra-sp', 'COMPLETE'], ['okta-app', 'COMPLETE'], ['cicd', 'COMPLETE']]);
+        expect(result.scan.integrations?.body.sources).toEqual([
+            expect.objectContaining({ kind: 'entra-integrations', status: 'COMPLETE', signInActivity: { status: 'COMPLETE', rows: 3 } }),
+            expect.objectContaining({ kind: 'okta-integrations', status: 'COMPLETE', signInActivity: { status: 'NOT_READ' } }),
+            expect.objectContaining({ kind: 'github-integrations', status: 'COMPLETE', signInActivity: { status: 'NOT_READ' } }),
+        ]);
         expect(fs.readdirSync(path.join(dir, 'runs', agentsOf(result).body.scan.id))).toHaveLength(10);
     });
 

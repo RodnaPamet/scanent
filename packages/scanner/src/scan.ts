@@ -42,6 +42,8 @@ import {
 import { azureKeyVaultSource } from './sources/azure-key-vault';
 import { entraSource } from './sources/entra';
 import { entraIntegrationsSource } from './sources/entra-integrations';
+import { githubIntegrationsSource } from './sources/github-integrations';
+import { oktaIntegrationsSource } from './sources/okta-integrations';
 import { gcpServiceAccountSource } from './sources/gcp-service-accounts';
 import { githubActionsSource } from './sources/github-actions';
 import { proveEgress, type EgressProbe, type EgressProof } from './egress-proof';
@@ -124,6 +126,28 @@ export function buildSources(
                 integrations.sources.push(
                     entraIntegrationsSource({ directoryId: s.directoryId, clientId: s.clientId, clientSecret: secret.trim(), readSignInActivity: s.readSignInActivity }),
                 );
+            }
+            continue;
+        }
+        if (s.kind === 'okta-integrations' || s.kind === 'github-integrations') {
+            const name = s.kind === 'okta-integrations' ? s.apiTokenEnv : s.tokenEnv;
+            const credential = env[name];
+            if (typeof credential !== 'string' || credential.trim() === '') {
+                // Reported, never omitted. A GitHub source that read nothing lists no webhook, and says it read none.
+                integrations.unreadable.push({
+                    kind: s.kind,
+                    status: 'INCOMPLETE',
+                    reason: 'AUTH_FAILED',
+                    detail: 'credential not set',
+                    rows: 0,
+                    signInActivity: { status: 'NOT_READ' },
+                    applications: [],
+                    ...(s.kind === 'github-integrations' ? { webhooks: { read: false, hooks: [] } } : {}),
+                });
+            } else if (s.kind === 'okta-integrations') {
+                integrations.sources.push(oktaIntegrationsSource({ orgUrl: s.orgUrl, apiToken: credential.trim() }));
+            } else {
+                integrations.sources.push(githubIntegrationsSource({ organization: s.organization, token: credential.trim() }));
             }
             continue;
         }
@@ -294,16 +318,26 @@ export interface RunScan {
     readonly integrations: IntegrationsScan | null;
 }
 
-/** What the integrations sources said about a read that stopped, one note per kind, for the local results. */
+/**
+ * What the integrations sources said beyond the report, one note per kind, for
+ * the local results: why a read stopped, and what the source left out on
+ * purpose (the product's own applications), with how many.
+ */
 export function integrationsSourceNotesOf(reads: readonly IntegrationsSourceRead[]): readonly SourceNote[] {
     return reads
-        .filter((r) => r.status !== 'COMPLETE' || r.signInActivity.status === 'INCOMPLETE')
+        .filter((r) => r.status !== 'COMPLETE' || r.signInActivity.status === 'INCOMPLETE' || r.excluded !== undefined)
         .map((r) => {
             const details = [
                 ...(r.status === 'INCOMPLETE' && r.detail !== undefined ? [r.detail] : []),
                 ...(r.signInActivity.status === 'INCOMPLETE' && r.signInActivity.detail !== undefined ? [`sign-in activity: ${r.signInActivity.detail}`] : []),
             ];
-            return { kind: r.kind, detail: details.length === 0 ? null : details.join('; '), notRead: [], notReadTotal: 0 };
+            return {
+                kind: r.kind,
+                detail: details.length === 0 ? null : details.join('; '),
+                notRead: [],
+                notReadTotal: 0,
+                ...(r.excluded === undefined ? {} : { excluded: { count: r.excluded.count, what: r.excluded.what } }),
+            };
         });
 }
 
@@ -364,6 +398,7 @@ export async function runScanAll(deps: ScanDeps): Promise<RunScan> {
                     rows: 0,
                     signInActivity: { status: 'NOT_READ' },
                     applications: [],
+                    ...(source.kind === 'github-integrations' ? { webhooks: { read: false, hooks: [] } } : {}),
                 };
             }
         }),

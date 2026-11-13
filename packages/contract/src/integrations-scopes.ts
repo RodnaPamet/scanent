@@ -1,6 +1,7 @@
 /**
- * WHICH GRANTS ARE HIGH-PRIVILEGE: the classification table the integrations
- * planner reads, written out name by name.
+ * WHICH GRANTS ARE HIGH-PRIVILEGE: the classification tables the integrations
+ * planner reads, written out name by name: Microsoft Graph's permissions,
+ * Okta's API scopes and GitHub's App permissions, one table per product.
  *
  * The rule (docs/design/scanners.md) is that an application holds a
  * high-privilege grant when it can reach the DIRECTORY, MAIL or FILES, holds
@@ -210,5 +211,186 @@ export function classifyPermission(resourceAppId: string | null, name: string | 
     if (resourceAppId !== MICROSOFT_GRAPH_APP_ID || name === null) return { known: false };
     if (!Object.prototype.hasOwnProperty.call(GRAPH_PERMISSION_CLASSES, name)) return { known: false };
     const classes = GRAPH_PERMISSION_CLASSES[name];
+    return { known: true, classes, high: classes.length > 0 };
+}
+
+// ─── Okta ───
+
+/**
+ * OKTA'S API SCOPES, by name, and the classes each reaches: the scopes an
+ * application is granted through `/api/v1/apps/{appId}/grants`
+ * (developer.okta.com, "Okta OAuth 2.0 scopes"). The same rule as Graph's
+ * table, applied to Okta's names, with Graph's own entries as the yardstick:
+ *
+ *   • Every `.manage` scope writes, and carries WRITE with the class its read
+ *     carries. `okta.clients.register` creates applications, so it writes.
+ *   • DIRECTORY reads: the people, groups, applications, roles, policies,
+ *     devices, identity providers and credentials of the org, each of which
+ *     Graph's table calls DIRECTORY (`Group.Read.All`, `Application.Read.All`,
+ *     `RoleManagement.Read.*`, `Policy.Read.All`, `Device.Read.All`,
+ *     `IdentityProvider.Read.All`). `okta.users.read` is DIRECTORY although
+ *     `User.Read.All` is not: Okta's users API answers each person's enrolled
+ *     factors and group memberships under that one scope, and Graph classes
+ *     the first (`UserAuthenticationMethod.Read.All`) as DIRECTORY.
+ *   • Below the bar, as `AuditLog.Read.All`, `Organization.Read.All` and
+ *     `Domain.Read.All` are: the System Log (`okta.logs.read`), the org's own
+ *     settings, domains, brands and templates, and the signed-in person's own
+ *     profile.
+ *
+ * Anything else, a `.manage` this table does not name included, is UNKNOWN:
+ * a name's spelling is not a classification (the Graph table's rule), and a
+ * person judges it from the results' list.
+ */
+export const OKTA_SCOPE_CLASSES: Readonly<Record<string, readonly PermissionClass[]>> = Object.freeze({
+    // ── Below the bar ──
+    'okta.logs.read': [],
+    'okta.orgs.read': [],
+    'okta.domains.read': [],
+    'okta.brands.read': [],
+    'okta.templates.read': [],
+    'okta.users.read.self': [],
+    'okta.myAccount.profile.read': [],
+
+    // ── The directory ──
+    'okta.users.read': [D],
+    'okta.groups.read': [D],
+    'okta.apps.read': [D],
+    'okta.appGrants.read': [D],
+    'okta.clients.read': [D],
+    'okta.roles.read': [D],
+    'okta.policies.read': [D],
+    'okta.authenticators.read': [D],
+    'okta.factors.read': [D],
+    'okta.authorizationServers.read': [D],
+    'okta.idps.read': [D],
+    'okta.devices.read': [D],
+    'okta.apiTokens.read': [D],
+    'okta.userTypes.read': [D],
+    'okta.schemas.read': [D],
+    'okta.profileMappings.read': [D],
+
+    // ── Writes to the directory ──
+    'okta.users.manage': [D, W],
+    'okta.groups.manage': [D, W],
+    'okta.apps.manage': [D, W],
+    'okta.appGrants.manage': [D, W],
+    'okta.clients.manage': [D, W],
+    'okta.clients.register': [D, W],
+    'okta.roles.manage': [D, W],
+    'okta.policies.manage': [D, W],
+    'okta.authenticators.manage': [D, W],
+    'okta.factors.manage': [D, W],
+    'okta.authorizationServers.manage': [D, W],
+    'okta.idps.manage': [D, W],
+    'okta.devices.manage': [D, W],
+    'okta.apiTokens.manage': [D, W],
+    'okta.userTypes.manage': [D, W],
+    'okta.schemas.manage': [D, W],
+    'okta.profileMappings.manage': [D, W],
+
+    // ── Writes that reach none of the classes above ──
+    'okta.orgs.manage': [W],
+    'okta.domains.manage': [W],
+    'okta.brands.manage': [W],
+    'okta.templates.manage': [W],
+    'okta.users.manage.self': [W],
+    'okta.myAccount.profile.manage': [W],
+    'okta.eventHooks.manage': [W],
+    'okta.inlineHooks.manage': [W],
+    'okta.logStreams.manage': [W],
+    'okta.networkZones.manage': [W],
+    'okta.trustedOrigins.manage': [W],
+});
+
+/** One Okta scope, classified: known only by a name in the table. */
+export function classifyOktaScope(name: string | null): PermissionClassification {
+    if (name === null || !Object.prototype.hasOwnProperty.call(OKTA_SCOPE_CLASSES, name)) return { known: false };
+    const classes = OKTA_SCOPE_CLASSES[name];
+    return { known: true, classes, high: classes.length > 0 };
+}
+
+// ─── GitHub ───
+
+/**
+ * GITHUB APP PERMISSIONS, by name, and the classes READ access to each
+ * reaches (docs.github.com, "Choosing permissions for a GitHub App"). The
+ * rule, applied to GitHub's names:
+ *
+ *   • ANY `write` OR `admin` LEVEL IS A WRITE, whatever the name. The level is
+ *     GitHub's own structured answer to "may it change this", not a spelling,
+ *     so a write is classed even on a name this table does not know: such a
+ *     permission is high, with WRITE alone. A known name adds its read class.
+ *   • FILES: the repositories' content, which is what files are on GitHub:
+ *     code (`contents`, `single_file`, `workflows`), pull requests (their diffs
+ *     are the content), issues and discussions (what people write in a
+ *     repository, as its code and pull requests are), Actions (artifacts and
+ *     logs are built from it), packages, and secret-scanning alerts, which
+ *     return the leaked value.
+ *   • DIRECTORY: who belongs and who may reach what: members and teams,
+ *     repository and organisation administration (collaborators, teams'
+ *     access, installed apps), roles, and fine-grained tokens.
+ *   • Below the bar: metadata (every installation holds it), statuses,
+ *     checks, deployments, pages and plan, the organisation's event stream
+ *     (as `AuditLog.Read.All`), Dependabot alerts, and every kind of secret.
+ *     GitHub's API returns a secret's name and dates and never its value, so
+ *     reading one is metadata (`secrets`, `dependabot_secrets`,
+ *     `organization_secrets`, `codespaces_secrets`).
+ *
+ * A READ of a name not here is UNKNOWN, and listed for a person to judge:
+ * among them, on purpose, projects and team discussions, webhooks (a hook's
+ * URL can carry a secret), environments (their variables carry values), and
+ * code scanning alerts.
+ */
+export const GITHUB_PERMISSION_CLASSES: Readonly<Record<string, readonly PermissionClass[]>> = Object.freeze({
+    // ── Below the bar ──
+    metadata: [],
+    statuses: [],
+    checks: [],
+    deployments: [],
+    pages: [],
+    merge_queues: [],
+    attestations: [],
+    vulnerability_alerts: [],
+    repository_custom_properties: [],
+    organization_custom_properties: [],
+    organization_plan: [],
+    organization_events: [],
+    organization_announcement_banners: [],
+    secrets: [],
+    dependabot_secrets: [],
+    organization_secrets: [],
+    codespaces_secrets: [],
+
+    // ── Repository content ──
+    contents: [F],
+    single_file: [F],
+    workflows: [F],
+    pull_requests: [F],
+    issues: [F],
+    discussions: [F],
+    actions: [F],
+    packages: [F],
+    organization_packages: [F],
+    secret_scanning_alerts: [F],
+
+    // ── The directory ──
+    members: [D],
+    administration: [D],
+    organization_administration: [D],
+    organization_custom_roles: [D],
+    organization_custom_org_roles: [D],
+    organization_personal_access_tokens: [D],
+    organization_personal_access_token_requests: [D],
+});
+
+/** One GitHub App permission at one level, classified. Known by a name in the table, or by a write at any name. */
+export function classifyGithubPermission(name: string, level: string): PermissionClassification {
+    const known = Object.prototype.hasOwnProperty.call(GITHUB_PERMISSION_CLASSES, name);
+    if (level === 'write' || level === 'admin') {
+        const classes: PermissionClass[] = [...(known ? GITHUB_PERMISSION_CLASSES[name] : []), W];
+        return { known: true, classes, high: true };
+    }
+    if (level !== 'read' || !known) return { known: false };
+    const classes = GITHUB_PERMISSION_CLASSES[name];
     return { known: true, classes, high: classes.length > 0 };
 }

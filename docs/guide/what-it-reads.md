@@ -1,6 +1,6 @@
 # What the scanner reads, and the access to grant
 
-The scanner can read ten kinds of system. You choose which ones. For each
+The scanner can read twelve kinds of system. You choose which ones. For each
 one you choose, your organisation creates **one read-only access**: a role, a
 token or a key that can look and cannot change.
 
@@ -39,6 +39,8 @@ administration screens, as listed further down this page.
 | Agent code in folders | `code` | Permission to read the folders. Nothing else | none | 1 |
 | An Inflect tenant (optional) | `inflect-register` | An API key for the scanner with the scope `admin:harness_ingest`, plus `mcp:read` if the tenant's list of agents is read | `INFLECT_INGEST_KEY` | 1 |
 | Microsoft Entra ID, for integrations | `entra-integrations` | The Microsoft Graph application permissions `Application.Read.All` and `Directory.Read.All`, with admin consent; `AuditLog.Read.All` as well only to read when each application last signed in | `ENTRA_INTEGRATIONS_CLIENT_SECRET` | 5 |
+| Okta, for integrations | `okta-integrations` | An API token made by a user who holds the Read-only Administrator role and no other. It may be the token of the Okta row above | `OKTA_API_TOKEN` | 2 |
+| GitHub, for integrations | `github-integrations` | A fine-grained personal access token made by an owner of the organisation, for the organisation, with the organisation permissions Administration: Read-only and Webhooks: Read-only | `GITHUB_INTEGRATIONS_TOKEN` | 4 |
 <!-- /guide:access -->
 
 An MCP server is a server that offers tools to AI agents. The Inflect row
@@ -314,6 +316,76 @@ own sign-ins. Nothing that grants, removes or changes a permission.
 permission. Any directory role. `AuditLog.Read.All` unless you want the
 sign-in dates.
 
+### Okta, for integrations
+
+The integrations scanner, asking the same question of an Okta organisation:
+what it has granted to applications.
+
+**Looks at.** Every application in your Okta organisation: its id, its name,
+whether it is active and how people sign in to it. Okta's own apps, which
+every organisation has (the Okta Admin Console, the Okta End-User Dashboard
+and the Okta Browser Plugin), are left out, as Microsoft's own are for Entra;
+the results say how many were left out. For each, the Okta
+permissions (Okta calls them scopes, such as `okta.users.read`) that it has
+been granted.
+
+**Never asks for.** Who granted a permission. An application's secret. The
+list of your users. Okta's System Log.
+
+**What Okta cannot tell it.** Okta records no owner of an application, does
+not mark an application as one whose publisher it has checked, and keeps when
+an application was last used only in its System Log, which the scanner does
+not read. So for Okta the scan does not conclude whether an application has no
+owner, has a publisher nobody checked, or is unused, and the results say so
+for each Okta application rather than calling it clean.
+
+**How to grant it.**
+
+1. Okta admin console: Security, Administrators. Give the Read-only
+   Administrator role to a user made for the scanner (or use the one made for
+   the Okta row above).
+2. Signed in as that user: Security, API, Tokens, Create token.
+
+**Do not grant.** Super Administrator. Org Administrator. App Administrator.
+API Access Management Administrator.
+
+### GitHub, for integrations
+
+The integrations scanner, asking it of a GitHub organisation: which apps are
+installed on it and what each may do, and where it sends its events.
+
+**Looks at.** The GitHub Apps installed on the organisation: each app's name,
+the permissions it holds and whether each can only read or can also change,
+whether it reaches every repository or only some, and whether it is
+suspended. The organisation's webhooks (addresses GitHub sends events to): for
+each, **the name of the server only**, the events, whether it is active and
+the day it was made.
+
+**Never asks for.** A webhook's full address or its secret: an address can
+carry a password in it, so the scanner keeps the server's name and nothing
+else. Any repository's content. The organisation's audit log.
+
+**What GitHub cannot tell it.** GitHub's list of installations names nobody
+as an installation's owner, says nothing about whether the app's publisher was
+checked, and does not say when the app was last used. So for GitHub, as for
+Okta, the scan does not conclude those three, and says so. No finding is
+raised about a webhook in this version: they are listed for you to look at.
+
+**How to grant it.**
+
+1. Signed in as an owner of the organisation: Settings, Developer settings,
+   Personal access tokens, Fine-grained tokens, Generate new token.
+2. Resource owner: the organisation. Repository access: public repositories
+   (read-only); no repository is needed.
+3. Organization permissions: Administration: Read-only, and Webhooks:
+   Read-only.
+4. If your organisation requires approval of such tokens, approve it in the
+   organisation's settings.
+
+**Do not grant.** Any "Read and write" permission. Any repository permission.
+Any other organisation permission. A classic token: GitHub lets a classic
+token list webhooks only with a scope that can also change them.
+
 ## What the scanner connects to
 
 Every connection is encrypted (https, port 443). The scanner connects only to
@@ -325,6 +397,9 @@ the systems you chose, and looks up their addresses by name (DNS):
 | Azure Key Vault | `login.microsoftonline.com` and each vault's own address |
 | Okta | Your Okta organisation's address |
 | GitHub Actions | `api.github.com` |
+| Microsoft Entra ID, for integrations | `login.microsoftonline.com` and `graph.microsoft.com` |
+| Okta, for integrations | Your Okta organisation's address |
+| GitHub, for integrations | `api.github.com` |
 | Google Cloud | `oauth2.googleapis.com` and `iam.googleapis.com` |
 | LangSmith | `api.smith.langchain.com` or `eu.api.smith.langchain.com`, or your own LangSmith server |
 | MCP servers | Each server's address |

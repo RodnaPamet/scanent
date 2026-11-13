@@ -65,7 +65,11 @@ const SOURCE_FILES: Readonly<Record<string, HarnessSourceKind>> = {
 /** Readers no configuration selects: no run can have one, so the table does not list them. */
 const NOT_CONFIGURABLE = ['openshell.ts'];
 /** Readers of another scanner: they report applications, never an agent's verdict, so the table does not list them. */
-const OTHER_SCANNERS: Readonly<Record<string, string>> = { 'entra-integrations.ts': 'entra-integrations' };
+const OTHER_SCANNERS: Readonly<Record<string, string>> = {
+    'entra-integrations.ts': 'entra-integrations',
+    'okta-integrations.ts': 'okta-integrations',
+    'github-integrations.ts': 'github-integrations',
+};
 
 interface StaticVerdicts {
     /** Every criterion id the file holds as a string literal. */

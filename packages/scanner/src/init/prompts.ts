@@ -51,7 +51,19 @@ const KIND_QUESTION: Readonly<Record<AnswerableKind, string>> = {
     mcp: 'Do you have MCP servers to list?',
     code: 'Do you have agent code in local directories to read?',
     'entra-integrations': 'Also scan what this directory has granted to applications, and who owns them (the integrations scanner)?',
+    'okta-integrations': 'Also scan what this Okta org has granted to applications (the integrations scanner)?',
+    'github-integrations': "Also scan a GitHub organisation's app installations and webhooks (the integrations scanner)?",
 };
+
+/** The integrations scanner's questions when no agent source was chosen: each product on its own. */
+const ALONE_QUESTION: Readonly<Record<'entra-integrations' | 'okta-integrations' | 'github-integrations', string>> = {
+    'entra-integrations': 'Scan what an Entra directory has granted to applications, and who owns them?',
+    'okta-integrations': 'Scan what an Okta org has granted to applications?',
+    'github-integrations': "Scan a GitHub organisation's app installations and webhooks?",
+};
+
+/** The kinds of the integrations scanner: offered beside the agent source that reads the same product, or on their own. */
+const INTEGRATION_KINDS: readonly AnswerableKind[] = ['entra-integrations', 'okta-integrations', 'github-integrations'];
 
 /** The placeholder each kind's product and credential name take while one field is being checked. */
 const SHELL: Readonly<Record<AnswerableKind, Record<string, unknown>>> = {
@@ -64,6 +76,8 @@ const SHELL: Readonly<Record<AnswerableKind, Record<string, unknown>>> = {
     mcp: {},
     code: { product: 'langchain' },
     'entra-integrations': { clientSecretEnv: 'X' },
+    'okta-integrations': { apiTokenEnv: 'X' },
+    'github-integrations': { tokenEnv: 'X' },
 };
 
 /** Whether `candidate`, a source of `kind` so far, breaks a rule at `field` (the first path segment). Uses the configuration's schema. */
@@ -105,13 +119,20 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
     );
 
     const sources: SourceAnswer[] = [];
-    let integrations: SourceAnswer | null = null;
+    const integrations: SourceAnswer[] = [];
+    const guid = 'A GUID: 8-4-4-4-12 hexadecimal digits.';
+    const organization = 'An organisation login: letters, digits and hyphens, at most 39 characters.';
+    /** The questions of the integrations scanner's GitHub source, which names an organisation of its own. */
+    const askGithubIntegrations = async () => {
+        const g: Record<string, unknown> = {};
+        g.organization = await field('github-integrations', g, 'organization', 'GitHub organisation (its login):', organization);
+        integrations.push({ kind: 'github-integrations', ...g });
+    };
     for (const kind of ANSWERABLE_KINDS) {
-        // The integrations scanner's Entra source is offered with the agent scanner's, below: one directory, two scanners.
-        if (kind === 'entra-integrations') continue;
+        // The integrations scanner's sources are offered with the agent scanner's that read the same product, below.
+        if (INTEGRATION_KINDS.includes(kind)) continue;
         if (!(await yes(KIND_QUESTION[kind]))) continue;
         const s: Record<string, unknown> = {};
-        const guid = 'A GUID: 8-4-4-4-12 hexadecimal digits.';
         if (kind === 'entra-sp') {
             s.directoryId = await field(kind, s, 'directoryId', 'Directory (tenant) ID:', guid);
             s.clientId = await field(kind, s, 'clientId', 'Application (client) ID of the app registration the scanner reads with:', guid);
@@ -122,7 +143,7 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
                 if (same) Object.assign(i, { clientId: s.clientId, clientSecretEnv: DEFAULT_ENTRA_SECRET_ENV });
                 else i.clientId = await field('entra-integrations', i, 'clientId', 'Application (client) ID of the app registration the integrations scanner reads with:', guid);
                 if (await yes("Also read each application's last sign-in? It needs AuditLog.Read.All and a licence that records sign-ins")) i.readSignInActivity = true;
-                integrations = { kind: 'entra-integrations', ...i };
+                integrations.push({ kind: 'entra-integrations', ...i });
             }
         } else if (kind === 'vault') {
             s.vaultUrls = list(await field(kind, s, 'vaultUrls', 'Vault URLs, comma-separated (https://<name>.vault.azure.net):', 'One to twenty https URLs on vault.azure.net.', list));
@@ -130,8 +151,11 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
             s.clientId = await field(kind, s, 'clientId', 'Application (client) ID of the app registration the scanner reads with:', guid);
         } else if (kind === 'okta-app') {
             s.orgUrl = await field(kind, s, 'orgUrl', 'Okta org URL (https://<org>.okta.com):', 'An https origin on okta.com or oktapreview.com.');
+            // The same org, read with the same Read-only Administrator token by default.
+            if (await yes(KIND_QUESTION['okta-integrations'])) integrations.push({ kind: 'okta-integrations', orgUrl: s.orgUrl });
         } else if (kind === 'cicd') {
             s.repositories = list(await field(kind, s, 'repositories', 'Repositories, comma-separated (owner/repo):', 'One to fifty owner/repo names, each once.', list));
+            if (await yes(KIND_QUESTION['github-integrations'])) await askGithubIntegrations();
         } else if (kind === 'gcp-sa') {
             s.projects = list(await field(kind, s, 'projects', 'Google Cloud project ids, comma-separated:', 'One to fifty project ids, each once.', list));
         } else if (kind === 'runtime') {
@@ -184,20 +208,29 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
         }
         sources.push({ kind, ...s });
     }
-    // No agent source: the integrations scanner can still run on its own, so it is offered here once more.
-    if (sources.length === 0 && (await yes('No agent source was chosen. Scan only what an Entra directory has granted to applications, and who owns them (the integrations scanner)?'))) {
-        const guid = 'A GUID: 8-4-4-4-12 hexadecimal digits.';
-        const i: Record<string, unknown> = {};
-        i.directoryId = await field('entra-integrations', i, 'directoryId', 'Directory (tenant) ID:', guid);
-        i.clientId = await field('entra-integrations', i, 'clientId', 'Application (client) ID of the app registration the integrations scanner reads with:', guid);
-        if (await yes("Also read each application's last sign-in? It needs AuditLog.Read.All and a licence that records sign-ins")) i.readSignInActivity = true;
-        integrations = { kind: 'entra-integrations', ...i };
+    // No agent source: the integrations scanner can still run on its own, so each of its products is offered here.
+    if (sources.length === 0) {
+        io.say('No agent source was chosen. The integrations scanner can run on its own: what Entra, Okta and GitHub have granted to applications.');
+        if (await yes(ALONE_QUESTION['entra-integrations'])) {
+            const i: Record<string, unknown> = {};
+            i.directoryId = await field('entra-integrations', i, 'directoryId', 'Directory (tenant) ID:', guid);
+            i.clientId = await field('entra-integrations', i, 'clientId', 'Application (client) ID of the app registration the integrations scanner reads with:', guid);
+            if (await yes("Also read each application's last sign-in? It needs AuditLog.Read.All and a licence that records sign-ins")) i.readSignInActivity = true;
+            integrations.push({ kind: 'entra-integrations', ...i });
+        }
+        if (await yes(ALONE_QUESTION['okta-integrations'])) {
+            const o: Record<string, unknown> = {};
+            o.orgUrl = await field('okta-integrations', o, 'orgUrl', 'Okta org URL (https://<org>.okta.com):', 'An https origin on okta.com or oktapreview.com.');
+            integrations.push({ kind: 'okta-integrations', ...o });
+        }
+        if (await yes(ALONE_QUESTION['github-integrations'])) await askGithubIntegrations();
     }
-    if (sources.length === 0 && integrations === null) throw new InitAborted('no source was chosen; nothing was written');
+    if (sources.length === 0 && integrations.length === 0) throw new InitAborted('no source was chosen; nothing was written');
     const agentSourceChosen = sources.length > 0;
-    if (integrations !== null) {
-        if (integrations.clientSecretEnv === undefined) io.say(`The credential is not asked for here: it goes in ${credentialVariable(ACCESS_GUIDE['entra-integrations'])}.`);
-        sources.push(integrations);
+    for (const i of integrations) {
+        const envField = i.kind === 'entra-integrations' ? 'clientSecretEnv' : i.kind === 'okta-integrations' ? 'apiTokenEnv' : 'tokenEnv';
+        if ((i as Record<string, unknown>)[envField] === undefined) io.say(`The credential is not asked for here: it goes in ${credentialVariable(ACCESS_GUIDE[i.kind])}.`);
+        sources.push(i);
     }
 
     const absolute = (v: string) => (v === '' || (v.startsWith('/') && !v.split('/').includes('..')) ? null : 'An absolute path with no .. segment.');
