@@ -16,7 +16,7 @@ follow.
 ## 0. Get the image
 
 ```bash
-export IMAGE=ghcr.io/rodnapamet/scanent:0.13.2
+export IMAGE=ghcr.io/rodnapamet/scanent:0.14.0
 docker pull "$IMAGE"
 ```
 
@@ -154,7 +154,7 @@ Copy [deploy/compose.yaml](../deploy/compose.yaml) beside the `scanent`
 directory, then:
 
 ```bash
-export SCANENT_VERSION=0.13.2 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"
+export SCANENT_VERSION=0.14.0 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"
 docker compose up -d
 docker compose logs --tail 20 scanent
 ```
@@ -207,7 +207,7 @@ To make the scanner's only way out a proxy that forwards to an exact list of
 hosts, add the overlay [deploy/compose.egress.yaml](../deploy/compose.egress.yaml):
 
 ```bash
-export SCANENT_VERSION=0.13.2 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"
+export SCANENT_VERSION=0.14.0 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"
 export EGRESS_ALLOW="$(scanent -v "$PWD/scanent:/etc/scanent:ro" "$IMAGE" \
   hosts --config /etc/scanent/config.json --format egress-allow)"
 docker compose -f compose.yaml -f compose.egress.yaml up -d
@@ -270,12 +270,12 @@ On a machine with internet, take `scanent-<version>-airgap.tar` from the
 release and carry it across. Then:
 
 ```bash
-tar -xf scanent-0.13.2-airgap.tar
-cd scanent-0.13.2-airgap
+tar -xf scanent-0.14.0-airgap.tar
+cd scanent-0.14.0-airgap
 ./load.sh
 ```
 
-Expected last lines: `loaded: ghcr.io/rodnapamet/scanent:0.13.2  (linux/amd64)`
+Expected last lines: `loaded: ghcr.io/rodnapamet/scanent:0.14.0  (linux/amd64)`
 and the `init` command of step 1.
 
 `load.sh` first checks every file against `SHA256SUMS`, then loads the image

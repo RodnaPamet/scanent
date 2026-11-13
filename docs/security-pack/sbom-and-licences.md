@@ -39,7 +39,7 @@ table is updated in the same change as any dependency.
 | `unicode-properties` | 1.4.1 | MIT | Part of `pdfkit`'s tree (`report.pdf`): a dependency of `fontkit` |
 | `unicode-trie` | 2.0.0 | MIT | Part of `pdfkit`'s tree (`report.pdf`): a dependency of `fontkit` and `linebreak` |
 | `zod` | 4.6.7 | MIT | Strict schemas for the report, the configuration and every other input |
-| `@rodnapamet/scanent-contract` | 0.13.2 | BUSL-1.1 | scanent's own package: the report contract |
+| `@rodnapamet/scanent-contract` | 0.14.0 | BUSL-1.1 | scanent's own package: the report contract |
 | `@scanent/report` | 0.0.0 | BUSL-1.1 | scanent's own package: local results |
 | `@scanent/scanner` | 0.0.0 | BUSL-1.1 | scanent's own package: the scanner and its command line |
 | `argparse` | 3.0.4 | PSF-2.0 | A dependency of `js-yaml` |
@@ -87,7 +87,7 @@ release publishes, to GitHub Packages, and it carries the scanner's version;
 no version of it has been published yet. The scanner's version is a constant
 in the code (`packages/scanner/src/scanner-surface.ts`, `SCANNER_VERSION`),
 currently
-0.13.2.
+0.14.0.
 
 ### What else is in the image
 
