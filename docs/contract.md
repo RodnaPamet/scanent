@@ -24,8 +24,9 @@ that accepts more is not reading this contract.
 
 ## Contract ids
 
-Four ids have existed. A new id is a new strict schema beside the others,
-never a looser schema that reads several.
+Four ids of the agent report have existed. A new id is a new strict schema
+beside the others, never a looser schema that reads several. The integrations
+scanner's report has ids of its own: see "The integrations contract".
 
 <!-- contract:ids -->
 | Id | State | What it adds |
@@ -429,6 +430,147 @@ A cell has one of seven states, in this order. Only the first two are met:
 - Rows are read worst first (`compareHarnessMatrixRows`): not judged, below the
   bar, then by level and id.
 
+## The integrations contract
+
+The integrations scanner's report: what a directory has granted to the
+applications in it, and who owns them. It is a report of its own beside the
+agent report, written by the same run with the same signing key and the same
+scan id (`report.integrations.signed.json` beside `report.signed.json`), and
+neither verifier reads the other's report.
+
+<!-- contract:integrations-ids -->
+| Id | State | What it adds |
+|---|---|---|
+| `scanent-integrations/1` | Accepted; what scanent writes | The first integrations contract: Microsoft Entra ID's applications |
+<!-- /contract:integrations-ids -->
+
+**The same rules as the agent report.** The same byte limit, the same
+canonical JSON, the same signature over the same message, and the same seven
+checks in the same order (`verifySignedEnvelope`); then this contract's own
+strict schema, chosen by the id the body names. The refusal codes are those of
+"Verification, in order". The reference verifier is
+`verifyAndParseIntegrationsReport`. Every string member is held to the same
+secret-shape walk (`firstSecretShapedMember`), card numbers included.
+
+**What it cannot carry, by its schema.** No person: a delegated grant made for
+named people says how many, never who. No credential value: a credential is a
+`scheme://locator` reference. No URL: no member holds one, and a reader that
+later reports a webhook reports its target's host alone, because a URL's path
+and query can carry a secret. No finding and no completeness flag: both are
+derived by the reader (`planIntegrationsScan`, `isIntegrationsScanComplete`).
+
+### Its body
+
+| Member | Type | Meaning |
+|---|---|---|
+| `contract` | string | The contract id |
+| `scan` | object | `id`, `asOf` and `scanner` (`agentId`, `version`, `manifestHash`), as in the agent report. A run's two reports carry the same `scan.id` |
+| `sources[]` | 1 to `MAX_INTEGRATIONS_SOURCES` | Every integrations source the run was configured to read, read or not. Each kind once |
+| `applications[]` | 0 to `MAX_APPLICATIONS` | Every application found. Each `id` once |
+
+A **source** is `kind`, `status` (`COMPLETE` or `INCOMPLETE`), `reason`
+(present exactly when `INCOMPLETE`, from the agent report's list of reasons),
+`rows`, and `signInActivity`: `{ "status": "NOT_READ" }` when the source was
+not configured to read sign-in activity, or `COMPLETE` or `INCOMPLETE` (with a
+reason) and the rows that read returned. A sign-in read that fails leaves the
+source's own status as it was.
+
+<!-- contract:integrations-source-kinds -->
+| Kind | Since | What it is |
+|---|---|---|
+| `entra-integrations` | `/1` | Microsoft Entra ID: applications' service principals, delegated grants and application permissions |
+<!-- /contract:integrations-source-kinds -->
+
+An **application**:
+
+| Member | Type | Meaning |
+|---|---|---|
+| `id` | `entra:<directory id>:sp:<object id>` | Directory-scoped: two directories' applications never share one |
+| `sourceKind` | source kind | The source that found it, one the report lists |
+| `appId` | GUID or null | The application's id, the same in every directory |
+| `displayName` | string or null | As the directory holds it, when it is printable, at most `MAX_DISPLAY_NAME_CHARS` characters and not secret-shaped; otherwise null |
+| `origin` | `THIS_DIRECTORY`, `OTHER_DIRECTORY` or `UNKNOWN` | Which directory registered it |
+| `publisherVerified` | boolean or null | Whether a verified publisher is recorded for it; null when the read could not tell |
+| `owners` | 0 to `MAX_OWNERS_PER_APPLICATION`, or null | Each `kind` (`user`, `servicePrincipal`, `other`) and `id`. Null is not read; empty is read and none |
+| `delegatedGrants` | object | `read` (whether the whole listing was read) and `grants[]` (at most `MAX_DELEGATED_GRANTS_PER_APPLICATION`): `resourceAppId`, `consentType` (`AllPrincipals` or `Principal`), `principalCount` (null exactly for `AllPrincipals`), `scopes[]` (at most `MAX_SCOPES_PER_GRANT`) and `unreadableScopes` (scope names seen and not reportable) |
+| `applicationPermissions` | object | `read` and `permissions[]` (at most `MAX_APPLICATION_PERMISSIONS_PER_APPLICATION`): `resourceAppId`, `roleId`, and `name`, the app role's value, or null when the read could not resolve it |
+| `signIn` | object | `read` and `lastSeen` (`YYYY-MM-DD` or null). A sign-in not read has no date |
+| `credentials[]` | 0 to `MAX_CREDENTIALS_PER_APPLICATION` | `ref`, `ageDays` and `expires`, by reference as in the agent report |
+
+A list whose `read` is false holds what was seen: a presence in it is real,
+and an absence from it says nothing.
+
+<!-- contract:integrations-limits -->
+| Constant | Value | What it bounds |
+|---|---|---|
+| `MAX_INTEGRATIONS_SOURCES` | 10 | Entries of `sources` |
+| `MAX_APPLICATIONS` | 5,000 | Entries of `applications` |
+| `MAX_OWNERS_PER_APPLICATION` | 20 | Owners of one application: Graph expands at most 20 |
+| `MAX_DELEGATED_GRANTS_PER_APPLICATION` | 200 | Delegated grants of one application |
+| `MAX_SCOPES_PER_GRANT` | 300 | Scopes of one grant |
+| `MAX_APPLICATION_PERMISSIONS_PER_APPLICATION` | 1,000 | Application permissions of one application |
+| `MAX_CREDENTIALS_PER_APPLICATION` | 100 | Credentials of one application |
+| `MAX_DISPLAY_NAME_CHARS` | 256 | A display name |
+| `MAX_PERMISSION_NAME_CHARS` | 128 | A scope or permission name |
+<!-- /contract:integrations-limits -->
+
+**Completeness is derived** (`isIntegrationsScanComplete`): at least one
+source, every source `COMPLETE`, and no sign-in read `INCOMPLETE`. Sign-in
+activity that was not asked for leaves a scan complete, and leaves "unused"
+not concluded.
+
+### Its findings
+
+Planned by the reader (`planIntegrationsScan`), from the body and the reader's
+own window for "unused" (90 days unless set otherwise), never stated by the
+scanner:
+
+<!-- contract:integrations-finding-codes -->
+| Code | Severity | Keyed by | Opened when |
+|---|---|---|---|
+| `INTEGRATION_HIGH_PRIVILEGE_GRANT` | HIGH | the application | It holds a permission the classification calls high: it reaches the directory, mail, files, chats or calendars, or it writes |
+| `INTEGRATION_UNVERIFIED_PUBLISHER` | HIGH | the application | It holds such a permission, it is not this directory's own, and `publisherVerified` is false |
+| `INTEGRATION_NO_OWNER` | MEDIUM | the application | It holds any grant, and its owners were read and are none |
+| `INTEGRATION_UNUSED` | LOW | the application | Its sign-in was read, and is none or older than the window |
+| `INTEGRATION_EMPTY_INVENTORY` | HIGH | the source | A source read in full reported no application: not a clean result |
+<!-- /contract:integrations-finding-codes -->
+
+**A presence counts on any read; an absence only on a whole one.** A grant
+seen raises its finding even when the listing it was on stopped early. "No
+high-privilege grant", "no grant" and "no sign-in" are concluded only from a
+list read in full. Every question that could not be answered either way is
+listed, with its reason, and is never a clean result:
+
+<!-- contract:integrations-not-concluded -->
+| Reason | Meaning |
+|---|---|
+| `GRANTS_NOT_READ_IN_FULL` | The application's grants were not all read, and what was read raises nothing |
+| `ONLY_UNKNOWN_PERMISSIONS` | Every permission it holds is one the classification does not know |
+| `PUBLISHER_NOT_KNOWN` | It holds a high-privilege grant, and the read could not tell whether its publisher is verified |
+| `OWNERS_NOT_READ` | It holds a grant, and its owners were not read |
+| `SIGN_IN_NOT_READ` | Sign-in activity was not asked for |
+| `SIGN_IN_READ_INCOMPLETE` | Sign-in activity was asked for, not read in full, and this application was not in what was read |
+| `SOURCE_INCOMPLETE` | The source was not read in full and reported no application |
+<!-- /contract:integrations-not-concluded -->
+
+**Which permissions are high is a written table** (`GRAPH_PERMISSION_CLASSES`,
+`classifyPermission`), Microsoft Graph's permissions by name, each with the
+classes it reaches:
+
+<!-- contract:integrations-permission-classes -->
+`DIRECTORY`, `MAIL`, `FILES`, `CHAT`, `CALENDAR`, `WRITE`
+<!-- /contract:integrations-permission-classes -->
+
+`CHAT` and `CALENDAR` are the owner's decision of 2026-11-13: reading chat or
+calendar content counts as mail and files do. Reading people's profiles
+(`User.Read.All`) and the directory's logs (`AuditLog.Read.All`) is in the
+table with no class: profiles and logs, not content. A name in the table with
+no class is low; one with a class is high. A name not
+in the table, and any permission on an API other than Microsoft Graph, is
+unknown: never called high, never called low, and listed for a person to
+judge. An application whose only grants are unknown is not concluded either
+way.
+
 ## Transport
 
 A consumer that takes reports over HTTP takes them as scanent sends them:
@@ -448,7 +590,9 @@ Content-Type: application/json
   body is not otherwise read.
 - scanent sends the report once and follows no redirect.
 
-A report written to a file (`report.signed.json`) is the same bytes.
+A report written to a file (`report.signed.json`) is the same bytes. The
+integrations report (`report.integrations.signed.json`) has no ingest yet:
+scanent writes it and prints it, and does not post it.
 
 ## What a consumer must not assume
 
@@ -570,7 +714,7 @@ import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
 ```
 
 <!-- contract:package-modules -->
-`audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `harness-matrix-model`, `receipt-verification`
+`audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `harness-matrix-model`, `integrations-contract`, `integrations-contract-rules`, `integrations-findings`, `integrations-scopes`, `receipt-verification`
 <!-- /contract:package-modules -->
 
 - The package holds compiled CommonJS and type declarations, for Node 22 or
@@ -578,6 +722,8 @@ import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
 - It uses Node's `crypto`, so it runs on a server and not in a browser. The
   one exception is `harness-matrix-model`: its only runtime import is
   `harness-ladder`, which imports nothing, so a page may import those two.
+  The integrations planner is the same: `integrations-findings` imports only
+  `integrations-scopes` at run time, which imports nothing.
 - Its one dependency is `zod`, at an exact version. A consumer that passes
   the exported schemas to its own `zod` needs that same version; with another
   one, npm installs a second copy for the package.

@@ -242,9 +242,9 @@ describe('a file of a schema this version does not read is refused whole, and to
     };
 
     it('results: a later schema id, no id, and a known id with an unknown member', () => {
-        expect(refusal({ ...results(), schema: 'scanent-results/2' })).toBe('old: the file names "scanent-results/2" as its schema; this version reads scanent-results/1');
+        expect(refusal({ ...results(), schema: 'scanent-results/2' })).toBe('old: the file names "scanent-results/2" as its schema; this version reads scanent-results/1 and scanent-results-integrations/1');
         const { schema: _schema, ...noId } = results();
-        expect(refusal(noId)).toBe('old: the file names no schema; this version reads scanent-results/1 files and signed inflect-agent-harness/2, inflect-agent-harness/3 and inflect-agent-harness/4 reports');
+        expect(refusal(noId)).toBe('old: the file names no schema; this version reads scanent-results/1 and scanent-results-integrations/1 files and signed inflect-agent-harness/2, inflect-agent-harness/3, inflect-agent-harness/4 and scanent-integrations/1 reports');
         expect(refusal({ ...results(), addedLater: { level: 'H5' } })).toBe('old: not a valid scanent-results/1 file ((root): unrecognized_keys)');
         // An unknown member deeper down is refused too: nothing is skipped over.
         const deep = results();
@@ -260,7 +260,7 @@ describe('a file of a schema this version does not read is refused whole, and to
         const err: string[] = [];
         expect(runDiff([good, later], { stdout: (t) => void out.push(t), stderr: (t) => void err.push(t) })).toBe(2);
         expect(out.join('')).toBe('');
-        expect(err.join('')).toBe('scanent diff: new: the file names "scanent-results/2" as its schema; this version reads scanent-results/1\n');
+        expect(err.join('')).toBe('scanent diff: new: the file names "scanent-results/2" as its schema; this version reads scanent-results/1 and scanent-results-integrations/1\n');
     });
 
     it('inventory: a later schema id, an earlier one, no id, and a known id with an unknown member', () => {

@@ -12,10 +12,11 @@
  */
 import type { ScannerConfig } from '../config';
 import { hostNames, hostsFor } from '../hosts';
-import type { SourceKind } from '../source';
+import { SCANNER_OF_SOURCE, SCANNER_TITLE, SCANNERS, type ScannerSourceKind } from '../scanners';
+import { ENTRA_INTEGRATIONS_REQUIRED_ROLES, ENTRA_SIGN_IN_ROLE } from '../sources/entra-integrations';
 
 export interface AccessEntry {
-    readonly kind: SourceKind;
+    readonly kind: ScannerSourceKind;
     readonly title: string;
     /** The role or scope, exactly as the product names it. */
     readonly grant: string;
@@ -41,9 +42,9 @@ export interface AccessTable extends AccessEntry {
 }
 
 /** The order the wizard asks about sources in, and the order the tables print in. */
-export const GUIDE_ORDER: readonly SourceKind[] = ['entra-sp', 'vault', 'okta-app', 'cicd', 'gcp-sa', 'runtime', 'mcp', 'code', 'inflect-register'];
+export const GUIDE_ORDER: readonly ScannerSourceKind[] = ['entra-sp', 'vault', 'okta-app', 'cicd', 'gcp-sa', 'runtime', 'mcp', 'code', 'inflect-register', 'entra-integrations'];
 
-export const ACCESS_GUIDE: Readonly<Record<SourceKind, AccessEntry>> = Object.freeze({
+export const ACCESS_GUIDE: Readonly<Record<ScannerSourceKind, AccessEntry>> = Object.freeze({
     'entra-sp': {
         kind: 'entra-sp',
         title: 'Microsoft Entra ID (service principals and app registrations)',
@@ -55,7 +56,12 @@ export const ACCESS_GUIDE: Readonly<Record<SourceKind, AccessEntry>> = Object.fr
             'Certificates and secrets: New client secret.',
         ],
         reads: ['Application registrations and service principals', 'Their credential metadata (ids and dates) and their owners'],
-        notNeeded: ['Any ReadWrite permission', 'Directory.* permissions', 'Any delegated permission', 'Any directory role'],
+        notNeeded: [
+            'Any ReadWrite permission',
+            'Directory.* permissions, unless the same application also reads for `entra-integrations`, which needs Directory.Read.All',
+            'Any delegated permission',
+            'Any directory role',
+        ],
         credential: 'ENTRA_CLIENT_SECRET',
         hostsNote: 'login.microsoftonline.com, graph.microsoft.com',
     },
@@ -163,6 +169,32 @@ export const ACCESS_GUIDE: Readonly<Record<SourceKind, AccessEntry>> = Object.fr
         credential: 'INFLECT_INGEST_KEY',
         hostsNote: "the tenant's host",
     },
+    'entra-integrations': {
+        kind: 'entra-integrations',
+        title: 'Microsoft Entra ID (applications and what they were granted)',
+        grant: `Microsoft Graph application permissions ${ENTRA_INTEGRATIONS_REQUIRED_ROLES.join(' and ')}, with admin consent; ${ENTRA_SIGN_IN_ROLE} as well only when readSignInActivity is set`,
+        where: [
+            'Entra admin centre: App registrations, New registration (or the application the entra-sp source already uses).',
+            `API permissions: Add a permission, Microsoft Graph, Application permissions, ${ENTRA_INTEGRATIONS_REQUIRED_ROLES.join(', ')}.`,
+            `For the last sign-in of each application, also ${ENTRA_SIGN_IN_ROLE}.`,
+            'Grant admin consent.',
+            'Certificates and secrets: New client secret.',
+        ],
+        reads: [
+            'Service principals of applications, with their verified publisher, owners and credential metadata',
+            "The owners of this directory's own app registrations",
+            'Delegated grants: their scopes, consent type and how many people each was made for, never who',
+            'Application permissions: the app roles assigned to each application',
+            'Each application\'s last sign-in, to the day, only when readSignInActivity is set',
+        ],
+        limits: [
+            'Sign-in activity is a beta report of Microsoft Graph and needs a licence that records it (Microsoft Entra ID P1 or P2). Without it, or without AuditLog.Read.All, the read is refused and no application is concluded unused.',
+            "Graph returns at most 20 owners of an application. An application's owners in the directory that registered it are not visible from another directory.",
+        ],
+        notNeeded: ['Any ReadWrite permission', 'Any delegated permission', 'Any directory role', 'AuditLog.Read.All, unless readSignInActivity is set'],
+        credential: 'ENTRA_INTEGRATIONS_CLIENT_SECRET',
+        hostsNote: 'login.microsoftonline.com, graph.microsoft.com',
+    },
 });
 
 /** The variable an operator sets for an entry's credential: its name, or the `_FILE` form for a credential that is a file. */
@@ -175,7 +207,7 @@ const FILE_NOTE = (entry: AccessEntry): string => `a key file: set ${entry.crede
 /** The access tables for the sources one configuration has, in guide order, each with the hosts that configuration reaches. */
 export function accessTablesFor(config: ScannerConfig): AccessTable[] {
     const entries = hostsFor(config);
-    const kinds = new Set<SourceKind>(config.sources.map((s) => s.kind));
+    const kinds = new Set<ScannerSourceKind>(config.sources.map((s) => s.kind));
     // The ingest output uses the same key as the register read.
     if (config.inflect !== undefined) kinds.add('inflect-register');
     return GUIDE_ORDER.filter((k) => kinds.has(k)).map((kind) => ({
@@ -216,21 +248,29 @@ export function renderAccessMarkdown(): string {
         'or in a file named by that variable with `_FILE` appended (`NAME_FILE=/path`). A credential that is',
         'itself a file with line breaks is given only in the `_FILE` form.',
         '',
-        '| Source | Grant | Credential | Hosts (port 443) |',
-        '|---|---|---|---|',
+        'The sources are grouped by the scanner that reads them. One configuration may hold sources of',
+        'both; a product read by both (Microsoft Entra ID) is two sources, which may use one application.',
+        '',
+        '| Scanner | Source | Grant | Credential | Hosts (port 443) |',
+        '|---|---|---|---|---|',
         ...GUIDE_ORDER.map((k) => {
             const e = ACCESS_GUIDE[k];
-            return `| \`${e.kind}\` | ${cell(e.grant)} | \`${e.credential}\`${e.asFile === true ? ` (${FILE_NOTE(e)})` : ''} | ${cell(e.hostsNote)} |`;
+            return `| ${SCANNER_OF_SOURCE[k]} | \`${e.kind}\` | ${cell(e.grant)} | \`${e.credential}\`${e.asFile === true ? ` (${FILE_NOTE(e)})` : ''} | ${cell(e.hostsNote)} |`;
         }),
         '',
     ];
-    for (const k of GUIDE_ORDER) {
+    for (const scanner of SCANNERS) {
+        lines.push(`## ${SCANNER_TITLE[scanner]}`, '');
+        for (const k of GUIDE_ORDER.filter((kind) => SCANNER_OF_SOURCE[kind] === scanner)) pushEntry(k);
+    }
+    return `${lines.join('\n')}`;
+
+    function pushEntry(k: ScannerSourceKind): void {
         const e = ACCESS_GUIDE[k];
-        lines.push(`## ${e.title}`, '', `Source kind: \`${e.kind}\`. Credential: \`${e.credential}\`${e.asFile === true ? ` (${FILE_NOTE(e)})` : ''}. Hosts: ${e.hostsNote}.`, '', `**Grant.** ${e.grant}.`, '');
+        lines.push(`### ${e.title}`, '', `Source kind: \`${e.kind}\`. Credential: \`${e.credential}\`${e.asFile === true ? ` (${FILE_NOTE(e)})` : ''}. Hosts: ${e.hostsNote}.`, '', `**Grant.** ${e.grant}.`, '');
         lines.push('**Where it is created.**', '', ...e.where.map((w, i) => `${i + 1}. ${w}`), '');
         lines.push('**Lets the scanner read.**', '', ...e.reads.map((r) => `- ${r}`), '');
         if (e.limits !== undefined) lines.push('**What this grant does not show.**', '', ...e.limits.map((l) => `- ${l}`), '');
         lines.push('**Not needed, and must not be granted.**', '', ...e.notNeeded.map((n) => `- ${n}`), '');
     }
-    return `${lines.join('\n')}`;
 }

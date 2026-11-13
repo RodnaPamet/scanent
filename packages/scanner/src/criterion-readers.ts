@@ -29,6 +29,7 @@ import type { HarnessSourceKind } from '@rodnapamet/scanent-contract/harness-fin
 import type { CriterionReaders, ReaderKind } from '@scanent/report/results/types';
 
 import type { ScannerConfig } from './config';
+import { isAgentSourceKind } from './scanners';
 
 const both = (...readers: ReaderKind[]) => ({ reportedBy: readers, metBy: readers });
 const NO_READER = { reportedBy: [], metBy: [] } as const;
@@ -68,7 +69,10 @@ export const CRITERION_READERS: CriterionReaders = Object.freeze({
     'H5.independent_audit': NO_READER,
 });
 
-/** The source kinds one configuration reads, in the order it lists them. */
+/**
+ * The agent scanner's source kinds one configuration reads, in the order it
+ * lists them. Another scanner's kinds read nothing that answers a criterion.
+ */
 export function configuredSourceKinds(config: Pick<ScannerConfig, 'sources'>): HarnessSourceKind[] {
-    return config.sources.map((s) => s.kind);
+    return config.sources.map((s) => s.kind).filter(isAgentSourceKind);
 }

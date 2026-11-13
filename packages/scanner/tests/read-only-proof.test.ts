@@ -32,6 +32,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
+import { verifyAndParseIntegrationsReport } from '@rodnapamet/scanent-contract/integrations-contract';
 import { parseScannerConfig, SourceConfigSchema, type ScannerConfig } from '../src/config';
 import { runDoctor } from '../src/doctor/run';
 import { createSourceWire, MCP_MESSAGES, type FetchLike } from '../src/http';
@@ -49,6 +50,7 @@ import {
     ESTATE_SOURCES,
     estateConfig,
     estateEnv,
+    INTEGRATIONS_ESTATE_SOURCE,
     PUBLIC_RESOLVER,
     SELF_HOSTED_RUNTIME,
     type EstateSourceKind,
@@ -141,6 +143,43 @@ describe.each(ROWS)('$name', ({ name, kind, source }) => {
         expect(recorder.requests.map((r) => classifyRequest(r, hosts))).not.toContain('INGEST_POST');
         // Nothing was written anywhere it can see.
         expect(readdirSync(join(dir, 'out'))).toEqual([]);
+    });
+});
+
+/**
+ * The integrations scanner's Entra source. It runs beside an agent source in
+ * this version, so its row is configured with the `code` source, which makes
+ * no request: every request the row records is the integrations source's.
+ */
+describe('entra-integrations', () => {
+    const config = parseScannerConfig(estateConfig([ESTATE_SOURCES.code, INTEGRATIONS_ESTATE_SOURCE]));
+    const hosts = configuredHostsOf(config);
+
+    it('the scan read: every request is declared, every one is a GET or the declared exchange, and its report verifies', async () => {
+        const recorder = recordRequests(worldFor().fetchImpl);
+        const scan = await scanRow(config, recorder.fetchImpl);
+        expect(scan.integrations?.body.sources).toEqual([{ kind: 'entra-integrations', status: 'COMPLETE', rows: expect.any(Number), signInActivity: { status: 'COMPLETE', rows: 3 } }]);
+        expect(verifyAndParseIntegrationsReport(scan.integrations?.raw ?? '', [rawPublicKeyHex(loadSigningKey(SIGNING_PEM).publicKey)]).ok).toBe(true);
+        expect(readOnlyProblems(recorder.requests, hosts)).toEqual([]);
+        expect(recorder.requests.length).toBeGreaterThan(0);
+        expect([...new Set(recorder.requests.map((r) => classifyRequest(r, hosts)))].sort()).toEqual(['READ', 'TOKEN_EXCHANGE']);
+        for (const request of recorder.requests) seen.push({ row: 'entra-integrations', via: 'scan', request, cls: classifyRequest(request, hosts) });
+    });
+
+    it('the preflight: the same holds, nothing failed, and nothing was written', async () => {
+        const configPath = join(dir, 'entra-integrations.json');
+        mkdirSync(join(dir, 'out-integrations'), { recursive: true, mode: 0o700 });
+        writeFileSync(configPath, JSON.stringify(estateConfig([ESTATE_SOURCES.code, INTEGRATIONS_ESTATE_SOURCE], { outputs: [{ kind: 'file', dir: join(dir, 'out-integrations') }] })), { mode: 0o600 });
+        chmodSync(configPath, 0o600);
+        const recorder = recordRequests(worldFor().fetchImpl);
+        const report = await runDoctor({ configPath, env: estateEnv(), fetchImpl: recorder.fetchImpl, resolveHost: PUBLIC_RESOLVER, now: () => NOW, nodeVersion: 'v24.1.0', uid: 1000 });
+        expect(report.checks.filter((c) => c.status === 'FAIL').map((c) => `${c.scope} ${c.id}`)).toEqual([]);
+        expect(report.checks.filter((c) => c.status === 'SKIPPED' && c.cause === 'BLOCKED').map((c) => `${c.scope} ${c.id}`)).toEqual([]);
+        expect(report.checks.filter((c) => c.scope === 'entra-integrations' && c.status === 'PASS').map((c) => c.id)).toEqual(['credential.present', 'host.resolves', 'reachable', 'authenticated', 'read.permitted']);
+        expect(readOnlyProblems(recorder.requests, hosts)).toEqual([]);
+        expect(recorder.requests.length).toBeGreaterThan(0);
+        for (const request of recorder.requests) seen.push({ row: 'entra-integrations', via: 'doctor', request, cls: classifyRequest(request, hosts) });
+        expect(readdirSync(join(dir, 'out-integrations'))).toEqual([]);
     });
 });
 
@@ -240,8 +279,9 @@ describe('the one post: a signed report to the tenant, and nothing else', () => 
 describe('exhaustiveness', () => {
     it('the rows are the source kinds of the configuration schema, each once', () => {
         const schemaKinds = SourceConfigSchema.options.map((option) => option.shape.kind.value as string).sort();
-        expect([...new Set(ROWS.map((r) => r.kind))].sort()).toEqual(schemaKinds);
-        expect([...ESTATE_SOURCE_KINDS].sort()).toEqual(schemaKinds);
+        // The agent rows, and the integrations row of its own.
+        expect([...new Set([...ROWS.map((r) => r.kind as string), INTEGRATIONS_ESTATE_SOURCE.kind])].sort()).toEqual(schemaKinds);
+        expect([...ESTATE_SOURCE_KINDS, INTEGRATIONS_ESTATE_SOURCE.kind].sort()).toEqual(schemaKinds);
     });
 
     it('every declared read path was requested by some row', () => {
@@ -261,7 +301,7 @@ describe('exhaustiveness', () => {
         const unsent: string[] = [];
         for (const auth of SCANNER_SURFACE.authenticates) {
             // Entra and Key Vault share one endpoint template; each row uses it for its own product.
-            const rows = auth.product === 'entra' ? ['entra-sp'] : auth.product === 'azure-key-vault' ? ['vault'] : ['gcp-sa'];
+            const rows = auth.product === 'entra' ? ['entra-sp'] : auth.product === 'entra-integrations' ? ['entra-integrations'] : auth.product === 'azure-key-vault' ? ['vault'] : ['gcp-sa'];
             const sent = seen.some(({ row, request, cls }) => rows.includes(row) && cls === 'TOKEN_EXCHANGE' && request.origin === auth.origin && matchesTemplate(auth.path, request.pathname));
             if (!sent) unsent.push(`${auth.product} token exchange`);
         }

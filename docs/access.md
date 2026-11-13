@@ -10,19 +10,25 @@ No credential value goes in the configuration. Each goes in the environment vari
 or in a file named by that variable with `_FILE` appended (`NAME_FILE=/path`). A credential that is
 itself a file with line breaks is given only in the `_FILE` form.
 
-| Source | Grant | Credential | Hosts (port 443) |
-|---|---|---|---|
-| `entra-sp` | Microsoft Graph application permission Application.Read.All, with admin consent | `ENTRA_CLIENT_SECRET` | login.microsoftonline.com, graph.microsoft.com |
-| `vault` | Key Vault Reader on each listed vault (RBAC vaults). For a vault on access policies: List on secrets and List on certificates, and nothing else | `AZURE_CLIENT_SECRET` | login.microsoftonline.com, and each vault's host |
-| `okta-app` | An SSWS API token created by a user holding the Read-only Administrator role only | `OKTA_API_TOKEN` | the Okta org's host |
-| `cicd` | A fine-grained personal access token (or a GitHub App installation) limited to the listed repositories, with Contents: Read-only and Secrets: Read-only. Metadata: Read-only is added by GitHub | `GITHUB_READ_TOKEN` | api.github.com |
-| `gcp-sa` | roles/iam.serviceAccountViewer on each listed project, held by a dedicated service account; one JSON key for that account | `GCP_SCANNER_KEY` (a key file: set GCP_SCANNER_KEY_FILE to its path) | oauth2.googleapis.com, iam.googleapis.com |
-| `runtime` | A service key holding the workspace Viewer role | `LANGSMITH_API_KEY` | api.smith.langchain.com or eu.api.smith.langchain.com, or the self-hosted host |
-| `mcp` | Per server, a token that can list tools and nothing else; none when the server takes none | `MCP_<LABEL>_TOKEN` | each server's host |
-| `code` | Read access to the listed directories for the user the scanner runs as | `(none)` | none |
-| `inflect-register` | An API key bound to the scanner agent with the admin:harness_ingest scope, plus mcp:read when the register is read | `INFLECT_INGEST_KEY` | the tenant's host |
+The sources are grouped by the scanner that reads them. One configuration may hold sources of
+both; a product read by both (Microsoft Entra ID) is two sources, which may use one application.
 
-## Microsoft Entra ID (service principals and app registrations)
+| Scanner | Source | Grant | Credential | Hosts (port 443) |
+|---|---|---|---|---|
+| agents | `entra-sp` | Microsoft Graph application permission Application.Read.All, with admin consent | `ENTRA_CLIENT_SECRET` | login.microsoftonline.com, graph.microsoft.com |
+| agents | `vault` | Key Vault Reader on each listed vault (RBAC vaults). For a vault on access policies: List on secrets and List on certificates, and nothing else | `AZURE_CLIENT_SECRET` | login.microsoftonline.com, and each vault's host |
+| agents | `okta-app` | An SSWS API token created by a user holding the Read-only Administrator role only | `OKTA_API_TOKEN` | the Okta org's host |
+| agents | `cicd` | A fine-grained personal access token (or a GitHub App installation) limited to the listed repositories, with Contents: Read-only and Secrets: Read-only. Metadata: Read-only is added by GitHub | `GITHUB_READ_TOKEN` | api.github.com |
+| agents | `gcp-sa` | roles/iam.serviceAccountViewer on each listed project, held by a dedicated service account; one JSON key for that account | `GCP_SCANNER_KEY` (a key file: set GCP_SCANNER_KEY_FILE to its path) | oauth2.googleapis.com, iam.googleapis.com |
+| agents | `runtime` | A service key holding the workspace Viewer role | `LANGSMITH_API_KEY` | api.smith.langchain.com or eu.api.smith.langchain.com, or the self-hosted host |
+| agents | `mcp` | Per server, a token that can list tools and nothing else; none when the server takes none | `MCP_<LABEL>_TOKEN` | each server's host |
+| agents | `code` | Read access to the listed directories for the user the scanner runs as | `(none)` | none |
+| agents | `inflect-register` | An API key bound to the scanner agent with the admin:harness_ingest scope, plus mcp:read when the register is read | `INFLECT_INGEST_KEY` | the tenant's host |
+| integrations | `entra-integrations` | Microsoft Graph application permissions Application.Read.All and Directory.Read.All, with admin consent; AuditLog.Read.All as well only when readSignInActivity is set | `ENTRA_INTEGRATIONS_CLIENT_SECRET` | login.microsoftonline.com, graph.microsoft.com |
+
+## The agent scanner
+
+### Microsoft Entra ID (service principals and app registrations)
 
 Source kind: `entra-sp`. Credential: `ENTRA_CLIENT_SECRET`. Hosts: login.microsoftonline.com, graph.microsoft.com.
 
@@ -43,11 +49,11 @@ Source kind: `entra-sp`. Credential: `ENTRA_CLIENT_SECRET`. Hosts: login.microso
 **Not needed, and must not be granted.**
 
 - Any ReadWrite permission
-- Directory.* permissions
+- Directory.* permissions, unless the same application also reads for `entra-integrations`, which needs Directory.Read.All
 - Any delegated permission
 - Any directory role
 
-## Azure Key Vault (credential metadata)
+### Azure Key Vault (credential metadata)
 
 Source kind: `vault`. Credential: `AZURE_CLIENT_SECRET`. Hosts: login.microsoftonline.com, and each vault's host.
 
@@ -67,7 +73,7 @@ Source kind: `vault`. Credential: `AZURE_CLIENT_SECRET`. Hosts: login.microsofto
 - Key Vault Administrator
 - Get on secrets: each of these reads or changes secret values
 
-## Okta (service apps and API tokens)
+### Okta (service apps and API tokens)
 
 Source kind: `okta-app`. Credential: `OKTA_API_TOKEN`. Hosts: the Okta org's host.
 
@@ -97,7 +103,7 @@ Source kind: `okta-app`. Credential: `OKTA_API_TOKEN`. Hosts: the Okta org's hos
 - App Administrator
 - API Access Management Administrator
 
-## GitHub Actions (workflows and secret names)
+### GitHub Actions (workflows and secret names)
 
 Source kind: `cicd`. Credential: `GITHUB_READ_TOKEN`. Hosts: api.github.com.
 
@@ -122,7 +128,7 @@ Source kind: `cicd`. Credential: `GITHUB_READ_TOKEN`. Hosts: api.github.com.
 - Workflows
 - A classic token with the repo scope
 
-## Google Cloud (service accounts and their keys)
+### Google Cloud (service accounts and their keys)
 
 Source kind: `gcp-sa`. Credential: `GCP_SCANNER_KEY` (a key file: set GCP_SCANNER_KEY_FILE to its path). Hosts: oauth2.googleapis.com, iam.googleapis.com.
 
@@ -148,7 +154,7 @@ Source kind: `gcp-sa`. Credential: `GCP_SCANNER_KEY` (a key file: set GCP_SCANNE
 - Editor
 - Owner
 
-## LangSmith (tracing projects and deployments)
+### LangSmith (tracing projects and deployments)
 
 Source kind: `runtime`. Credential: `LANGSMITH_API_KEY`. Hosts: api.smith.langchain.com or eu.api.smith.langchain.com, or the self-hosted host.
 
@@ -168,7 +174,7 @@ Source kind: `runtime`. Credential: `LANGSMITH_API_KEY`. Hosts: api.smith.langch
 - The Editor or Admin role
 - A personal access token of an administrator
 
-## MCP servers (tool listings)
+### MCP servers (tool listings)
 
 Source kind: `mcp`. Credential: `MCP_<LABEL>_TOKEN`. Hosts: each server's host.
 
@@ -187,7 +193,7 @@ Source kind: `mcp`. Credential: `MCP_<LABEL>_TOKEN`. Hosts: each server's host.
 
 - Any scope that lets the token call a tool
 
-## Agent code (local directories)
+### Agent code (local directories)
 
 Source kind: `code`. Credential: `(none)`. Hosts: none.
 
@@ -205,7 +211,7 @@ Source kind: `code`. Credential: `(none)`. Hosts: none.
 
 - Write access: mount the roots read-only
 
-## An Inflect tenant (posting results, and reading its agent register)
+### An Inflect tenant (posting results, and reading its agent register)
 
 Source kind: `inflect-register`. Credential: `INFLECT_INGEST_KEY`. Hosts: the tenant's host.
 
@@ -222,3 +228,39 @@ Source kind: `inflect-register`. Credential: `INFLECT_INGEST_KEY`. Hosts: the te
 **Not needed, and must not be granted.**
 
 - Any other scope
+
+## The integrations scanner
+
+### Microsoft Entra ID (applications and what they were granted)
+
+Source kind: `entra-integrations`. Credential: `ENTRA_INTEGRATIONS_CLIENT_SECRET`. Hosts: login.microsoftonline.com, graph.microsoft.com.
+
+**Grant.** Microsoft Graph application permissions Application.Read.All and Directory.Read.All, with admin consent; AuditLog.Read.All as well only when readSignInActivity is set.
+
+**Where it is created.**
+
+1. Entra admin centre: App registrations, New registration (or the application the entra-sp source already uses).
+2. API permissions: Add a permission, Microsoft Graph, Application permissions, Application.Read.All, Directory.Read.All.
+3. For the last sign-in of each application, also AuditLog.Read.All.
+4. Grant admin consent.
+5. Certificates and secrets: New client secret.
+
+**Lets the scanner read.**
+
+- Service principals of applications, with their verified publisher, owners and credential metadata
+- The owners of this directory's own app registrations
+- Delegated grants: their scopes, consent type and how many people each was made for, never who
+- Application permissions: the app roles assigned to each application
+- Each application's last sign-in, to the day, only when readSignInActivity is set
+
+**What this grant does not show.**
+
+- Sign-in activity is a beta report of Microsoft Graph and needs a licence that records it (Microsoft Entra ID P1 or P2). Without it, or without AuditLog.Read.All, the read is refused and no application is concluded unused.
+- Graph returns at most 20 owners of an application. An application's owners in the directory that registered it are not visible from another directory.
+
+**Not needed, and must not be granted.**
+
+- Any ReadWrite permission
+- Any delegated permission
+- Any directory role
+- AuditLog.Read.All, unless readSignInActivity is set

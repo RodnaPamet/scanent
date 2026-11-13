@@ -24,6 +24,7 @@ import { NOWHERE_TO_DELIVER, OutputsError, resolveOutputs, scanAndDeliver } from
 import { ingestTarget, scanAndPost } from '../src/scan';
 import { isDeclaredRequest, scannerManifestHash, SCANNER_SURFACE } from '../src/scanner-surface';
 import { capturedLog, configJson, configOf, ENV, EXAMPLE_AGENT, INFLECT, noFetch, PUBLIC_HEX, tree } from './helpers/output-fixtures';
+import { agentsOf } from './helpers/run-scan';
 
 const NOW = Date.parse('2026-11-03T03:30:00.000Z');
 
@@ -184,12 +185,12 @@ describe('4. delivery', () => {
             { kind: 'inflect', ok: true },
         ]);
         // One scan, delivered three times: the same bytes everywhere.
-        expect(printed).toEqual([`${result.scan.raw}\n`]);
-        const run = path.join(dir, 'runs', result.scan.body.scan.id);
-        expect(fs.readFileSync(path.join(run, RUN_FILE_NAMES.report), 'utf8')).toBe(result.scan.raw);
-        expect(verifyAndParseHarnessReport(result.scan.raw, [PUBLIC_HEX])).toMatchObject({ ok: true });
+        expect(printed).toEqual([`${agentsOf(result).raw}\n`]);
+        const run = path.join(dir, 'runs', agentsOf(result).body.scan.id);
+        expect(fs.readFileSync(path.join(run, RUN_FILE_NAMES.report), 'utf8')).toBe(agentsOf(result).raw);
+        expect(verifyAndParseHarnessReport(agentsOf(result).raw, [PUBLIC_HEX])).toMatchObject({ ok: true });
         expect(lines().map((l) => l.msg)).toEqual(['source read', 'report signed', 'results written', 'report ingested']);
-        expect(lines()[2]).toMatchObject({ dir: `runs/${result.scan.body.scan.id}`, files: 7, removedRuns: 0 });
+        expect(lines()[2]).toMatchObject({ dir: `runs/${agentsOf(result).body.scan.id}`, files: 7, removedRuns: 0 });
     });
 
     it('stdout alone writes the report and a newline, and logs nothing more than a scan does', async () => {
@@ -197,7 +198,7 @@ describe('4. delivery', () => {
         const printed: string[] = [];
         const result = await scanAndDeliver({ config: configOf(), env: ENV, log, outputs: [{ kind: 'stdout' }], stdout: (t) => printed.push(t), fetchImpl: noFetch });
         expect(result.ok).toBe(true);
-        expect(printed).toEqual([`${result.scan.raw}\n`]);
+        expect(printed).toEqual([`${agentsOf(result).raw}\n`]);
         expect(lines().map((l) => l.msg)).toEqual(['source read', 'report signed']);
     });
 
@@ -206,7 +207,7 @@ describe('4. delivery', () => {
         const spy = jest.spyOn(process.stdout, 'write').mockImplementation((chunk) => (out.push(String(chunk)), true));
         try {
             const result = await scanAndDeliver({ config: configOf(), env: ENV, log: capturedLog().log, outputs: [{ kind: 'stdout' }], fetchImpl: noFetch });
-            expect(out).toEqual([`${result.scan.raw}\n`]);
+            expect(out).toEqual([`${agentsOf(result).raw}\n`]);
         } finally {
             spy.mockRestore();
         }
@@ -241,7 +242,7 @@ describe('4. delivery', () => {
         expect(printed).toHaveLength(1);
         expect(posted).toBe(1);
         const failed = lines().filter((l) => l.msg === 'output failed');
-        expect(failed).toEqual([expect.objectContaining({ level: 'error', output: 'file', error: 'Error ENOSPC', scan: result.scan.body.scan.id })]);
+        expect(failed).toEqual([expect.objectContaining({ level: 'error', output: 'file', error: 'Error ENOSPC', scan: agentsOf(result).body.scan.id })]);
         // The log names the kind of failure, not the path it happened at.
         expect(text()).not.toContain(dir);
         expect(tree(dir)).toEqual({});
@@ -251,7 +252,7 @@ describe('4. delivery', () => {
         const { log, lines, text } = capturedLog();
         fs.mkdirSync(path.join(dir, 'latest.json'));
         const result = await scanAndDeliver({ config: configOf(), env: ENV, log, outputs: [{ kind: 'file', dir }], fetchImpl: noFetch });
-        const id = result.scan.body.scan.id;
+        const id = agentsOf(result).body.scan.id;
         expect(result).toMatchObject({ ok: false, delivered: [{ kind: 'file', ok: false }] });
         const [failed] = lines().filter((l) => l.msg === 'output failed');
         expect(failed).toMatchObject({ output: 'file', scan: id });
@@ -331,7 +332,7 @@ describe('4. delivery', () => {
             fetchImpl: noFetch,
         });
         expect(result.ok).toBe(true);
-        const results = JSON.parse(fs.readFileSync(path.join(dir, 'runs', result.scan.body.scan.id, RUN_FILE_NAMES.results), 'utf8')) as { agents: { discoveredId: string }[] };
+        const results = JSON.parse(fs.readFileSync(path.join(dir, 'runs', agentsOf(result).body.scan.id, RUN_FILE_NAMES.results), 'utf8')) as { agents: { discoveredId: string }[] };
         expect(results.agents.map((a) => a.discoveredId)).toEqual([EXAMPLE_AGENT]);
     });
 
@@ -350,28 +351,37 @@ describe('4. delivery', () => {
         );
         const out = path.join(dir, 'out');
         const result = await scanAndDeliver({ config: configOf({ inventory: { path: inventory } }), env: ENV, log: capturedLog().log, outputs: [{ kind: 'file', dir: out }], fetchImpl: noFetch });
-        const run = path.join(out, 'runs', result.scan.body.scan.id);
+        const run = path.join(out, 'runs', agentsOf(result).body.scan.id);
         const results = JSON.parse(fs.readFileSync(path.join(run, RUN_FILE_NAMES.results), 'utf8')) as { agents: { declared: { owner: string } | null }[] };
         expect(results.agents[0].declared).toMatchObject({ owner: 'support-team' });
         // Nothing the inventory says is in the signed report.
-        expect(result.scan.raw).not.toContain('support-team');
+        expect(agentsOf(result).raw).not.toContain('support-team');
         expect(fs.readFileSync(path.join(run, RUN_FILE_NAMES.summary), 'utf8')).toContain('declared by the operator');
     });
 });
 
 describe('5. the declared surface', () => {
-    it('outputs added no request: but for the version, the grants 0.13.0 declared inside it and the contract id, the surface hashes to what it did before them', () => {
+    it('outputs added no request: but for the version, the grants 0.13.0 declared inside it, the contract id and the integrations scanner, the surface hashes to what it did before them', () => {
         // 0.13.0 put each token exchange's grant inside the surface, so the hash moved once, on purpose,
         // and the surface names its own version. The move to `inflect-agent-harness/4` changed the
-        // contract id it names, and no request. Put those three back and the surface is, to the byte,
-        // the one from before outputs existed: nothing else was added to it, by outputs or by anything since.
+        // contract id it names, and no request. The integrations scanner then joined the one surface
+        // (its reads, its token exchange, and the scanners in place of the one contract id). Put those
+        // back and the surface is, to the byte, the one from before outputs existed: nothing else was
+        // added to it, by outputs or by anything since.
         expect(SCANNER_SURFACE.version).toBe('0.14.0');
-        expect(SCANNER_SURFACE.contract).toBe('inflect-agent-harness/4');
+        expect(SCANNER_SURFACE.scanners.map((s) => [s.id, s.contract])).toEqual([
+            ['agents', 'inflect-agent-harness/4'],
+            ['integrations', 'scanent-integrations/1'],
+        ]);
+        const { scanners: _scanners, ...surface } = SCANNER_SURFACE;
         const withoutGrants = {
-            ...SCANNER_SURFACE,
+            ...surface,
             version: '0.12.0',
             contract: 'inflect-agent-harness/3',
-            authenticates: SCANNER_SURFACE.authenticates.map((entry) => Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'grant'))),
+            reads: SCANNER_SURFACE.reads.filter((r) => r.source !== 'entra-integrations'),
+            authenticates: SCANNER_SURFACE.authenticates
+                .filter((entry) => entry.product !== 'entra-integrations')
+                .map((entry) => Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'grant'))),
         };
         expect(`sha256:${createHash('sha256').update(canonicalJson(withoutGrants), 'utf8').digest('hex')}`).toBe(MANIFEST_BEFORE_OUTPUTS);
         expect(scannerManifestHash()).not.toBe(MANIFEST_BEFORE_OUTPUTS);
@@ -381,6 +391,7 @@ describe('5. the declared surface', () => {
             ['azure-key-vault', 'client_credentials'],
             ['entra', 'client_credentials'],
             ['gcp-iam', 'urn:ietf:params:oauth:grant-type:jwt-bearer'],
+            ['entra-integrations', 'client_credentials'],
         ]);
         expect(JSON.stringify(SCANNER_SURFACE)).not.toMatch(/scanent-results|results\.json|latest\.json|summary\.html/);
     });

@@ -15,16 +15,23 @@
  * a time that is not earlier) are NOT_COMPARED with that rule's name. Reading
  * never stops the run: the comparison is a section of the page, not a
  * condition of writing it.
+ *
+ * Each scanner is compared on its own: the agent section with the previous
+ * run's agent results (`previousRunOf`), the integrations section with the
+ * previous run's integrations (`previousIntegrationsOf`). A previous run in
+ * which that scanner did not run is NOT_COMPARED with a reason that says so,
+ * never an empty run compared.
  */
 import { closeSync, constants, existsSync, fstatSync, openSync, readSync } from 'fs';
 import { join } from 'path';
 
 import { DiffRefused, diffResults } from '@scanent/report/diff/diff';
+import { diffIntegrations, type IntegrationsDiffInput } from '@scanent/report/diff/integrations-diff';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
-import type { PreviousRun } from '@scanent/report/render/page-data';
-import type { LocalResults } from '@scanent/report/results/types';
+import type { IntegrationsPreviousRun, PreviousRun } from '@scanent/report/render/page-data';
+import { INTEGRATIONS_ONLY_RESULTS_SCHEMA, RESULTS_SCHEMA, type LocalResults } from '@scanent/report/results/types';
 
-import { loadDiffSide, MAX_DIFF_INPUT_BYTES } from './diff-command';
+import { loadDiffSide, loadRunSide, MAX_DIFF_INPUT_BYTES } from './diff-command';
 import { SCAN_ID_PATTERN } from './file-output';
 
 /** The largest pointer read. `latest.json` is a few hundred bytes. */
@@ -91,10 +98,50 @@ export function previousRunOf(dir: string, current: LocalResults, deps: Previous
         const text = read(join(dir, 'runs', scanId, RUN_FILE_NAMES.results), MAX_DIFF_INPUT_BYTES);
         if (text === null) return { kind: 'NOT_COMPARED', scanId, reason: 'UNREADABLE' };
         const parsed = JSON.parse(text) as { schema?: unknown };
+        // The previous run was the integrations scanner's alone: there is no agent scan to compare with, and none is invented.
+        if (parsed !== null && typeof parsed === 'object' && parsed.schema === INTEGRATIONS_ONLY_RESULTS_SCHEMA) return { kind: 'NOT_COMPARED', scanId, reason: 'NO_AGENT_SCAN' };
         // A results file only: a signed report there would be scored with no inventory, which is not what that run showed.
         if (parsed === null || typeof parsed !== 'object' || parsed.schema !== current.schema) return { kind: 'NOT_COMPARED', scanId, reason: 'UNREADABLE' };
         const previous = loadDiffSide(text, 'old', null);
         return { kind: 'COMPARED', diff: diffResults(previous, current) };
+    } catch (err) {
+        if (err instanceof DiffRefused) return { kind: 'NOT_COMPARED', scanId, reason: err.reason };
+        return { kind: 'NOT_COMPARED', scanId, reason: 'UNREADABLE' };
+    }
+}
+
+/**
+ * The run the output directory names as its latest, its integrations
+ * compared with `current`'s. Null when the directory holds no pointer. Read
+ * by the same rules as `previousRunOf`; a previous run in which the
+ * integrations scanner did not run is NOT_COMPARED `NO_INTEGRATIONS_SCAN`.
+ */
+export function previousIntegrationsOf(dir: string, current: IntegrationsDiffInput, deps: PreviousRunDeps = {}): IntegrationsPreviousRun | null {
+    const read = deps.readFile ?? readRegularFile;
+    let pointerText: string | null;
+    try {
+        pointerText = read(join(dir, 'latest.json'), MAX_POINTER_BYTES);
+    } catch {
+        return { kind: 'NOT_COMPARED', scanId: null, reason: 'UNREADABLE' };
+    }
+    if (pointerText === null) return existsSync(join(dir, 'latest.json')) ? { kind: 'NOT_COMPARED', scanId: null, reason: 'UNREADABLE' } : null;
+    let scanId: string | null = null;
+    try {
+        const pointer = JSON.parse(pointerText) as { scanId?: unknown };
+        if (typeof pointer.scanId !== 'string' || !SCAN_ID_PATTERN.test(pointer.scanId) || pointer.scanId === current.scan.id) {
+            return { kind: 'NOT_COMPARED', scanId: null, reason: 'UNREADABLE' };
+        }
+        scanId = pointer.scanId;
+        const text = read(join(dir, 'runs', scanId, RUN_FILE_NAMES.results), MAX_DIFF_INPUT_BYTES);
+        if (text === null) return { kind: 'NOT_COMPARED', scanId, reason: 'UNREADABLE' };
+        const parsed = JSON.parse(text) as { schema?: unknown };
+        // A results file of either kind only, as for the agent comparison.
+        if (parsed === null || typeof parsed !== 'object' || (parsed.schema !== RESULTS_SCHEMA && parsed.schema !== INTEGRATIONS_ONLY_RESULTS_SCHEMA)) {
+            return { kind: 'NOT_COMPARED', scanId, reason: 'UNREADABLE' };
+        }
+        const previous = loadRunSide(text, 'old', null).integrations;
+        if (previous === null) return { kind: 'NOT_COMPARED', scanId, reason: 'NO_INTEGRATIONS_SCAN' };
+        return { kind: 'COMPARED', diff: diffIntegrations(previous, current) };
     } catch (err) {
         if (err instanceof DiffRefused) return { kind: 'NOT_COMPARED', scanId, reason: err.reason };
         return { kind: 'NOT_COMPARED', scanId, reason: 'UNREADABLE' };

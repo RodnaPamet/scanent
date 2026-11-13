@@ -153,6 +153,8 @@ export const PREVIOUS_NOT_COMPARED_TEXT: Readonly<Record<string, string>> = {
     LADDER_DIFFERS: 'The two runs were scored on different ladder versions, so their levels cannot be compared',
     SCANNER_DIFFERS: 'The two runs are from different scanners; what one did not see says nothing about the other',
     UNREADABLE: 'The previous run’s results file could not be read as a results file, so nothing was compared',
+    NO_AGENT_SCAN: 'The previous run did not run the agent scanner, so there is no agent scan to compare with',
+    NO_INTEGRATIONS_SCAN: 'The previous run did not run the integrations scanner, so there are no integrations to compare with',
 };
 
 export function fixed(table: Readonly<Record<string, string>>, key: string, fallback: string): string {

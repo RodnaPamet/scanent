@@ -19,13 +19,16 @@
  *   • LEAVE AN ABSENCE TO BE READ AS A FAILURE. `coverage` and each cell's
  *     `readable` say which criteria no configured reader could have answered.
  *
- * Types and the schema id: nothing else runs from this module.
+ * Types and the schema ids, and two one-line guards over them.
  */
 import type { HarnessFindingCode, HarnessSourceKind, IntakeConflict, ModelSign, StoredReach } from '@rodnapamet/scanent-contract/harness-findings';
 import type { CriterionState, HarnessCriterionId, HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 import type { HarnessPaymentCapability, HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 
 import type { CriterionReaders, HarnessMatrixCoverage, VerdictBasis } from '@rodnapamet/scanent-contract/harness-matrix-model';
+import type { ApplicationOrigin, ConsentType, OwnerKind, SignInReadState } from '@rodnapamet/scanent-contract/integrations-contract-rules';
+import type { IntegrationFindingCode, IntegrationNotConcludedWhy } from '@rodnapamet/scanent-contract/integrations-findings';
+import type { PermissionClass } from '@rodnapamet/scanent-contract/integrations-scopes';
 
 import type { ParsedInventory } from './inventory';
 
@@ -318,4 +321,163 @@ export interface LocalResults {
     readonly agents: readonly LocalAgentResult[];
     /** In the planner's order. */
     readonly findings: readonly LocalFinding[];
+    /**
+     * The integrations scanner's results: present only when the run configured
+     * an integrations source. OPTIONAL, so a file of an agents-only run, and
+     * every file written before the member existed, is read as it was written.
+     */
+    readonly integrations?: LocalIntegrationsResults;
+}
+
+// ── The integrations scanner ──
+
+/**
+ * The id `results.json` names itself by for a run in which only the
+ * integrations scanner ran. A run of the agent scanner (with or without the
+ * integrations scanner) writes `RESULTS_SCHEMA`, whose agent members are
+ * required: a run with no agent scan has none to give, and a file that left
+ * them empty would read as an agent scan that found nothing. So it is another
+ * shape, and another id.
+ */
+export const INTEGRATIONS_ONLY_RESULTS_SCHEMA = 'scanent-results-integrations/1';
+
+/** The scanners one run ran, in the order the platform lists them. */
+export type RunScanners = readonly ('agents' | 'integrations')[];
+
+/** `results.json` of a run in which the integrations scanner ran and the agent scanner did not. */
+export interface IntegrationsOnlyResults {
+    readonly schema: typeof INTEGRATIONS_ONLY_RESULTS_SCHEMA;
+    /** Always `['integrations']`: stated, so no reader takes the absent agent members for an empty agent scan. */
+    readonly scanners: readonly ['integrations'];
+    readonly scan: {
+        readonly id: string;
+        readonly asOf: string;
+        readonly estate: string | null;
+        readonly scanner: { readonly agentId: string; readonly version: string; readonly manifestHash: string };
+    };
+    readonly signer: {
+        /** `harnessKeyFingerprint` of the key the report carries. */
+        readonly keyFingerprint: string;
+        /** False when the signature was checked against the key the report itself carries. */
+        readonly pinned: boolean;
+    };
+    readonly integrations: LocalIntegrationsResults;
+}
+
+/** What one run's `results.json` holds: an agent scan's results (perhaps with an integrations section), or the integrations scanner's alone. */
+export type RunResults = LocalResults | IntegrationsOnlyResults;
+
+/** Whether a run's results are an agent scan's. */
+export function isAgentResults(r: RunResults): r is LocalResults {
+    return r.schema === RESULTS_SCHEMA;
+}
+
+/** The integrations section of a run's results, wherever it is; undefined when the integrations scanner did not run. */
+export function integrationsOf(r: RunResults): LocalIntegrationsResults | undefined {
+    return r.integrations;
+}
+
+/** One integrations source, as the local results show it. */
+export interface LocalIntegrationsSource {
+    readonly kind: string;
+    readonly status: 'COMPLETE' | 'INCOMPLETE';
+    /** The contract's reason; null when COMPLETE. */
+    readonly reason: string | null;
+    readonly rows: number;
+    /** Applications reported from this source. */
+    readonly applications: number;
+    readonly signInActivity: { readonly status: SignInReadState; readonly reason: string | null; readonly rows: number | null };
+    /** Why a read stopped, in the scanner's fixed words; only for a source of this run that did not read everything. */
+    readonly detail?: string;
+}
+
+/** One permission an application holds, as the planner classed it. */
+export interface LocalApplicationPermission {
+    readonly via: 'DELEGATED' | 'APPLICATION';
+    readonly resourceAppId: string | null;
+    /** The scope or app role's name; null when the read could not resolve the role. */
+    readonly name: string | null;
+}
+
+export interface LocalApplicationResult {
+    readonly id: string;
+    readonly sourceKind: string;
+    readonly appId: string | null;
+    /** As the directory holds it; null when it was absent or withheld. */
+    readonly displayName: string | null;
+    readonly origin: ApplicationOrigin;
+    /** Null: the read could not tell. */
+    readonly publisherVerified: boolean | null;
+    /** Null: not read. Empty: read, and it has none. */
+    readonly owners: readonly { readonly kind: OwnerKind; readonly id: string }[] | null;
+    readonly delegatedGrants: {
+        readonly read: boolean;
+        readonly grants: readonly {
+            readonly resourceAppId: string | null;
+            readonly consentType: ConsentType;
+            readonly principalCount: number | null;
+            readonly scopes: readonly string[];
+            readonly unreadableScopes: number;
+        }[];
+    };
+    readonly applicationPermissions: {
+        readonly read: boolean;
+        readonly permissions: readonly { readonly resourceAppId: string | null; readonly roleId: string; readonly name: string | null }[];
+    };
+    /** HIGH: a high-privilege grant was seen. NOT_HIGH: every grant was read, every one known, none high. */
+    readonly privilege: 'HIGH' | 'NOT_HIGH' | 'NOT_CONCLUDED';
+    /** The classes its high-privilege grants reach, in the table's order. */
+    readonly classes: readonly PermissionClass[];
+    readonly highPermissions: readonly LocalApplicationPermission[];
+    /** Permissions the classification table does not know: never called high, never called low. */
+    readonly unknownPermissions: readonly LocalApplicationPermission[];
+    readonly signIn: { readonly read: boolean; readonly lastSeen: string | null; readonly daysSince: number | null };
+    readonly usage: 'USED' | 'UNUSED' | 'NOT_CONCLUDED';
+    readonly credentials: number;
+}
+
+export interface LocalIntegrationFinding {
+    readonly code: IntegrationFindingCode;
+    readonly sourceRef: string;
+    readonly severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    /** The application it is about; null for a finding about a source. */
+    readonly applicationId: string | null;
+    readonly title: string;
+    readonly description: string;
+}
+
+export interface LocalIntegrationsResults {
+    /** The integrations report's contract. */
+    readonly contract: string;
+    readonly report: {
+        /** The file it is written as, beside `report.signed.json`. */
+        readonly file: string;
+        /** SHA-256 (hex) of the bytes of the signed integrations report. */
+        readonly sha256: string;
+    };
+    /** Every source read in full, and no sign-in read stopped part way, and at least one source. */
+    readonly complete: boolean;
+    /** The window "unused" was planned over, as the configuration set it. */
+    readonly unusedDays: number;
+    readonly sources: readonly LocalIntegrationsSource[];
+    /** Sorted by `id`. */
+    readonly applications: readonly LocalApplicationResult[];
+    /** In the planner's order. */
+    readonly findings: readonly LocalIntegrationFinding[];
+    /** What could not be concluded, and why. Never empty when something was not read. */
+    readonly notConcluded: readonly {
+        readonly code: IntegrationFindingCode;
+        readonly applicationId: string | null;
+        readonly sourceKind: string;
+        readonly why: IntegrationNotConcludedWhy;
+    }[];
+    /** Every permission name the classification table does not know, once per API. */
+    readonly unknownPermissions: readonly { readonly resourceAppId: string | null; readonly name: string }[];
+    readonly counts: {
+        readonly applications: number;
+        readonly highPrivilege: number;
+        readonly unverifiedPublisher: number;
+        readonly noOwner: number;
+        readonly unused: number;
+    };
 }

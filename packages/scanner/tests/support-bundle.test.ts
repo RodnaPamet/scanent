@@ -85,6 +85,7 @@ const DOCTOR: DoctorReport = {
     ready: false,
     counts: { PASS: 1, WARN: 1, FAIL: 1, SKIPPED: 1 },
     exitCode: 6,
+    scanners: [{ scanner: 'agents', scopes: ['mcp:crm', 'okta-app', 'mcp:tickets'] }],
     checks: [
         { scope: 'local', id: 'config.valid', status: 'PASS', detail: '9 sources' },
         { scope: 'mcp:crm', id: 'reachable', status: 'FAIL', class: 'NETWORK', detail: 'mcp.acme.example gave no answer', fix: 'Open TCP 443 to mcp.acme.example.' },

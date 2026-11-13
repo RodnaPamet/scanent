@@ -587,6 +587,121 @@ rendered for a reviewer: every host, method and path, what is kept from each,
 and what is never requested. The report itself is specified in
 [contract.md](contract.md).
 
+## The integrations scanner
+
+The same image holds a second scanner (`docs/design/scanners.md`): the
+**integrations scanner**. It asks what a directory has granted to the
+applications in it, and whether anybody owns those grants. Which scanners a
+run runs follows from the sources configured: each source kind belongs to
+exactly one (`packages/scanner/src/scanners.ts`). The integrations scanner has
+one source kind today, `entra-integrations`; Okta and GitHub are later steps.
+
+**It runs with the agent scanner or on its own.** A configuration with
+integrations sources and no agent source runs the integrations scanner alone
+(`deploy/examples/integrations-only.json`). Nothing in such a run is an agent
+result: no agent report is built or signed, no agent file is written, and the
+results, the pointer, the page and the PDF each say that only the
+integrations scanner ran, so an absent agent scan never reads as a clean one.
+The `inflect` output posts the agent report only, so a configuration with no
+agent source may not name it (or mean it, with an `inflect` block and no
+`outputs`): name `file` or `stdout`.
+
+One run writes one signed report per scanner it ran, with the same key and
+the same scan id: the agent report is `report.signed.json` under
+`inflect-agent-harness/4`, as before; the integrations report is
+`report.integrations.signed.json` under `scanent-integrations/1`
+([contract.md](contract.md#the-integrations-contract)). An agents-only run
+writes exactly what it wrote before the integrations scanner existed, apart
+from the manifest hash every report carries, which covers both scanners'
+requests (`packages/scanner/tests/agents-only-identity.test.ts`). The
+`inflect` output posts the agent report only: the tenant has no ingest for the
+integrations report yet, and the log says it was not posted. `stdout` prints
+each report the run made, one per line, the agent report first.
+
+### `entra-integrations`
+
+```json
+{
+  "kind": "entra-integrations",
+  "directoryId": "<Entra directory id, a GUID>",
+  "clientId": "<app id>",
+  "clientSecretEnv": "ENTRA_CLIENT_SECRET",
+  "readSignInActivity": true,
+  "unusedDays": 90
+}
+```
+
+It may use the same application, and the same secret variable, as `entra-sp`:
+one directory, two scanners. That application then also needs
+`Directory.Read.All`. `readSignInActivity` (default `false`) also reads each
+application's last sign-in, which needs `AuditLog.Read.All` and a licence that
+records it. `unusedDays` (1 to 3,650, default 90) is the window "unused" is
+planned over; it is a setting of the results and is not in the signed report.
+
+**Which applications.** Every enabled `Application` service principal, the
+directory's own and other directories', except Microsoft's own first-party
+applications, which are the platform. Managed identities, legacy and social
+principals and disabled principals are counted in `rows` and reported as
+nothing.
+
+**What is read, all by GET on `graph.microsoft.com`, after one
+client-credentials exchange:**
+
+| Request | What is kept |
+|---|---|
+| `GET /v1.0/servicePrincipals` | Each principal's id, application id, display name (only when printable, at most 256 characters and not secret-shaped), registering directory, verified publisher's id, owners' ids, the ids and dates of its credentials, and every principal's app roles (id and value), which name what an assignment grants |
+| `GET /v1.0/applications` | For the directory's own applications, the owners of the registration, which count as owners too |
+| `GET /v1.0/oauth2PermissionGrants` | Each delegated grant's application, API, consent type and scopes. A grant for named people keeps how many, and drops who |
+| `GET /v1.0/servicePrincipals/{id}/appRoleAssignments` | Each reported application's application permissions. Four applications are read at a time |
+| `GET /beta/reports/servicePrincipalSignInActivities` | Only with `readSignInActivity`: each application's last sign-in, to the day |
+
+**Completeness.** As every other source: each listing is paged by
+`@odata.nextLink` to its end; an error, a rate limit (`429`, whatever its
+`Retry-After`: there is no retry), a torn page or a cap ends the read
+`INCOMPLETE` with the contract's reason, and what was read is reported with
+each list saying whether it was read in full. A principal, registration,
+grant or assignment that cannot be keyed by its ids fails the read rather than
+being skipped. The sign-in read has a status of its own: refused, it leaves
+the inventory complete and "unused" not concluded.
+
+**Findings** are planned from the report by the contract's planner
+(`planIntegrationsScan`): `INTEGRATION_HIGH_PRIVILEGE_GRANT`,
+`INTEGRATION_UNVERIFIED_PUBLISHER`, `INTEGRATION_NO_OWNER`,
+`INTEGRATION_UNUSED` and `INTEGRATION_EMPTY_INVENTORY`. Which Microsoft Graph
+permissions are high-privilege is a written table
+(`packages/contract/src/integrations-scopes.ts`); a permission it does not
+know, or one on another API, is listed and never called high or low.
+[guide/findings.md](guide/findings.md#integration-findings) explains each.
+
+**Its outputs.** `results.json` gains an `integrations` section (optional, so a
+results file without one reads as before), the run directory gains
+`report.integrations.signed.json`, `integrations.csv` (one row per
+application) and `integration-findings.csv`, and `summary.html` and
+`report.pdf` gain an "Integrations" section. A page or a PDF of an agents-only
+run holds none of it.
+
+**On its own**, a run's directory holds `report.integrations.signed.json`,
+`results.json`, `integrations.csv`, `integration-findings.csv`,
+`summary.html`, `report.pdf` and `manifest.json`, and no agent file: an empty
+`agents.csv` would read as an agent scan that found nothing. Its
+`results.json` is `scanent-results-integrations/1`: the scan, the signer, the
+integrations section, and `"scanners": ["integrations"]`, with no agent
+member at all. Its `latest.json` carries `scanners` and `applicationCount` in
+place of `agentCount`. Its page and PDF open with which scanner ran and a
+sentence saying the agent scanner did not, then hold the integrations section
+and its limits.
+
+**Compared with the previous run.** The integrations section of the page and
+the PDF ends with the integrations compared with the run `latest.json` named,
+by the agent comparison's rules: an application absent from the new run is
+"gone" only when its source was read in full and found at least one
+application; a finding no longer raised is closed only when the new run
+answered the question it asks; everything else is "not concluded", with the
+reason, and an incomplete side concludes nothing. Each scanner is compared on
+its own: a previous run in which a scanner did not run is "not compared" for
+that scanner, with that reason, and never treated as an empty scan.
+`scanent diff` compares the integrations too ([Comparing two runs](#comparing-two-runs)).
+
 ## What it may import
 
 Itself; Node's built-ins; `zod`; `typescript`, whose syntax-only parser the
@@ -916,7 +1031,9 @@ node packages/scanner/dist/cli.js help
 
 `scan --strict` changes the exit code and nothing else: a run that was
 delivered exits 3 when a source was `INCOMPLETE` or the scan found no agent,
-so a scheduler can tell a full run from a partial one. Without it a delivered
+so a scheduler can tell a full run from a partial one. Each scanner that ran is
+held to the same rule: for the integrations scanner, a source or its sign-in
+read `INCOMPLETE`, or no application found, exits 3 too. Without it a delivered
 run exits 0, complete or not, as it always has; the report and the local
 results say what was incomplete either way. `schedule` does not take the flag,
 because a schedule does not exit.
@@ -1113,6 +1230,13 @@ The `inflect` output's key is used only to post, which is a write, so `doctor`
 checks that the key is present and reports whether it may post as `not
 observable`: the first `scan` shows it.
 
+The table is grouped by scanner: the local checks first, then
+`== The agent scanner ==` with its sources' scopes and the `inflect` output
+(which posts the agent report), then `== The integrations scanner ==` with
+its sources' scopes, each group present only when the configuration names a
+source of that scanner. The JSON document carries the same grouping as
+`scanners`, a list of `{ scanner, scopes }` beside the flat `checks`.
+
 The local checks, under the scope `local`:
 
 | Check | What it looks at |
@@ -1175,7 +1299,8 @@ into a pass. It is always shown and always counted as not checked.
 scanent hosts --config <file> [--format lines|json|egress-allow]
 ```
 
-Prints the hosts the configuration makes the scanner reach, each on port 443.
+Prints the hosts the configuration makes the scanner reach, each on port 443,
+grouped by scanner.
 It is offline: it needs no credential and makes no request. The list is
 derived from the same constants the declared surface is built from, and a test
 holds it equal to the hosts a full scan contacts.
@@ -1191,10 +1316,16 @@ holds it equal to the hosts a full scan contacts.
 | `mcp` | Each server's host |
 | `inflect-register`, and the `inflect` output | The tenant's host |
 | `code` | None |
+| `entra-integrations` (the integrations scanner) | `login.microsoftonline.com`, `graph.microsoft.com` |
 
-`lines` (the default) prints `host:443`, sorted, one per line. `egress-allow`
-prints the comma-separated value the bundled proxy's `EGRESS_ALLOW` takes.
-`json` prints each entry with its source and purpose.
+`lines` (the default) prints, for each scanner that reaches a host, a heading
+line (`# agent scanner`, `# integrations scanner`) and then `host:443`,
+sorted, one per line; a host both scanners reach is listed under each, and a
+configuration that reaches no host prints nothing. The `inflect` output is the
+agent scanner's, since it posts the agent report. `egress-allow` prints the
+comma-separated value the bundled proxy's `EGRESS_ALLOW` takes: one list for
+one proxy, each host once. `json` prints each entry with its scanner, source
+and purpose, the agent scanner's first.
 
 ### `support-bundle`
 
@@ -1455,7 +1586,7 @@ stand-in.
 | 0 | OK | The command did what it was asked. `scan`: every output delivered. `diff`: no difference. `doctor`: ready |
 | 1 | FAILED | The command failed: an output was not delivered, the ingest refused the report, the signing key is missing, or an error with no class of its own. `diff`: a difference |
 | 2 | USAGE | Wrong arguments, an unknown flag, nowhere to deliver, a refused overwrite. Nothing was read or written |
-| 3 | INCOMPLETE | Nothing failed, and not everything could be established. `scan --strict`: delivered, but a source was `INCOMPLETE` or no agent was found. `diff`: could not compare everything. `doctor`: warnings or blocked checks |
+| 3 | INCOMPLETE | Nothing failed, and not everything could be established. `scan --strict`: delivered, but a source was `INCOMPLETE` or no agent (or, for the integrations scanner, no application) was found. `diff`: could not compare everything. `doctor`: warnings or blocked checks |
 | 4 | CONFIG | The configuration, the answers file, the inventory or a secret file was refused; `NODE_TLS_REJECT_UNAUTHORIZED=0` |
 | 5 | CREDENTIAL | `doctor`: a credential is missing or refused |
 | 6 | NETWORK | `doctor`: a host could not be resolved or reached |
@@ -1472,7 +1603,9 @@ The file output writes one directory per run and a pointer to the newest:
 
 ```
 <dir>/
-  latest.json                    { scanId, dir, asOf, complete, agentCount }
+  latest.json                    { scanId, dir, asOf, complete, agentCount }, or for a
+                                 run of the integrations scanner alone
+                                 { scanId, dir, asOf, complete, scanners, applicationCount }
   runs/
     <scanId>/
       report.signed.json         the signed report, byte for byte what would be posted
@@ -1482,7 +1615,15 @@ The file output writes one directory per run and a pointer to the newest:
       summary.html               the results to read in a browser; interactive with JavaScript on
       report.pdf                 the same results as a document
       manifest.json              the names, sizes and SHA-256 of the other six
+      report.integrations.signed.json, integrations.csv, integration-findings.csv
+                                 only for a run with an integrations source; the
+                                 manifest then names nine
 ```
+
+A run of the integrations scanner alone holds `report.integrations.signed.json`,
+`results.json` (`scanent-results-integrations/1`), `integrations.csv`,
+`integration-findings.csv`, `summary.html`, `report.pdf` and `manifest.json`,
+and no agent file ([The integrations scanner](#the-integrations-scanner)).
 
 A run is rendered in memory, checked, written under a temporary name and
 renamed into place, so a run directory is whole or absent. Nothing that exists
@@ -1508,7 +1649,10 @@ previous run" section. No flag is needed: the directory already records its
 previous run. A pointer or results file that cannot be read as one, or a pair
 the comparison refuses (another scanner, another ladder, a time that is not
 earlier), is stated on the page as not compared, with the reason, and the run
-is written all the same.
+is written all the same. Each scanner's section is compared with the previous
+run's section of the same scanner; where that scanner did not run in the
+previous run, its section says so ("the previous run did not run the agent
+scanner", or "the integrations scanner") rather than comparing with nothing.
 
 For a source that was not read in full, the run's own results add what the
 signed report does not carry: `detail`, why it stopped in the scanner's fixed
@@ -1659,6 +1803,33 @@ run that is not later than the older, different ladder versions, and different
 scanners unless `--allow-different-scanner` (and then nothing absent is
 concluded). Two runs that name different estates are compared with the warning
 `ESTATE_DIFFERS`, and nothing absent is concluded either.
+
+**Both scanners.** Two runs of the agent scanner alone are compared exactly as
+above, and the output is that comparison (`scanent-diff/1`). Once either side
+holds the integrations scanner's results (a `results.json` with an
+`integrations` section, a `scanent-results-integrations/1` file, or a signed
+`scanent-integrations/1` report, which is scored over the default window for
+"unused" because the report does not carry one), the output is
+`scanent-run-diff/1`: one member per scanner, the agent comparison above and
+the integrations comparison below, each by its own rules, and one outcome over
+both. A scanner that ran in one run only is a difference (`ADDED` or
+`NO_LONGER_RUN`) and nothing about what it would have found is concluded; one
+that ran in neither is `NOT_RUN`. Two runs that share no scanner are refused,
+exit code 2.
+
+| Integrations entry | When |
+|---|---|
+| application `new` | in the newer run and not the older |
+| application `gone` | in the older run only, and its source was read in full by the newer run and found at least one application |
+| application `not seen` | in the older run only, and its source was incomplete, not listed, or found none. Nothing is concluded |
+| finding `opened` | raised by the newer run and not the older |
+| finding `closed` | raised by the older run only, its application present in the newer run, and the newer run's planner answered the question the finding asks (an empty inventory closes on any application found) |
+| `no longer raised, not concluded` | everything else: the application not seen or gone, or the question not answered (the reason is the planner's, for example `SIGN_IN_READ_INCOMPLETE`) |
+| completeness | a source, or its sign-in read, newly incomplete, newly complete, added or no longer read |
+
+Every question the newer run could not answer is listed as not concluded, so
+two runs with an incomplete side are never `SAME`. Different windows for
+"unused" are compared with the warning `UNUSED_DAYS_DIFFER`.
 
 The strings in a diff are scanned data. In the text output every control
 character, line separator and bidirectional control is written as a visible

@@ -32,6 +32,7 @@ import { loadSigningKey } from '../src/scan';
 import { diffResults } from '@scanent/report/diff/diff';
 import { renderReportPdf } from '../src/report-pdf';
 import { CANARIES, capturedLog, configOf, ENV, EXAMPLE_AGENT, noFetch, pageDataOf, pdfTextOf, scanExample, stringsOf, tree } from './helpers/output-fixtures';
+import { agentsOf } from './helpers/run-scan';
 
 const T1 = Date.parse('2026-11-03T03:30:00.000Z');
 
@@ -107,12 +108,12 @@ describe('through a source', () => {
             fetchImpl: noFetch,
         });
         expect(result.ok).toBe(true);
-        expect(result.scan.body.agents).toHaveLength(1);
+        expect(agentsOf(result).body.agents).toHaveLength(1);
         const files = tree(out);
         expect(Object.keys(files)).toHaveLength(8);
         for (const content of [...Object.values(files), ...printed, text()]) expect(content).not.toContain(canary);
         // Read as a viewer would: the PDF's inflated text, and the page's data as parsed JSON.
-        const run = path.join(out, 'runs', result.scan.body.scan.id);
+        const run = path.join(out, 'runs', agentsOf(result).body.scan.id);
         const pdf = pdfTextOf(fs.readFileSync(path.join(run, 'report.pdf')));
         expect(pdf.joined).toContain(EXAMPLE_AGENT);
         expect(pdf.joined).not.toContain(canary);

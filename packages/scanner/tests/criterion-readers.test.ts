@@ -64,6 +64,8 @@ const SOURCE_FILES: Readonly<Record<string, HarnessSourceKind>> = {
 };
 /** Readers no configuration selects: no run can have one, so the table does not list them. */
 const NOT_CONFIGURABLE = ['openshell.ts'];
+/** Readers of another scanner: they report applications, never an agent's verdict, so the table does not list them. */
+const OTHER_SCANNERS: Readonly<Record<string, string>> = { 'entra-integrations.ts': 'entra-integrations' };
 
 interface StaticVerdicts {
     /** Every criterion id the file holds as a string literal. */
@@ -110,15 +112,22 @@ const kindsWith = (pick: 'reportedBy' | 'metBy', kind: string): string[] =>
 describe('1. and 2. the table is what each source\'s code can report', () => {
     it('covers every reader file there is', () => {
         const files = fs.readdirSync(SOURCES_DIR).filter((name) => name.endsWith('.ts')).sort();
-        expect(files).toEqual([...Object.keys(SOURCE_FILES), ...NOT_CONFIGURABLE].sort());
+        expect(files).toEqual([...Object.keys(SOURCE_FILES), ...NOT_CONFIGURABLE, ...Object.keys(OTHER_SCANNERS)].sort());
         // And every kind the contract has, once.
         expect(sorted(Object.values(SOURCE_FILES))).toEqual(sorted(SOURCE_KINDS));
+    });
+
+    it('a reader of another scanner names no criterion at all', () => {
+        for (const file of Object.keys(OTHER_SCANNERS)) {
+            const { named, meetsByVariable } = staticVerdictsOf(path.join(SOURCES_DIR, file));
+            expect([file, [...named], meetsByVariable]).toEqual([file, [], false]);
+        }
     });
 
     it('leaves out only a reader no configuration can select', () => {
         const scan = fs.readFileSync(path.resolve(SOURCES_DIR, '..', 'scan.ts'), 'utf8');
         for (const file of NOT_CONFIGURABLE) expect(scan).not.toContain(`./sources/${file.replace(/\.ts$/, '')}`);
-        for (const file of Object.keys(SOURCE_FILES)) expect(scan).toContain(`./sources/${file.replace(/\.ts$/, '')}`);
+        for (const file of [...Object.keys(SOURCE_FILES), ...Object.keys(OTHER_SCANNERS)]) expect(scan).toContain(`./sources/${file.replace(/\.ts$/, '')}`);
     });
 
     it.each(Object.entries(SOURCE_FILES).filter(([, kind]) => kind !== 'code'))('%s reports exactly the criteria the table gives %s', (file, kind) => {

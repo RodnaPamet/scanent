@@ -15,13 +15,19 @@
 import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from 'crypto';
 
 import type { HarnessReportBodyV4 } from '@rodnapamet/scanent-contract/harness-contract';
+import type { IntegrationsReportBody } from '@rodnapamet/scanent-contract/integrations-contract';
+
+import { DEFAULT_UNUSED_DAYS } from '@rodnapamet/scanent-contract/integrations-findings';
 
 import { sourceCredentialEnv, type InflectConfig, type ScannerConfig } from './config';
 import { customerHostCheckFor, type CustomerHostCheck, type ResolveHost } from './customer-host';
 import { createSourceWire, type FetchLike } from './http';
+import { buildIntegrationsReportBody, signIntegrationsReport } from './integrations-report';
+import type { IntegrationsSource, IntegrationsSourceRead } from './integrations-source';
 import type { ScannerLog } from './log';
 import { postReport, type PostResult } from './post';
 import { buildReportBody, signReport } from './report';
+import { isAgentSourceKind } from './scanners';
 import type { SourceNote } from '@scanent/report/results/types';
 
 import {
@@ -35,6 +41,7 @@ import {
 } from './source';
 import { azureKeyVaultSource } from './sources/azure-key-vault';
 import { entraSource } from './sources/entra';
+import { entraIntegrationsSource } from './sources/entra-integrations';
 import { gcpServiceAccountSource } from './sources/gcp-service-accounts';
 import { githubActionsSource } from './sources/github-actions';
 import { proveEgress, type EgressProbe, type EgressProof } from './egress-proof';
@@ -82,15 +89,44 @@ function requiredEnv(env: Env, name: string, what: string): string {
     return v;
 }
 
-/** The configured sources, constructed — or, where a credential is missing, already reported unreadable. */
+/**
+ * The configured sources, constructed — or, where a credential is missing,
+ * already reported unreadable. The agent scanner's in `sources`, the
+ * integrations scanner's in `integrations`: the two are read into two reports.
+ */
 export function buildSources(
     config: ScannerConfig,
     env: Env,
     seams: { readonly resolveHost?: ResolveHost; readonly checkHost?: CustomerHostCheck; readonly egressProof?: EgressProof } = {},
-): { sources: HarnessSource[]; unreadable: SourceRead[] } {
+): {
+    sources: HarnessSource[];
+    unreadable: SourceRead[];
+    integrations: { sources: IntegrationsSource[]; unreadable: IntegrationsSourceRead[] };
+} {
     const sources: HarnessSource[] = [];
     const unreadable: SourceRead[] = [];
+    const integrations: { sources: IntegrationsSource[]; unreadable: IntegrationsSourceRead[] } = { sources: [], unreadable: [] };
     for (const s of config.sources) {
+        if (s.kind === 'entra-integrations') {
+            const secret = env[s.clientSecretEnv];
+            if (typeof secret !== 'string' || secret.trim() === '') {
+                // A source that could not be read is reported, never omitted: so is its sign-in read, when it was asked for.
+                integrations.unreadable.push({
+                    kind: s.kind,
+                    status: 'INCOMPLETE',
+                    reason: 'AUTH_FAILED',
+                    detail: 'credential not set',
+                    rows: 0,
+                    signInActivity: s.readSignInActivity ? { status: 'INCOMPLETE', reason: 'AUTH_FAILED', rows: 0 } : { status: 'NOT_READ' },
+                    applications: [],
+                });
+            } else {
+                integrations.sources.push(
+                    entraIntegrationsSource({ directoryId: s.directoryId, clientId: s.clientId, clientSecret: secret.trim(), readSignInActivity: s.readSignInActivity }),
+                );
+            }
+            continue;
+        }
         if (s.kind === 'code') {
             // Reads files under its roots and holds no credential.
             sources.push(langchainCodeSource({ roots: s.roots, providerSdks: s.providerSdks }));
@@ -188,7 +224,7 @@ export function buildSources(
             );
         }
     }
-    return { sources, unreadable };
+    return { sources, unreadable, integrations };
 }
 
 function scanIdFor(estate: string, asOf: Date): string {
@@ -220,7 +256,66 @@ export function sourceNotesOf(reads: readonly SourceRead[]): readonly SourceNote
     }));
 }
 
-export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: HarnessReportBodyV4; sourceNotes: readonly SourceNote[] }> {
+/**
+ * The integrations scanner's part of one run, present only when an
+ * integrations source is configured: its signed report, its body, the
+ * sources' own words about a read that stopped, and the window "unused" is
+ * planned over.
+ */
+export interface IntegrationsScan {
+    readonly raw: string;
+    readonly body: IntegrationsReportBody;
+    readonly sourceNotes: readonly SourceNote[];
+    readonly unusedDays: number;
+}
+
+/** The agent scanner's part of one run: its signed report, its body, and the sources' own words about a read that stopped. */
+export interface AgentScan {
+    readonly raw: string;
+    readonly body: HarnessReportBodyV4;
+    readonly sourceNotes: readonly SourceNote[];
+}
+
+export interface ScanResult extends AgentScan {
+    /** Absent unless an integrations source is configured: an agents-only run is what it was before scanners. */
+    readonly integrations?: IntegrationsScan;
+}
+
+/**
+ * One run of every scanner the configuration's sources call for. Which
+ * scanners run follows from the sources configured: `agents` is null when no
+ * agent source is, and `integrations` when no integrations source is. One
+ * scan id and one moment for both.
+ */
+export interface RunScan {
+    readonly scanId: string;
+    readonly asOf: string;
+    readonly agents: AgentScan | null;
+    readonly integrations: IntegrationsScan | null;
+}
+
+/** What the integrations sources said about a read that stopped, one note per kind, for the local results. */
+export function integrationsSourceNotesOf(reads: readonly IntegrationsSourceRead[]): readonly SourceNote[] {
+    return reads
+        .filter((r) => r.status !== 'COMPLETE' || r.signInActivity.status === 'INCOMPLETE')
+        .map((r) => {
+            const details = [
+                ...(r.status === 'INCOMPLETE' && r.detail !== undefined ? [r.detail] : []),
+                ...(r.signInActivity.status === 'INCOMPLETE' && r.signInActivity.detail !== undefined ? [`sign-in activity: ${r.signInActivity.detail}`] : []),
+            ];
+            return { kind: r.kind, detail: details.length === 0 ? null : details.join('; '), notRead: [], notReadTotal: 0 };
+        });
+}
+
+/** One scan of the agent scanner, with the integrations part when configured. Refuses a configuration with no agent source. */
+export async function runScan(deps: ScanDeps): Promise<ScanResult> {
+    const run = await runScanAll(deps);
+    if (run.agents === null) throw new Error('the configuration has no agent source: the agent scanner did not run');
+    return run.integrations === null ? run.agents : { ...run.agents, integrations: run.integrations };
+}
+
+/** Read every configured source of every scanner, build each scanner's report and sign it with the one key. */
+export async function runScanAll(deps: ScanDeps): Promise<RunScan> {
     const { config, env, log } = deps;
     const now = deps.now ?? Date.now;
     const fetchImpl: FetchLike = deps.fetchImpl ?? ((url, init) => fetch(url, init));
@@ -252,8 +347,27 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
         if (checkedByProxy) log.info('customer host checked by the egress proxy', { host });
         else log.warn('customer host reached through a proxy', { host, note: "the address check binds this machine's resolver, not the proxy's" });
     });
-    const { sources, unreadable } = buildSources(config, env, { resolveHost: deps.resolveHost, checkHost, egressProof });
+    const { sources, unreadable, integrations } = buildSources(config, env, { resolveHost: deps.resolveHost, checkHost, egressProof });
 
+    // Every source of every scanner in parallel, each in its own wire, time box and byte budget.
+    const integrationReadsPending = Promise.all(
+        integrations.sources.map(async (source): Promise<IntegrationsSourceRead> => {
+            const wire = createSourceWire({ fetchImpl, deadline, now });
+            try {
+                return await source.read({ asOf, deadline, now, ...wire });
+            } catch {
+                return {
+                    kind: source.kind,
+                    status: 'INCOMPLETE',
+                    reason: 'UNREACHABLE',
+                    detail: 'the reader stopped on an error of its own',
+                    rows: 0,
+                    signInActivity: { status: 'NOT_READ' },
+                    applications: [],
+                };
+            }
+        }),
+    );
     const reads = await Promise.all(
         sources.map(async (source) => {
             const { http, tokens, mcp, register, openshell } = createSourceWire({ fetchImpl, deadline, now });
@@ -264,6 +378,7 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
             }
         }),
     );
+    const integrationReads = [...(await integrationReadsPending), ...integrations.unreadable];
 
     for (const r of [...reads, ...unreadable]) {
         const fields = { source: r.kind, status: r.status, rows: r.rows, principals: r.observations.length, toolCalls: toolCallsOf(r) };
@@ -281,13 +396,42 @@ export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: Harn
         }
     }
 
-    const body = buildReportBody(
-        { scanId: scanIdFor(config.estate, asOf), asOf, scannerAgentId: config.scanner.agentId },
-        [...reads, ...unreadable],
-    );
-    const raw = signReport(body, keys);
-    log.info('report signed', { scan: body.scan.id, agents: body.agents.length, sources: body.population.sources.length });
-    return { raw, body, sourceNotes: sourceNotesOf([...reads, ...unreadable]) };
+    for (const r of integrationReads) {
+        const read = { source: r.kind, status: r.status, rows: r.rows, applications: r.applications.length, signInActivity: r.signInActivity.status };
+        if (r.status === 'COMPLETE') log.info('integrations source read', read);
+        else log.warn('integrations source incomplete', { ...read, reason: r.reason ?? null, detail: r.detail ?? null });
+        if (r.signInActivity.status === 'INCOMPLETE') log.warn('sign-in activity incomplete', { source: r.kind, reason: r.signInActivity.reason, detail: r.signInActivity.detail ?? null });
+    }
+
+    const identity = { scanId: scanIdFor(config.estate, asOf), asOf, scannerAgentId: config.scanner.agentId };
+    // The agent scanner runs when an agent source is configured: an agent source
+    // whose credential is missing still counts, and is reported unreadable.
+    const agentsConfigured = config.sources.some((s) => isAgentSourceKind(s.kind));
+    let agents: AgentScan | null = null;
+    if (agentsConfigured) {
+        const body = buildReportBody(identity, [...reads, ...unreadable]);
+        const raw = signReport(body, keys);
+        log.info('report signed', { scan: body.scan.id, agents: body.agents.length, sources: body.population.sources.length });
+        agents = { raw, body, sourceNotes: sourceNotesOf([...reads, ...unreadable]) };
+    }
+    if (integrationReads.length === 0) return { scanId: identity.scanId, asOf: asOf.toISOString(), agents, integrations: null };
+
+    // One report per scanner: the same key, the same scan id.
+    const integrationsBody = buildIntegrationsReportBody(identity, integrationReads);
+    const integrationsRaw = signIntegrationsReport(integrationsBody, keys);
+    log.info('integrations report signed', { scan: integrationsBody.scan.id, applications: integrationsBody.applications.length, sources: integrationsBody.sources.length });
+    const unusedDays = config.sources.find((s) => s.kind === 'entra-integrations')?.unusedDays;
+    return {
+        scanId: identity.scanId,
+        asOf: asOf.toISOString(),
+        agents,
+        integrations: {
+            raw: integrationsRaw,
+            body: integrationsBody,
+            sourceNotes: integrationsSourceNotesOf(integrationReads),
+            unusedDays: unusedDays ?? DEFAULT_UNUSED_DAYS,
+        },
+    };
 }
 
 /** The `inflect` block and the ingest key it names, or a refusal that names what is missing. */

@@ -176,10 +176,10 @@ describe('3. refusals', () => {
         ['text that is not JSON', () => file('x.json', '{ "schema": '), 'old: not JSON'],
         ['a JSON array', () => file('x.json', '[]'), 'old: not a results file or a signed report'],
         // Phase 4: an object that names no schema, or another one, is told which this version reads.
-        ['a JSON object that is neither', () => file('x.json', '{"hello":"world"}'), 'old: the file names no schema; this version reads scanent-results/1 files and signed inflect-agent-harness/2, inflect-agent-harness/3 and inflect-agent-harness/4 reports'],
-        ['a results file of a later schema', () => file('x.json', JSON.stringify({ ...first.results, schema: 'scanent-results/2' })), 'old: the file names "scanent-results/2" as its schema; this version reads scanent-results/1'],
-        ['a schema id of another family, which is not repeated', () => file('x.json', '{"schema":"zz-something-else/1"}'), 'old: the file names a schema this version does not know as its schema; this version reads scanent-results/1'],
-        ['a schema id that is not text', () => file('x.json', '{"schema":2}'), 'old: the file names a schema this version does not know as its schema; this version reads scanent-results/1'],
+        ['a JSON object that is neither', () => file('x.json', '{"hello":"world"}'), 'old: the file names no schema; this version reads scanent-results/1 and scanent-results-integrations/1 files and signed inflect-agent-harness/2, inflect-agent-harness/3, inflect-agent-harness/4 and scanent-integrations/1 reports'],
+        ['a results file of a later schema', () => file('x.json', JSON.stringify({ ...first.results, schema: 'scanent-results/2' })), 'old: the file names "scanent-results/2" as its schema; this version reads scanent-results/1 and scanent-results-integrations/1'],
+        ['a schema id of another family, which is not repeated', () => file('x.json', '{"schema":"zz-something-else/1"}'), 'old: the file names a schema this version does not know as its schema; this version reads scanent-results/1 and scanent-results-integrations/1'],
+        ['a schema id that is not text', () => file('x.json', '{"schema":2}'), 'old: the file names a schema this version does not know as its schema; this version reads scanent-results/1 and scanent-results-integrations/1'],
         ['a results file with a member missing', () => file('x.json', JSON.stringify({ ...first.results, coverage: undefined })), 'old: not a valid scanent-results/1 file (coverage: invalid_type)'],
         ['a results file with an unknown member', () => file('x.json', JSON.stringify({ ...first.results, extra: 1 })), 'old: not a valid scanent-results/1 file ((root): unrecognized_keys)'],
     ])('%s: exit 2, the side and the rule', (_label, make, message) => {

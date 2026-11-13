@@ -787,18 +787,19 @@ function describeSchemaIssue(issue: z.core.$ZodIssue): string {
     return looksLikeSecret(issue.message) ? `${path}: ${issue.code}` : `${path}: ${issue.message}`;
 }
 
+/** What the first seven checks leave: a body a trusted key signed, not yet held to any schema. */
+export type SignedEnvelopeResult =
+    | { readonly ok: true; readonly body: Record<string, unknown>; readonly signerKey: string }
+    | { readonly ok: false; readonly reason: Exclude<HarnessRefusal, 'SCHEMA'> };
+
 /**
- * Check a raw report against the contract, in the only safe order: size, JSON,
- * signature by a TRUSTED key, then the strict schema OF THE ID THE REPORT
- * NAMES. `trustedSignerKeys` are the public keys of scanners registered for
- * this tenant; a report signed by any other key is refused even if its
- * signature is mathematically valid. A report naming the retired `/1` passes
- * the first three steps like any other, and is refused at the fourth.
+ * The checks every report of this repository passes before any schema is
+ * read, whatever its contract: size, JSON, an object, a signature of the
+ * three members, a TRUSTED signer, and a signature that verifies over the
+ * canonical JSON of the body. Shared by every verifier, so a report of another
+ * scanner is held to exactly the same order (`verifyAndParseIntegrationsReport`).
  */
-export function verifyAndParseHarnessReport(
-    raw: string,
-    trustedSignerKeys: readonly string[],
-): HarnessParseResult {
+export function verifySignedEnvelope(raw: string, trustedSignerKeys: readonly string[]): SignedEnvelopeResult {
     if (Buffer.byteLength(raw, 'utf8') > MAX_REPORT_BYTES) return { ok: false, reason: 'TOO_LARGE' };
 
     let parsed: unknown;
@@ -831,6 +832,32 @@ export function verifyAndParseHarnessReport(
         valid = false;
     }
     if (!valid) return { ok: false, reason: 'BAD_SIGNATURE' };
+    return { ok: true, body, signerKey };
+}
+
+/**
+ * One schema issue as refusal text that carries nothing of the body: the
+ * harness verifier's own rule, for a verifier of another contract.
+ */
+export function describeReportSchemaIssue(issue: z.core.$ZodIssue): string {
+    return describeSchemaIssue(issue);
+}
+
+/**
+ * Check a raw report against the contract, in the only safe order: size, JSON,
+ * signature by a TRUSTED key, then the strict schema OF THE ID THE REPORT
+ * NAMES. `trustedSignerKeys` are the public keys of scanners registered for
+ * this tenant; a report signed by any other key is refused even if its
+ * signature is mathematically valid. A report naming the retired `/1` passes
+ * the first three steps like any other, and is refused at the fourth.
+ */
+export function verifyAndParseHarnessReport(
+    raw: string,
+    trustedSignerKeys: readonly string[],
+): HarnessParseResult {
+    const envelope = verifySignedEnvelope(raw, trustedSignerKeys);
+    if (!envelope.ok) return { ok: false, reason: envelope.reason };
+    const { body, signerKey } = envelope;
 
     // Which schema applies is itself body content, so it is read only now. An
     // id this verifier does not accept is a SCHEMA refusal that names the

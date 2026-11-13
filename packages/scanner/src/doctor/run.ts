@@ -29,7 +29,8 @@ import { isProxied, proxyInEffect } from '../proxy-env';
 import { buildSources } from '../scan';
 import { scannerManifestHash, SCANNER_VERSION } from '../scanner-surface';
 import type { Env } from '../secrets';
-import { SourceReadError, type HarnessSource, type ProbeStep, type SourceKind } from '../source';
+import { SCANNER_OF_SOURCE, SCANNERS, type ScannerId, type ScannerSourceKind } from '../scanners';
+import { SourceReadError, type ProbeStep, type SourceContext } from '../source';
 import {
     checkClock,
     checkConfigMode,
@@ -58,7 +59,7 @@ export interface DoctorDeps {
     /** `--out`: check this directory instead of the configuration's file output. */
     readonly out?: string | null;
     /** `--source`: limit the source checks to these kinds. Local checks always run. */
-    readonly only?: readonly SourceKind[];
+    readonly only?: readonly ScannerSourceKind[];
     /** TEST SEAMS, as in `ScanDeps`: production uses the global fetch, DNS, the file system and the clock. */
     readonly fetchImpl?: FetchLike;
     readonly resolveHost?: ResolveHost;
@@ -76,13 +77,20 @@ const NODE_FS: DoctorFs = {
     access: (p, mode) => accessSync(p, mode),
 };
 
+/** What doctor needs of a source of any scanner: its kind and its preflight. */
+interface Preflighted {
+    readonly kind: ScannerSourceKind;
+    preflight(ctx: SourceContext): Promise<readonly ProbeStep[]>;
+}
+
+
 const SOURCE_CHECK_IDS = ['credential.present', 'host.resolves', 'reachable', 'authenticated', 'read.permitted', 'write.absent'] as const;
 type SourceCheckId = (typeof SOURCE_CHECK_IDS)[number];
 
 /** One thing the source checks are reported for: a source, or one MCP server. */
 interface Target {
     readonly scope: string;
-    readonly kind: SourceKind;
+    readonly kind: ScannerSourceKind;
     /** The variable holding its credential; null when it takes none. */
     readonly credential: string | null;
     /** Its hosts. `guard` is the allowlist of a host that is checked before each request, else null. */
@@ -353,7 +361,7 @@ function codeChecks(t: Target, roots: readonly { readonly label: string; readonl
     return out;
 }
 
-function reportOf(estate: string | null, at: string, checks: readonly Check[]): DoctorReport {
+function reportOf(estate: string | null, at: string, checks: readonly Check[], scanners: DoctorReport['scanners'] = []): DoctorReport {
     for (const c of checks) assertWellFormed(c);
     return {
         doctor: DOCTOR_SCHEMA,
@@ -363,8 +371,20 @@ function reportOf(estate: string | null, at: string, checks: readonly Check[]): 
         ready: isReady(checks),
         counts: countsOf(checks),
         exitCode: doctorExitCode(checks),
+        scanners,
         checks,
     };
+}
+
+/** Each scanner's scopes, in the order the checks list them, for the scanners that have any. */
+function scannersOf(targets: readonly Target[], checks: readonly Check[]): DoctorReport['scanners'] {
+    const scannerOfScope = new Map<string, ScannerId>(targets.map((t) => [t.scope, SCANNER_OF_SOURCE[t.kind]]));
+    // The ingest posts the agent report: its checks are the agent scanner's.
+    scannerOfScope.set('inflect', 'agents');
+    return SCANNERS.map((scanner) => ({
+        scanner,
+        scopes: [...new Set(checks.map((c) => c.scope))].filter((scope) => scannerOfScope.get(scope) === scanner),
+    })).filter((g) => g.scopes.length > 0);
 }
 
 /** Read and parse the configuration, or say why not: the issue paths, never a value. */
@@ -418,15 +438,17 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
     // ─── The sources ───
     const sourceChecks: Check[] = [];
     const dates: string[] = [];
-    const { sources } = buildSources({ ...config, sources: wanted }, secrets.resolved, {
+    const built = buildSources({ ...config, sources: wanted }, secrets.resolved, {
         resolveHost: deps.resolveHost,
         checkHost: customerHostCheckFor(env, nodeVersion),
     });
+    // Every scanner's sources: each has the same preflight, and none is told apart here.
+    const sources: readonly Preflighted[] = [...built.sources, ...built.integrations.sources];
     const fetchImpl: FetchLike = deps.fetchImpl ?? ((url, init) => fetch(url, init));
 
     /** One source's preflight, in its own wire, time box and byte budget. A throw is the reader's fault, and still a failed read. */
-    const stepsOf = new Map<HarnessSource, Promise<readonly ProbeStep[]>>();
-    const runPreflight = (source: HarnessSource): Promise<readonly ProbeStep[]> => {
+    const stepsOf = new Map<Preflighted, Promise<readonly ProbeStep[]>>();
+    const runPreflight = (source: Preflighted): Promise<readonly ProbeStep[]> => {
         let running = stepsOf.get(source);
         if (running === undefined) {
             const asOf = new Date(now());
@@ -510,5 +532,5 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
         tls.status === 'FAIL' ? local.skip('egress', config.egress === undefined ? 'NOT_APPLICABLE' : 'BLOCKED', config.egress === undefined ? 'the configuration has no egress block' : 'certificate verification is off') : await checkEgress(config, env, deps.egressProbe),
         ...sourceChecks,
     ];
-    return reportOf(config.estate, at, checks);
+    return reportOf(config.estate, at, checks, scannersOf(targets, checks));
 }

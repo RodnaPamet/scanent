@@ -127,14 +127,50 @@ no secret value requested, every bound reported, nothing dropped in silence.
 A source that needs a request that is not a read, or that returns secret
 values, is a design question to raise before any code.
 
+A source of an existing **other scanner** (the integrations scanner's next
+reader, Okta or GitHub) follows the same checklist, with three differences:
+its interface is `IntegrationsSource` (`packages/scanner/src/integrations-source.ts`),
+which returns applications rather than principals; step 10 does not apply,
+because no reader of another scanner reports a criterion (the criterion-readers
+test holds that it names none); and steps 15 to 19 are made in that scanner's
+own contract (`packages/contract/src/integrations-contract-rules.ts` and
+`integrations-contract.ts`, a new `scanent-integrations/<n>`).
+
+## How a new scanner is added
+
+A scanner is a set of source kinds, a report contract, a planner and a section
+of the outputs ([design/scanners.md](../design/scanners.md)). Everything else
+is the platform, and a new scanner adds nothing to it but its own parts. The
+integrations scanner is the worked example. Each step names the file and what
+holds it:
+
+| # | Step | File | What holds it |
+|---|---|---|---|
+| 1 | Name the scanner and give each of its source kinds to it, and to it alone | `packages/scanner/src/scanners.ts` (`SCANNERS`, `SCANNER_OF_SOURCE`, `SCANNER_CONTRACT`, `SCANNER_REPORT_FILE`) | A record over every source kind: a kind with no scanner does not compile |
+| 2 | Write its contract as a new module pair: the browser-safe rules (ids, kinds, limits) and the strict schema with its verifier, built on `verifySignedEnvelope` so it is checked in the agent report's order and by its signature rules | `packages/contract/src/<scanner>-contract-rules.ts`, `packages/contract/src/<scanner>-contract.ts` | Its own contract tests; `packages/contract/tests/contract-doc.test.ts` |
+| 3 | Write its planner, pure and browser-safe, with the honesty rules: a presence counts on any read, an absence only on a whole one; an empty inventory from a whole read is a finding; what cannot be concluded is listed with its reason | `packages/contract/src/<scanner>-findings.ts` | Its own planner tests |
+| 4 | Describe the contract, its limits and its findings in blocks the doc test reads | `docs/contract.md` | `packages/contract/tests/contract-doc.test.ts` |
+| 5 | List the new modules of the package | `packages/contract/README.md`, the `package-modules` block of `docs/contract.md` | `packages/scanner/tests/contract-package.test.ts`, `packages/scanner/tests/package-closure.test.ts` |
+| 6 | Its sources, by the checklist above | | |
+| 7 | Build, sign and return its report from the run, with the agent report's key and scan id, and only when one of its sources is configured; the run must also work when it is the only scanner configured | `packages/scanner/src/scan.ts` (`runScanAll`), a `<scanner>-report.ts` | `packages/scanner/tests/agents-only-identity.test.ts`: a run without the new scanner writes what it wrote before; `packages/scanner/tests/integrations-only-run.test.ts`: the scanner alone, end to end |
+| 8 | Its section of the local results: an OPTIONAL member, so earlier files read as before | `packages/report/src/results/types.ts`, `schema.ts`, a `results/<scanner>.ts` scorer | `packages/scanner/tests/compat.test.ts` reads every earlier version's files |
+| 9 | Its files of a run, its CSVs, its section of the page (static, and its own script, data block and style, named in the policy only when present) and of the PDF | `packages/report/src/render/files.ts`, `packages/scanner/src/file-output.ts`, `packages/report/src/render/html.ts`, `packages/scanner/src/report-pdf.ts` | The secret canaries over every output; the agents-only identity test |
+| 10 | What the `stdout` and `inflect` outputs do with its report. A scanner with no ingest says, in the log, that its report was not posted | `packages/scanner/src/outputs.ts` | `docs/operations.md` names every log event, held by `packages/scanner/tests/operations-doc.test.ts` |
+| 10a | Its comparison with the previous run, on the page and in `scanent diff`, by the honesty rules of its planner; a previous run in which it did not run is "not compared", never an empty scan | `packages/report/src/diff/<scanner>-diff.ts`, `packages/report/src/diff/run-diff.ts`, `packages/scanner/src/previous-run.ts`, `packages/scanner/src/diff-command.ts` | Its own diff tests; `packages/scanner/tests/integrations-only-run.test.ts` |
+| 10b | Its scopes in `doctor` and its hosts in `hosts`, each under its scanner's heading | `packages/scanner/src/scanners.ts` (`SCANNER_OF_SOURCE` decides both) | `packages/scanner/tests/doctor.test.ts`, `packages/scanner/tests/hosts.test.ts` |
+| 11 | Group the network statement and the access guide by scanner: one surface, one hash | `packages/scanner/src/surface-doc.ts`, `packages/scanner/src/init/access-guide.ts` | `packages/scanner/tests/network-and-permissions-doc.test.ts` |
+| 12 | Explain its findings to a client | `docs/guide/findings.md` | `packages/scanner/tests/client-guide.test.ts` holds every code to a section and its severity |
+
 ## Versioning
 
 | Thing | Identifier today | How it changes |
 |---|---|---|
 | The scanner | `SCANNER_VERSION`, 0.14.0 | Raised with any change to what the scanner reads or reports. It is in every report, beside the hash of the declared request surface |
+| The integrations report contract | `scanent-integrations/1` is written, only for a run with an integrations source | A contract of its own beside the agent report's, with the same rules: a new id is a new strict schema |
 | The report contract | `inflect-agent-harness/4` is written; `/2` and `/3` are accepted by the verifier; `/1` is retired and refused | A new id is a new strict schema beside the others, never a looser schema that reads several. An unknown member anywhere is a refusal. [The report contract](../contract.md) is the normative description, and a test holds it to the code |
 | The ladder | `LADDER_VERSION`, a hash over the levels, criteria and bars | It is not in the report. Results derived from a report carry it, and two sets of results compare level for level only when they carry the same one |
-| The results file | `scanent-results/1` | One schema id exists. An optional member has been added to it once without a new id; `packages/scanner/tests/compat.test.ts` proves that files written by the earlier, unreleased 0.12.0 are still read |
+| The results file | `scanent-results/1`; `scanent-results-integrations/1` for a run of the integrations scanner alone | Optional members have been added to `scanent-results/1` without a new id, the integrations section among them; `packages/scanner/tests/compat.test.ts` proves that files written by the earlier, unreleased 0.12.0 are still read. A run with no agent scan has a schema of its own rather than an agent results file with its agent members empty, which would read as a clean agent scan |
+| The comparison | `scanent-diff/1` for two runs of the agent scanner alone; `scanent-run-diff/1` once either holds another scanner's results | One member per scanner, each by its own rules |
 | The inventory file | `scanent-inventory/2` | `/1` is retired and refused, and the refusal says what changed: `/2` took the axis names, their values and the risk tiers of Inflect's agent register. No version was released with `/1`, so nothing converts a `/1` file |
 | The `init` answers file | `scanent-init-answers/1` | One id exists |
 | The `doctor` report and the support bundle | `scanent-doctor/1`, `scanent-support/1` | One id each |

@@ -1,6 +1,6 @@
 # What the scanner reads, and the access to grant
 
-The scanner can read nine kinds of system. You choose which ones. For each
+The scanner can read ten kinds of system. You choose which ones. For each
 one you choose, your organisation creates **one read-only access**: a role, a
 token or a key that can look and cannot change.
 
@@ -38,9 +38,10 @@ administration screens, as listed further down this page.
 | MCP servers | `mcp` | For each server, a token that can list the server's tools and do nothing else. None if the server needs none | `MCP_<LABEL>_TOKEN` | 1 |
 | Agent code in folders | `code` | Permission to read the folders. Nothing else | none | 1 |
 | An Inflect tenant (optional) | `inflect-register` | An API key for the scanner with the scope `admin:harness_ingest`, plus `mcp:read` if the tenant's list of agents is read | `INFLECT_INGEST_KEY` | 1 |
+| Microsoft Entra ID, for integrations | `entra-integrations` | The Microsoft Graph application permissions `Application.Read.All` and `Directory.Read.All`, with admin consent; `AuditLog.Read.All` as well only to read when each application last signed in | `ENTRA_INTEGRATIONS_CLIENT_SECRET` | 5 |
 <!-- /guide:access -->
 
-An MCP server is a server that offers tools to AI agents. The last row
+An MCP server is a server that offers tools to AI agents. The Inflect row
 applies only if your organisation uses an Inflect tenant. A scan needs none:
 see [read-the-report.md](read-the-report.md#what-a-scan-on-its-own-can-show).
 
@@ -91,8 +92,10 @@ password or changes an application.
 4. Certificates and secrets: New client secret.
 
 **Do not grant.** Any permission with "ReadWrite" in its name. Any
-`Directory.` permission. Any delegated permission (one that acts on behalf of
-a signed-in person). Any directory role.
+`Directory.` permission, unless the same application also reads for the
+integrations scanner (below), which needs `Directory.Read.All`. Any delegated
+permission (one that acts on behalf of a signed-in person). Any directory
+role.
 
 ### Azure Key Vault
 
@@ -273,6 +276,43 @@ tenant. Both are off unless you set them up.
    `admin:harness_ingest`, and `mcp:read` if the list of agents is to be read.
 
 **Do not grant.** Any other scope.
+
+### Microsoft Entra ID, for integrations
+
+This is the second scanner in the same program: the **integrations scanner**.
+It asks a different question of the same directory. The agent scanner above
+asks which non-human accounts exist; this one asks what the directory has
+**granted to applications**, and whether anybody owns those grants. It runs
+beside the agent scanner, or on its own when you configure no agent source;
+then the results say that the agent scanner did not run, and nothing in them
+is about agents. Its results are a report of their own,
+`report.integrations.signed.json`, and a section of the results page.
+
+**Looks at.** Each application that has an account in your directory (yours
+and other companies'), except Microsoft's own: whether a verified publisher is
+recorded for it, who owns it (by id), the permissions it was granted on behalf
+of people and in its own right, and the ids and dates of its passwords and
+certificates. If you choose, also the day each application last signed in.
+
+**Never asks for.** Who consented to a grant: a grant made for named people is
+counted, and nobody is named. The list of people in your directory, or their
+own sign-ins. Nothing that grants, removes or changes a permission.
+
+**How to grant it.**
+
+1. Entra admin centre: App registrations, New registration (or use the
+   application you registered for the agent scanner).
+2. API permissions: Add a permission, Microsoft Graph, Application
+   permissions, `Application.Read.All` and `Directory.Read.All`.
+3. To see when each application last signed in, also `AuditLog.Read.All`.
+   That record needs a Microsoft Entra ID P1 or P2 licence; without it, the
+   scan says so and does not call any application unused.
+4. Grant admin consent.
+5. Certificates and secrets: New client secret.
+
+**Do not grant.** Any permission with "ReadWrite" in its name. Any delegated
+permission. Any directory role. `AuditLog.Read.All` unless you want the
+sign-in dates.
 
 ## What the scanner connects to
 

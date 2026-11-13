@@ -49,10 +49,18 @@ import {
     type HarnessMatrixRowRank,
 } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
-import type { LocalAgentResult, LocalCriterionCell, LocalFinding, LocalResults } from '../results/types';
+import type { IntegrationsOnlyResults, LocalAgentResult, LocalCriterionCell, LocalFinding, LocalResults } from '../results/types';
 import { html, htmlText, scriptElement, type HtmlValue, type SafeHtml } from './escape';
-import { RUN_FILE_NAMES } from './files';
+import { INTEGRATIONS_ONLY_RUN_FILE_NAMES, RUN_FILE_NAMES } from './files';
 import { harnessMatrixOfResults } from './matrix-of-results';
+import {
+    integrationsPageData,
+    integrationsSection,
+    integrationsStatus,
+    INTEGRATIONS_SCRIPT,
+    INTEGRATIONS_STYLE_ELEMENT,
+    INTEGRATIONS_STYLE_TEXT,
+} from './integrations-page';
 import { findingsBySeverity, scriptJson, summaryPageData, type DriftRecord, type SummaryContext } from './page-data';
 import { PAGE_SCRIPT } from './page-script';
 import { cspHashSource } from './sha256';
@@ -158,7 +166,8 @@ function header(r: LocalResults): SafeHtml {
 <div><dt>Scan</dt><dd><code>${r.scan.id}</code></dd></div>
 <div><dt>As of (UTC)</dt><dd>${r.scan.asOf}</dd></div>
 </dl>
-${status}
+${status}${r.integrations === undefined ? '' : html`
+${integrationsStatus(r.integrations)}`}
 </header>`;
 }
 
@@ -860,17 +869,27 @@ export const STYLE_TEXT = htmlText(STYLE_ELEMENT).slice('<style>'.length, -'</st
  * block run because their hashes are named; the script may not hand a string
  * to an HTML sink (Trusted Types, where the browser has them).
  */
-export const PAGE_CSP = [
-    "default-src 'none'",
-    `script-src ${cspHashSource(PAGE_SCRIPT)}`,
-    `style-src ${cspHashSource(STYLE_TEXT)}`,
-    "connect-src 'none'",
-    "img-src 'none'",
-    "font-src 'none'",
-    "base-uri 'none'",
-    "form-action 'none'",
-    "require-trusted-types-for 'script'",
-].join('; ');
+export const PAGE_CSP = pageCsp(false);
+
+/**
+ * The policy of a page with or without the integrations section. With it, the
+ * section's script and style are named by their hashes too, and nothing else
+ * changes; without it, the policy is `PAGE_CSP`, as it was before there were
+ * two scanners.
+ */
+export function pageCsp(withIntegrations: boolean): string {
+    return [
+        "default-src 'none'",
+        `script-src ${cspHashSource(PAGE_SCRIPT)}${withIntegrations ? ` ${cspHashSource(INTEGRATIONS_SCRIPT)}` : ''}`,
+        `style-src ${cspHashSource(STYLE_TEXT)}${withIntegrations ? ` ${cspHashSource(INTEGRATIONS_STYLE_TEXT)}` : ''}`,
+        "connect-src 'none'",
+        "img-src 'none'",
+        "font-src 'none'",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "require-trusted-types-for 'script'",
+    ].join('; ');
+}
 
 /**
  * The page. A function of the results and, for a run written to a directory,
@@ -882,6 +901,9 @@ export function renderSummaryHtml(results: LocalResults, context: SummaryContext
     const data = summaryPageData(r, context);
     const title = r.scan.estate === null ? `scanent results: ${r.scan.id}` : `scanent results: ${r.scan.estate}, ${r.scan.id}`;
     const driftSection = data.drift === null ? [] : [['drift', 'Since the previous run', drift(data.drift)] as const];
+    // Present only for a run that configured an integrations source: an agents-only page is what it was.
+    const integrations = r.integrations;
+    const integrationsSections = integrations === undefined ? [] : [['integrations', 'Integrations', integrationsSection(integrations, context.integrationsPrevious)] as const];
     const sections: readonly (readonly [string, string, SafeHtml])[] = r.estate.empty
         ? [
               ['completeness', 'Completeness', completeness(r)],
@@ -889,6 +911,7 @@ export function renderSummaryHtml(results: LocalResults, context: SummaryContext
               ['summary', 'Summary', emptyEstate(r)],
               ...driftSection,
               ['findings', 'Findings', findings(r)],
+              ...integrationsSections,
               ...(r.inventory === null ? [] : [['inventory', 'Inventory', inventory(r)] as const]),
               ['provenance', 'Provenance', provenance(r)],
               ['limits', 'Limits', limits()],
@@ -906,6 +929,7 @@ export function renderSummaryHtml(results: LocalResults, context: SummaryContext
               ...(r.estate.payingAgents === undefined ? [] : [['payments', 'Payment capabilities', payments(r)] as const]),
               ['orphans', 'Orphan credentials', orphans(r)],
               ['findings', 'Findings', findings(r)],
+              ...integrationsSections,
               ...(r.inventory === null ? [] : [['inventory', 'Inventory', inventory(r)] as const]),
               ['provenance', 'Provenance', provenance(r)],
               ['limits', 'Limits', limits()],
@@ -920,11 +944,12 @@ export function renderSummaryHtml(results: LocalResults, context: SummaryContext
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="${PAGE_CSP}">
+<meta http-equiv="Content-Security-Policy" content="${integrations === undefined ? PAGE_CSP : pageCsp(true)}">
 <meta name="referrer" content="no-referrer">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${title}</title>
-${STYLE_ELEMENT}
+${STYLE_ELEMENT}${integrations === undefined ? '' : html`
+${INTEGRATIONS_STYLE_ELEMENT}`}
 </head>
 <body>
 <a class="skip" href="#main">Skip to the results</a>
@@ -943,7 +968,109 @@ ${rest.map(([, , body]) => body)}
 <footer class="end">Scan <code>${r.scan.id}</code>, as of ${r.scan.asOf} UTC. Ladder <code>${r.ladder.version}</code>.</footer>
 <p class="print-footer">Scan ${r.scan.id}, as of ${r.scan.asOf} UTC</p>
 ${scriptElement('json', scriptJson(data), 'scan-data')}
-${scriptElement('code', PAGE_SCRIPT)}
+${scriptElement('code', PAGE_SCRIPT)}${integrations === undefined ? '' : html`
+${scriptElement('json', scriptJson(integrationsPageData(integrations)), 'integrations-data')}
+${scriptElement('code', INTEGRATIONS_SCRIPT)}`}
+</body>
+</html>
+`;
+    return htmlText(page);
+}
+
+/** The policy of a page of a run in which only the integrations scanner ran: its one script, and the two style blocks. */
+export const INTEGRATIONS_ONLY_PAGE_CSP = [
+    "default-src 'none'",
+    `script-src ${cspHashSource(INTEGRATIONS_SCRIPT)}`,
+    `style-src ${cspHashSource(STYLE_TEXT)} ${cspHashSource(INTEGRATIONS_STYLE_TEXT)}`,
+    "connect-src 'none'",
+    "img-src 'none'",
+    "font-src 'none'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "require-trusted-types-for 'script'",
+].join('; ');
+
+/** What the page of an integrations-only run says first: which scanner ran, and that no agent scan did. */
+export const NO_AGENT_SCAN_TEXT =
+    'The agent scanner did not run: this configuration names no agent source. This page says nothing about agents, and nothing on it is an agent result, clean or otherwise.';
+
+/**
+ * The page of a run in which only the integrations scanner ran. The agent
+ * page's rules hold: nothing loaded, everything escaped, readable with no
+ * script, what could not be read first. It carries no agent section at all,
+ * and says which scanner ran, so no reader takes an absent agent scan for a
+ * clean one.
+ */
+export function renderIntegrationsOnlyHtml(results: IntegrationsOnlyResults, context: Pick<SummaryContext, 'integrationsPrevious'> = {}): string {
+    const r = results;
+    const i = r.integrations;
+    const title = r.scan.estate === null ? `scanent results: ${r.scan.id}` : `scanent results: ${r.scan.estate}, ${r.scan.id}`;
+    const row = (label: string, value: HtmlValue): SafeHtml => html`<div><dt>${label}</dt><dd>${value}</dd></div>`;
+    const provenance = html`<section id="provenance" aria-labelledby="provenance-h">
+<h2 id="provenance-h">Provenance</h2>
+<dl class="meta wide">
+${row('Scanners that ran', 'The integrations scanner only')}
+${row('Scanner', html`<code>${r.scan.scanner.agentId}</code>, version ${r.scan.scanner.version}`)}
+${row('Scanner manifest', html`<code class="id">${r.scan.scanner.manifestHash}</code>`)}
+${row('Report contract', html`<code>${i.contract}</code>`)}
+${row('Signed report SHA-256', html`<code class="id">${i.report.sha256}</code>`)}
+${row('Signer key fingerprint', html`<code class="id">${r.signer.keyFingerprint}</code>`)}
+${row('Signer', r.signer.pinned ? 'Pinned: verified against a key supplied apart from the report' : 'Not pinned: verified against the key the report itself carries, which shows integrity and not origin')}
+${row('Files of this run', Object.values(INTEGRATIONS_ONLY_RUN_FILE_NAMES).map((name, k) => html`${k > 0 ? ', ' : ''}<code>${name}</code>`))}
+</dl>
+<p>The signed report is the record; this page and the other files are derived from it. The same inputs give the same files.</p>
+</section>`;
+    const limitsSection = html`<section id="limits" aria-labelledby="limits-h">
+<h2 id="limits-h">What this page does not say</h2>
+<ul>
+<li>${NO_AGENT_SCAN_TEXT}</li>
+<li>An application absent from this page is not concluded gone, unused or clean: only what a source read in full concludes an absence.</li>
+<li>A permission the classification does not know is neither high nor low. A person judges it.</li>
+<li>Whether an application should hold a grant is your organisation's decision. The scan shows what is held, and who owns it.</li>
+</ul>
+</section>`;
+    const sections: readonly (readonly [string, string, SafeHtml])[] = [
+        ['integrations', 'Integrations', integrationsSection(i, context.integrationsPrevious, true)],
+        ['provenance', 'Provenance', provenance],
+        ['limits', 'Limits', limitsSection],
+    ];
+    const page = html`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${INTEGRATIONS_ONLY_PAGE_CSP}">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title}</title>
+${STYLE_ELEMENT}
+${INTEGRATIONS_STYLE_ELEMENT}
+</head>
+<body>
+<a class="skip" href="#main">Skip to the results</a>
+<header class="top">
+<p class="brand">scanent, the Agent Estate Scanner</p>
+<h1>Integrations scan results</h1>
+<dl class="meta">
+<div><dt>Estate</dt><dd>${r.scan.estate === null ? 'Not stated (scored from a bare report)' : r.scan.estate}</dd></div>
+<div><dt>Scan</dt><dd><code>${r.scan.id}</code></dd></div>
+<div><dt>As of (UTC)</dt><dd>${r.scan.asOf}</dd></div>
+<div><dt>Scanners that ran</dt><dd>The integrations scanner only</dd></div>
+</dl>
+${integrationsStatus(i)}
+<p class="callout"><strong>No agent scan.</strong> ${NO_AGENT_SCAN_TEXT}</p>
+</header>
+<nav class="contents" aria-label="Contents">
+<ul>
+${sections.map(([id, label]) => html`<li><a href="#${id}">${label}</a></li>`)}
+</ul>
+</nav>
+<main id="main">
+${sections.map(([, , body]) => body)}
+</main>
+<footer class="end">Scan <code>${r.scan.id}</code>, as of ${r.scan.asOf} UTC. Integrations only.</footer>
+<p class="print-footer">Scan ${r.scan.id}, as of ${r.scan.asOf} UTC</p>
+${scriptElement('json', scriptJson(integrationsPageData(i)), 'integrations-data')}
+${scriptElement('code', INTEGRATIONS_SCRIPT)}
 </body>
 </html>
 `;

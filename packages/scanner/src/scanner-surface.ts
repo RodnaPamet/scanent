@@ -17,17 +17,18 @@
 import { createHash } from 'crypto';
 
 import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
-import { HARNESS_CONTRACT_V4 } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { OKTA_READ_PATHS } from './sources/okta';
 import { AZURE_KEY_VAULT_COLLECTIONS, AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
 import { ENTRA_READ_PATHS, GRAPH_ORIGIN } from './sources/entra';
+import { ENTRA_INTEGRATIONS_READ_PATHS } from './sources/entra-integrations';
 import { GCP_IAM_ORIGIN, GCP_READ_PATHS, GOOGLE_OAUTH_ORIGIN, GOOGLE_TOKEN_PATH } from './sources/gcp-service-accounts';
 import { GITHUB_API_ORIGIN, GITHUB_READ_PATHS } from './sources/github-actions';
 import { CLIENT_CREDENTIALS_GRANT, HARNESS_REGISTER_TOOL, JWT_BEARER_GRANT, MCP_MESSAGES, TOKEN_EXCHANGE_GRANT, OPENSHELL_METHODS, OPENSHELL_PROFILE_SCOPE, OPENSHELL_READ_SCOPE, OPENSHELL_SERVICE } from './http';
 import { INFLECT_MCP_PATH, INFLECT_TOKEN_PATH } from './sources/inflect-register';
 import { SKIPPED_DIRECTORIES, SOURCE_EXTENSIONS } from './sources/code/files';
 import { LANGSMITH_READ_PATHS } from './sources/langsmith';
+import { ALL_SOURCE_KINDS, SCANNER_CONTRACT, SCANNER_OF_SOURCE, SCANNERS } from './scanners';
 
 export const SCANNER_NAME = 'inflect-agent-harness-scanner';
 /**
@@ -50,6 +51,10 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * Not yet released, and the version is the release's to choose: reports under
  * `inflect-agent-harness/4`, with the `code` source's payment-capability fact.
  * The contract id is part of the surface, so the manifest hash moves with it.
+ * Since then, and in no release yet: the integrations scanner, its contract
+ * `scanent-integrations/1` and its Entra reader. The surface is one for the
+ * image and names every scanner's requests, so an agents-only run's report
+ * carries the new hash too; nothing else in it changed.
  */
 export const SCANNER_VERSION = '0.14.0';
 
@@ -59,7 +64,9 @@ export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-sc
 export const SCANNER_SURFACE = {
     name: SCANNER_NAME,
     version: SCANNER_VERSION,
-    contract: HARNESS_CONTRACT_V4,
+    // One surface for every scanner (`docs/design/scanners.md`, decision 2):
+    // which contract each speaks, and which source kinds are its.
+    scanners: SCANNERS.map((id) => ({ id, contract: SCANNER_CONTRACT[id], sources: ALL_SOURCE_KINDS.filter((k) => SCANNER_OF_SOURCE[k] === id) })),
     reads: [
         { source: 'entra-sp', product: 'entra', method: 'GET', origin: GRAPH_ORIGIN, paths: [...ENTRA_READ_PATHS] },
         { source: 'okta-app', product: 'okta', method: 'GET', paths: [...OKTA_READ_PATHS] },
@@ -83,6 +90,20 @@ export const SCANNER_SURFACE = {
                 ]),
             ],
         },
+        // The integrations scanner. `{id}` is one service principal's object id.
+        {
+            source: 'entra-integrations',
+            product: 'entra-integrations',
+            method: 'GET',
+            origin: GRAPH_ORIGIN,
+            paths: [
+                ENTRA_INTEGRATIONS_READ_PATHS.servicePrincipals,
+                ENTRA_INTEGRATIONS_READ_PATHS.applications,
+                ENTRA_INTEGRATIONS_READ_PATHS.delegatedGrants,
+                ENTRA_INTEGRATIONS_READ_PATHS.appRoleAssignments,
+                ENTRA_INTEGRATIONS_READ_PATHS.signInActivity,
+            ],
+        },
     ],
     authenticates: [
         // `grant` is what the body may ask the token endpoint for: a request to a
@@ -93,6 +114,8 @@ export const SCANNER_SURFACE = {
         { product: 'entra', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryId}/oauth2/v2.0/token', grant: CLIENT_CREDENTIALS_GRANT },
         // The JWT-bearer grant (RFC 7523): an assertion the scanner signed, for a token to read with.
         { product: 'gcp-iam', method: 'POST', origin: GOOGLE_OAUTH_ORIGIN, path: GOOGLE_TOKEN_PATH, grant: JWT_BEARER_GRANT },
+        // The integrations scanner's Entra reader asks the same endpoint for the same grant as `entra`.
+        { product: 'entra-integrations', method: 'POST', origin: AZURE_LOGIN_ORIGIN, path: '/{directoryId}/oauth2/v2.0/token', grant: CLIENT_CREDENTIALS_GRANT },
     ],
     // No request: the `code` source reads local files, and never runs them.
     // Declared all the same, so reading code shows in the manifest hash.

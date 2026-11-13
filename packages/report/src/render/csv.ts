@@ -45,7 +45,7 @@ export function csvCell(value: string | number): string {
     return `"${(formula ? `'${clean}` : clean).replace(/"/g, '""')}"`;
 }
 
-function csvFile(header: readonly string[], rows: readonly (readonly (string | number)[])[]): string {
+export function csvFile(header: readonly string[], rows: readonly (readonly (string | number)[])[]): string {
     return CSV_BOM + [header, ...rows].map((row) => row.map(csvCell).join(',') + CRLF).join('');
 }
 

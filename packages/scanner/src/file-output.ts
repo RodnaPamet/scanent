@@ -5,6 +5,17 @@
  *   <dir>/runs/<scanId>/              report.signed.json, results.json,
  *                                     agents.csv, findings.csv, summary.html,
  *                                     report.pdf, manifest.json
+ *                                     and, only for a run that configured an
+ *                                     integrations source,
+ *                                     report.integrations.signed.json,
+ *                                     integrations.csv, integration-findings.csv
+ *
+ * Which scanners ran follows from the sources configured. A run in which only
+ * the integrations scanner ran holds its own files and the files every run has
+ * (report.integrations.signed.json, results.json, integrations.csv,
+ * integration-findings.csv, summary.html, report.pdf, manifest.json) and no
+ * agent file at all: an empty agents.csv would read as an agent scan that
+ * found nothing. Its pointer names the scanners that ran.
  *
  * A run is written under a temporary name and renamed into place, so a reader
  * never opens half a run and a failed write leaves nothing behind. Nothing
@@ -29,13 +40,15 @@ import { dirname, join } from 'path';
 import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract';
 import { firstSecretShapedMember } from '@rodnapamet/scanent-contract/harness-findings';
 import { renderAgentsCsv, renderFindingsCsv } from '@scanent/report/render/csv';
-import { RUN_FILE_NAMES } from '@scanent/report/render/files';
-import { renderSummaryHtml } from '@scanent/report/render/html';
-import { summaryPageData, type PreviousRun, type SummaryContext } from '@scanent/report/render/page-data';
+import { INTEGRATION_RUN_FILE_NAMES, INTEGRATIONS_ONLY_RUN_FILE_NAMES, RUN_FILE_NAMES } from '@scanent/report/render/files';
+import { renderIntegrationsOnlyHtml, renderSummaryHtml } from '@scanent/report/render/html';
+import { renderIntegrationFindingsCsv, renderIntegrationsCsv } from '@scanent/report/render/integrations-csv';
+import { integrationsPageData } from '@scanent/report/render/integrations-page';
+import { summaryPageData, type IntegrationsPreviousRun, type PreviousRun, type SummaryContext } from '@scanent/report/render/page-data';
 import { renderResultsJson, stableJson } from '@scanent/report/render/results-json';
-import type { LocalResults } from '@scanent/report/results/types';
+import type { IntegrationsOnlyResults, LocalResults } from '@scanent/report/results/types';
 
-import { renderReportPdf, type RenderedPdf } from './report-pdf';
+import { renderIntegrationsOnlyPdf, renderReportPdf, type RenderedPdf } from './report-pdf';
 
 /** A scan id as `scan.ts` builds it: `<estate>-<UTC stamp>-<8 hex>`. The only name a run directory takes. */
 export const SCAN_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}-(\d{8}T\d{6}Z)-[0-9a-f]{8}$/;
@@ -81,6 +94,8 @@ export interface RunRenderers {
     readonly findings: (results: LocalResults) => string;
     readonly summary: (results: LocalResults, context?: SummaryContext) => string;
     readonly pdf?: (results: LocalResults, context?: SummaryContext) => RenderedPdf;
+    /** The PDF of a run in which only the integrations scanner ran. Absent is the real one. */
+    readonly integrationsOnlyPdf?: (results: IntegrationsOnlyResults, context?: Pick<SummaryContext, 'integrationsPrevious'>) => RenderedPdf;
 }
 
 const RENDERERS: RunRenderers = {
@@ -135,9 +150,21 @@ function textAsRead(file: { readonly name: string; readonly content: string }): 
  * `context` is what the run knew of the run before it; absent, the page has
  * no comparison section.
  */
-export function renderRunFiles(raw: string, results: LocalResults, renderers: RunRenderers = RENDERERS, context: SummaryContext = {}): RunFile[] {
+export function renderRunFiles(
+    raw: string,
+    results: LocalResults,
+    renderers: RunRenderers = RENDERERS,
+    context: SummaryContext = {},
+    /** The signed integrations report: given exactly when the results hold an integrations section. */
+    integrationsRaw?: string,
+): RunFile[] {
+    if ((results.integrations === undefined) !== (integrationsRaw === undefined)) {
+        throw new Error('the integrations report and the integrations results come together or not at all');
+    }
     assertNoSecretShape(results, RUN_FILE_NAMES.results);
     assertNoSecretShape(summaryPageData(results, context), RUN_FILE_NAMES.summary);
+    if (results.integrations !== undefined) assertNoSecretShape(integrationsPageData(results.integrations), RUN_FILE_NAMES.summary);
+    if (context.integrationsPrevious !== undefined && context.integrationsPrevious !== null) assertNoSecretShape(context.integrationsPrevious, RUN_FILE_NAMES.summary);
     const texts = [
         { name: RUN_FILE_NAMES.results, content: renderers.results(results) },
         { name: RUN_FILE_NAMES.agents, content: renderers.agents(results) },
@@ -147,7 +174,42 @@ export function renderRunFiles(raw: string, results: LocalResults, renderers: Ru
     for (const file of texts) assertNoSecretShape(textAsRead(file), file.name);
     const pdf = (renderers.pdf ?? renderReportPdf)(results, context);
     assertNoSecretShape(pdf.text, RUN_FILE_NAMES.pdf);
-    return [{ name: RUN_FILE_NAMES.report, content: raw }, ...texts, { name: RUN_FILE_NAMES.pdf, content: pdf.bytes }];
+    const agentFiles: RunFile[] = [{ name: RUN_FILE_NAMES.report, content: raw }, ...texts, { name: RUN_FILE_NAMES.pdf, content: pdf.bytes }];
+    if (results.integrations === undefined || integrationsRaw === undefined) return agentFiles;
+    // The integrations scanner's files, after the agent scanner's, each checked as every text file is.
+    const integrationTexts = [
+        { name: INTEGRATION_RUN_FILE_NAMES.applications, content: renderIntegrationsCsv(results.integrations) },
+        { name: INTEGRATION_RUN_FILE_NAMES.findings, content: renderIntegrationFindingsCsv(results.integrations) },
+    ];
+    for (const file of integrationTexts) assertNoSecretShape(textAsRead(file), file.name);
+    return [...agentFiles, { name: INTEGRATION_RUN_FILE_NAMES.report, content: integrationsRaw }, ...integrationTexts];
+}
+
+/**
+ * The files of a run in which only the integrations scanner ran, rendered and
+ * checked by the same rules: the data first (the results, the page's data and
+ * the comparison), then each file as what would be written.
+ */
+export function renderIntegrationsOnlyRunFiles(
+    integrationsRaw: string,
+    results: IntegrationsOnlyResults,
+    context: Pick<SummaryContext, 'integrationsPrevious'> = {},
+    renderers: Pick<RunRenderers, 'integrationsOnlyPdf'> = {},
+): RunFile[] {
+    const names = INTEGRATIONS_ONLY_RUN_FILE_NAMES;
+    assertNoSecretShape(results, names.results);
+    assertNoSecretShape(integrationsPageData(results.integrations), names.summary);
+    if (context.integrationsPrevious !== undefined && context.integrationsPrevious !== null) assertNoSecretShape(context.integrationsPrevious, names.summary);
+    const texts = [
+        { name: names.results, content: renderResultsJson(results) },
+        { name: names.applications, content: renderIntegrationsCsv(results.integrations) },
+        { name: names.findings, content: renderIntegrationFindingsCsv(results.integrations) },
+        { name: names.summary, content: renderIntegrationsOnlyHtml(results, context) },
+    ];
+    for (const file of texts) assertNoSecretShape(textAsRead(file), file.name);
+    const pdf = (renderers.integrationsOnlyPdf ?? renderIntegrationsOnlyPdf)(results, context);
+    assertNoSecretShape(pdf.text, names.pdf);
+    return [{ name: names.report, content: integrationsRaw }, ...texts, { name: names.pdf, content: pdf.bytes }];
 }
 
 export interface FileOutputDeps {
@@ -271,12 +333,23 @@ export interface WrittenRun {
  */
 export function writeRun(
     output: { readonly dir: string; readonly retainRuns?: number },
-    run: {
-        readonly raw: string;
-        readonly results: LocalResults;
-        /** The run the directory named as the latest before this one, compared or not; null when there was none. */
-        readonly previous?: PreviousRun | null;
-    },
+    run:
+        | {
+              readonly raw: string;
+              readonly results: LocalResults;
+              /** The run the directory named as the latest before this one, compared or not; null when there was none. */
+              readonly previous?: PreviousRun | null;
+              /** The signed integrations report, for a run whose results hold an integrations section. */
+              readonly integrationsRaw?: string;
+              /** The previous run's integrations, compared or not, for a run whose results hold an integrations section. */
+              readonly integrationsPrevious?: IntegrationsPreviousRun | null;
+          }
+        | {
+              /** A run in which only the integrations scanner ran. */
+              readonly results: IntegrationsOnlyResults;
+              readonly integrationsRaw: string;
+              readonly integrationsPrevious?: IntegrationsPreviousRun | null;
+          },
     deps: FileOutputDeps = {},
 ): WrittenRun {
     const scanId = run.results.scan.id;
@@ -285,7 +358,34 @@ export function writeRun(
     const write = deps.writeFile ?? writeNewFile;
 
     // Everything is rendered and checked before the first byte is written.
-    const files = renderRunFiles(run.raw, run.results, deps.renderers, run.previous === undefined ? {} : { previous: run.previous });
+    let files: RunFile[];
+    let pointer: Record<string, unknown>;
+    if ('raw' in run) {
+        const context: SummaryContext = {
+            ...(run.previous === undefined ? {} : { previous: run.previous }),
+            ...(run.integrationsPrevious === undefined ? {} : { integrationsPrevious: run.integrationsPrevious }),
+        };
+        files = renderRunFiles(run.raw, run.results, deps.renderers, context, run.integrationsRaw);
+        pointer = {
+            scanId,
+            dir: `runs/${scanId}`,
+            asOf: run.results.scan.asOf,
+            complete: run.results.scan.complete,
+            agentCount: run.results.estate.agentCount,
+        };
+    } else {
+        const context = run.integrationsPrevious === undefined ? {} : { integrationsPrevious: run.integrationsPrevious };
+        files = renderIntegrationsOnlyRunFiles(run.integrationsRaw, run.results, context, deps.renderers);
+        // The pointer of a run with no agent scan names the scanners that ran, and carries no agent count.
+        pointer = {
+            scanId,
+            dir: `runs/${scanId}`,
+            asOf: run.results.scan.asOf,
+            complete: run.results.integrations.complete,
+            scanners: run.results.scanners,
+            applicationCount: run.results.integrations.counts.applications,
+        };
+    }
     const manifest: RunFile = {
         name: RUN_FILE_NAMES.manifest,
         content: stableJson({
@@ -321,16 +421,7 @@ export function writeRun(
     // The pointer: the one thing that is replaced, and by a rename.
     try {
         rmSync(pointerTemporary, { force: true });
-        write(
-            pointerTemporary,
-            stableJson({
-                scanId,
-                dir: `runs/${scanId}`,
-                asOf: run.results.scan.asOf,
-                complete: run.results.scan.complete,
-                agentCount: run.results.estate.agentCount,
-            }),
-        );
+        write(pointerTemporary, stableJson(pointer));
         renameSync(pointerTemporary, join(output.dir, 'latest.json'));
         syncDirectory(output.dir);
     } catch (err) {

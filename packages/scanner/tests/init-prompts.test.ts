@@ -48,7 +48,7 @@ const KINDS = ['entra-sp', 'vault', 'okta-app', 'cicd', 'gcp-sa', 'runtime', 'mc
 const only = (kind: (typeof KINDS)[number], fields: string[]): string[] => ['acme-prod', ...KINDS.flatMap((k) => (k === kind ? ['y', ...fields] : ['n'])), '', '', '', 'n'];
 
 const CASES: [(typeof KINDS)[number], string[], InitAnswers['sources'][number]][] = [
-    ['entra-sp', [GUID, GUID], { kind: 'entra-sp', directoryId: GUID, clientId: GUID }],
+    ['entra-sp', [GUID, GUID, 'n'], { kind: 'entra-sp', directoryId: GUID, clientId: GUID }],
     ['vault', ['https://acme-agents.vault.azure.net, https://acme-two.vault.azure.net', 'contoso.onmicrosoft.com', GUID], { kind: 'vault', vaultUrls: ['https://acme-agents.vault.azure.net', 'https://acme-two.vault.azure.net'], directoryTenantId: 'contoso.onmicrosoft.com', clientId: GUID }],
     ['okta-app', ['https://acme.okta.com'], { kind: 'okta-app', orgUrl: 'https://acme.okta.com' }],
     ['cicd', ['acme/payments-api,acme/web'], { kind: 'cicd', repositories: ['acme/payments-api', 'acme/web'] }],
@@ -97,6 +97,25 @@ describe('the prompts give the answers a file would', () => {
         expect(plan.config.outputs?.map((o) => o.kind)).toEqual(['file', 'inflect']);
     });
 
+    it('the integrations scanner is offered with Entra, and reads with the same application when asked to', async () => {
+        const same = await collectAnswers(script(only('entra-sp', [GUID, GUID, 'y', 'y', 'y'])).io);
+        expect(same.sources).toEqual([
+            { kind: 'entra-sp', directoryId: GUID, clientId: GUID },
+            { kind: 'entra-integrations', directoryId: GUID, clientId: GUID, clientSecretEnv: 'ENTRA_CLIENT_SECRET', readSignInActivity: true },
+        ]);
+        // One application, one secret: the template names the variable once.
+        expect(planInit(same).credentialNames.filter((c) => c.name === 'ENTRA_CLIENT_SECRET')).toHaveLength(1);
+        const other = '6a5b4c3d-0000-4000-8000-000000000001';
+        const apart = script(only('entra-sp', [GUID, GUID, 'y', 'n', other, 'n']));
+        const answers = await collectAnswers(apart.io);
+        expect(answers.sources).toEqual([
+            { kind: 'entra-sp', directoryId: GUID, clientId: GUID },
+            { kind: 'entra-integrations', directoryId: GUID, clientId: other },
+        ]);
+        expect(apart.said).toContain('The credential is not asked for here: it goes in ENTRA_INTEGRATIONS_CLIENT_SECRET.');
+        expect(planInit(answers).config.sources.map((x) => x.kind)).toEqual(['entra-sp', 'entra-integrations']);
+    });
+
     it('a self-hosted LangSmith is taken by its origin, and a blank workspace is left out', async () => {
         const answers = await collectAnswers(script(only('runtime', ['https://langsmith.acme.example', ''])).io);
         expect(answers.sources).toEqual([{ kind: 'runtime', endpoint: { selfHosted: 'https://langsmith.acme.example' } }]);
@@ -123,8 +142,8 @@ describe('a secret-shaped answer', () => {
     const UP_TO: [string, string[], string[]][] = [
         ['the estate name', [], ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'n']],
         ['a yes/no question', ['acme-prod'], ['n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'n']],
-        ['the Entra directory id', ['acme-prod', 'y'], [GUID, GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
-        ['the Entra client id', ['acme-prod', 'y', GUID], [GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
+        ['the Entra directory id', ['acme-prod', 'y'], [GUID, GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
+        ['the Entra client id', ['acme-prod', 'y', GUID], [GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['the vault URLs', ['acme-prod', 'n', 'y'], ['https://acme-agents.vault.azure.net', 'contoso.onmicrosoft.com', GUID, 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['the Okta org URL', ['acme-prod', 'n', 'n', 'y'], ['https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['the repositories', ['acme-prod', 'n', 'n', 'n', 'y'], ['acme/web', 'n', 'n', 'n', 'n', '', '', '', 'n']],
@@ -215,7 +234,7 @@ describe('a secret-shaped answer', () => {
         it('a name that reads as one is not refused for being long, and neither is a GUID where a GUID is asked for', async () => {
             const long = 'acme-production-eu-west-1-cluster-22';
             expect(long.length).toBeGreaterThanOrEqual(32);
-            const s = script([long, 'y', GUID, GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'y', 'https://tenant.example.com', 'acme', 'agt_scanner_acme_production_eu_west_1', 'n']);
+            const s = script([long, 'y', GUID, GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'y', 'https://tenant.example.com', 'acme', 'agt_scanner_acme_production_eu_west_1', 'n']);
             const answers = await collectAnswers(s.io);
             expect(s.said).not.toContain(SECRET_REFUSAL);
             expect(answers.estate).toBe(long);
@@ -287,7 +306,7 @@ describe('an answer that breaks its field\'s rule', () => {
     it.each([
         ['an estate that is not a slug', [], 'Not A Slug', ['acme-prod', 'n', 'n', 'y', 'https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['an Okta URL on another domain', ['acme-prod', 'n', 'n', 'y'], 'https://okta.evil.example', ['https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
-        ['a directory id that is not a GUID', ['acme-prod', 'y'], 'contoso', [GUID, GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
+        ['a directory id that is not a GUID', ['acme-prod', 'y'], 'contoso', [GUID, GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['a vault URL off Azure', ['acme-prod', 'n', 'y'], 'https://vault.evil.example', ['https://a.vault.azure.net', 'contoso.onmicrosoft.com', GUID, 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['a repository without an owner', ['acme-prod', 'n', 'n', 'n', 'y'], 'just-a-name', ['acme/web', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['a LangSmith host on a private address', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'y'], 'https://10.0.0.5', ['eu', '', 'n', 'n', '', '', '', 'n']],
@@ -314,7 +333,17 @@ describe('an answer that breaks its field\'s rule', () => {
     });
 
     it('no source chosen ends the wizard: there is nothing to scan', async () => {
-        await expect(collectAnswers(script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n']).io)).rejects.toThrow('no source was chosen');
+        await expect(collectAnswers(script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n']).io)).rejects.toThrow('no source was chosen');
+    });
+
+    it('no agent source: the integrations scanner is offered on its own, and posting is not asked about', async () => {
+        const directory = '11111111-2222-4333-8444-555555555555';
+        const client = '66666666-7777-4888-8999-aaaaaaaaaaaa';
+        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', directory, client, 'y', '', '', '']);
+        const answers = await collectAnswers(s.io);
+        expect(answers.sources).toEqual([{ kind: 'entra-integrations', directoryId: directory, clientId: client, readSignInActivity: true }]);
+        expect(answers.inflect).toBeNull();
+        expect(planInit(answers).config.outputs?.map((o) => o.kind)).toEqual(['file']);
     });
 });
 

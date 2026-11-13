@@ -27,6 +27,7 @@ import { HARNESS_LEVEL_NAMES, HARNESS_LEVELS, type HarnessLevel } from '@rodnapa
 import { compareHarnessMatrixRows, HARNESS_MATRIX_CELL_STATES, type HarnessMatrixModel, type HarnessMatrixRow } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 import type { DiffRefusal, ResultsDiff } from '../diff/diff';
+import type { IntegrationsDiff } from '../diff/integrations-diff';
 import type { LocalAgentResult, LocalFinding, LocalResults } from '../results/types';
 import { isBidiControl } from './escape';
 import { RUN_FILE_NAMES } from './files';
@@ -71,7 +72,7 @@ export const DRIFT_MAX_ROWS = 200;
 
 // ── What a run knows of the run before it ──
 
-export type PreviousNotCompared = DiffRefusal | 'UNREADABLE';
+export type PreviousNotCompared = DiffRefusal | 'UNREADABLE' | 'NO_AGENT_SCAN';
 
 /** The run the output directory named as the latest before this one, compared or not. */
 export type PreviousRun =
@@ -85,7 +86,18 @@ export type PreviousRun =
  */
 export interface SummaryContext {
     readonly previous?: PreviousRun | null;
+    /**
+     * The same for the integrations scanner: the previous run's integrations
+     * compared with this run's. Given only for a run whose integrations scanner
+     * ran, so an agents-only page is what it was.
+     */
+    readonly integrationsPrevious?: IntegrationsPreviousRun | null;
 }
+
+/** The previous run's integrations, compared or not. */
+export type IntegrationsPreviousRun =
+    | { readonly kind: 'COMPARED'; readonly diff: IntegrationsDiff }
+    | { readonly kind: 'NOT_COMPARED'; readonly scanId: string | null; readonly reason: DiffRefusal | 'UNREADABLE' | 'NO_INTEGRATIONS_SCAN' };
 
 // ── The data ──
 

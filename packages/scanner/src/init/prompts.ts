@@ -20,7 +20,7 @@
 import { ScannerConfigSchema, SourceConfigSchema } from '../config';
 import { ANSWERABLE_KINDS, INIT_ANSWERS_SCHEMA, type AnswerableKind, type InitAnswers, type SourceAnswer } from './answers';
 import { ACCESS_GUIDE, credentialVariable } from './access-guide';
-import { DEFAULT_EVERY_HOURS, DEFAULT_INGEST_KEY_ENV, DEFAULT_OUTPUT_DIR, mcpTokenEnvName } from './plan';
+import { DEFAULT_ENTRA_SECRET_ENV, DEFAULT_EVERY_HOURS, DEFAULT_INGEST_KEY_ENV, DEFAULT_OUTPUT_DIR, mcpTokenEnvName } from './plan';
 import { looksLikeBareToken, looksLikeCredential } from './secret-shapes';
 
 export interface PromptIo {
@@ -50,6 +50,7 @@ const KIND_QUESTION: Readonly<Record<AnswerableKind, string>> = {
     runtime: 'Do you have LangSmith?',
     mcp: 'Do you have MCP servers to list?',
     code: 'Do you have agent code in local directories to read?',
+    'entra-integrations': 'Also scan what this directory has granted to applications, and who owns them (the integrations scanner)?',
 };
 
 /** The placeholder each kind's product and credential name take while one field is being checked. */
@@ -62,6 +63,7 @@ const SHELL: Readonly<Record<AnswerableKind, Record<string, unknown>>> = {
     runtime: { product: 'langsmith', apiKeyEnv: 'X' },
     mcp: {},
     code: { product: 'langchain' },
+    'entra-integrations': { clientSecretEnv: 'X' },
 };
 
 /** Whether `candidate`, a source of `kind` so far, breaks a rule at `field` (the first path segment). Uses the configuration's schema. */
@@ -103,13 +105,25 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
     );
 
     const sources: SourceAnswer[] = [];
+    let integrations: SourceAnswer | null = null;
     for (const kind of ANSWERABLE_KINDS) {
+        // The integrations scanner's Entra source is offered with the agent scanner's, below: one directory, two scanners.
+        if (kind === 'entra-integrations') continue;
         if (!(await yes(KIND_QUESTION[kind]))) continue;
         const s: Record<string, unknown> = {};
         const guid = 'A GUID: 8-4-4-4-12 hexadecimal digits.';
         if (kind === 'entra-sp') {
             s.directoryId = await field(kind, s, 'directoryId', 'Directory (tenant) ID:', guid);
             s.clientId = await field(kind, s, 'clientId', 'Application (client) ID of the app registration the scanner reads with:', guid);
+            if (await yes(KIND_QUESTION['entra-integrations'])) {
+                const same = await yes('Read them with the same app registration? It then also needs Directory.Read.All');
+                const i: Record<string, unknown> = { directoryId: s.directoryId };
+                // The same application holds the same secret: the two sources then name one variable.
+                if (same) Object.assign(i, { clientId: s.clientId, clientSecretEnv: DEFAULT_ENTRA_SECRET_ENV });
+                else i.clientId = await field('entra-integrations', i, 'clientId', 'Application (client) ID of the app registration the integrations scanner reads with:', guid);
+                if (await yes("Also read each application's last sign-in? It needs AuditLog.Read.All and a licence that records sign-ins")) i.readSignInActivity = true;
+                integrations = { kind: 'entra-integrations', ...i };
+            }
         } else if (kind === 'vault') {
             s.vaultUrls = list(await field(kind, s, 'vaultUrls', 'Vault URLs, comma-separated (https://<name>.vault.azure.net):', 'One to twenty https URLs on vault.azure.net.', list));
             s.directoryTenantId = await field(kind, s, 'directoryTenantId', 'Directory (tenant) ID or verified domain:', 'A directory id or domain.');
@@ -170,7 +184,21 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
         }
         sources.push({ kind, ...s });
     }
-    if (sources.length === 0) throw new InitAborted('no source was chosen; nothing was written');
+    // No agent source: the integrations scanner can still run on its own, so it is offered here once more.
+    if (sources.length === 0 && (await yes('No agent source was chosen. Scan only what an Entra directory has granted to applications, and who owns them (the integrations scanner)?'))) {
+        const guid = 'A GUID: 8-4-4-4-12 hexadecimal digits.';
+        const i: Record<string, unknown> = {};
+        i.directoryId = await field('entra-integrations', i, 'directoryId', 'Directory (tenant) ID:', guid);
+        i.clientId = await field('entra-integrations', i, 'clientId', 'Application (client) ID of the app registration the integrations scanner reads with:', guid);
+        if (await yes("Also read each application's last sign-in? It needs AuditLog.Read.All and a licence that records sign-ins")) i.readSignInActivity = true;
+        integrations = { kind: 'entra-integrations', ...i };
+    }
+    if (sources.length === 0 && integrations === null) throw new InitAborted('no source was chosen; nothing was written');
+    const agentSourceChosen = sources.length > 0;
+    if (integrations !== null) {
+        if (integrations.clientSecretEnv === undefined) io.say(`The credential is not asked for here: it goes in ${credentialVariable(ACCESS_GUIDE['entra-integrations'])}.`);
+        sources.push(integrations);
+    }
 
     const absolute = (v: string) => (v === '' || (v.startsWith('/') && !v.split('/').includes('..')) ? null : 'An absolute path with no .. segment.');
     const outputDir = (await ask(`Directory the results are written under [${DEFAULT_OUTPUT_DIR}]:`, absolute)) || DEFAULT_OUTPUT_DIR;
@@ -182,7 +210,8 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
     );
 
     let inflect: InitAnswers['inflect'] = null;
-    if (await yes('Post results to an Inflect tenant?')) {
+    // The tenant takes the agent report only: with no agent source there is nothing to post, so the question is not asked.
+    if (agentSourceChosen && (await yes('Post results to an Inflect tenant?'))) {
         const shape = ScannerConfigSchema.shape;
         const inflectShape = shape.inflect.unwrap().shape;
         // Said BEFORE the tenant's questions: the next three ask about the tenant, and none of them is the key.

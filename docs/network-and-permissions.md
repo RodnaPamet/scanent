@@ -6,12 +6,19 @@ Every request scanent can make, and every permission it asks for. This page is r
 the surface the scanner declares in its own code, the same declaration whose hash is in every
 signed report, so it lists what the code can do and nothing else.
 
-Scanner `inflect-agent-harness-scanner`, version 0.14.0, report contract `inflect-agent-harness/4`.
+Scanner `inflect-agent-harness-scanner`, version 0.14.0. One image holds 2 scanners, and this page lists the requests of all of them:
 
-Manifest hash: `sha256:556517197b8ae0345ac1831add9fef60ea426827712d46ae75734d4e27fba53b`
+- The agent scanner: report contract `inflect-agent-harness/4`, written as `report.signed.json`; source kinds `entra-sp`, `okta-app`, `vault`, `mcp`, `runtime`, `cicd`, `inflect-register`, `code`, `gcp-sa`.
+- The integrations scanner: report contract `scanent-integrations/1`, written as `report.integrations.signed.json`; source kinds `entra-integrations`.
 
-The hash is SHA-256 over the canonical JSON of the declared surface. A scanner that can reach
-anything this page does not list has a different hash, and every report it signs carries it.
+A run reads only the sources its configuration names, and writes one signed report for each scanner
+whose sources it names, all with the same key and the same scan id.
+
+Manifest hash: `sha256:f8179691abcc6bc98b293eaa12abbe5b6ee98f14e4d6a067cfaec6537d6a5317`
+
+The hash is SHA-256 over the canonical JSON of the declared surface, every scanner's requests in one.
+A scanner that can reach anything this page does not list has a different hash, and every report it
+signs, of either contract, carries it.
 
 ## What holds for every request
 
@@ -27,19 +34,24 @@ To list the hosts one configuration reaches, run `scanent hosts --config <file>`
 
 ## Hosts and grants at a glance
 
-| Source | Read from | Token from | Grant |
-|---|---|---|---|
-| `entra-sp` | `graph.microsoft.com` (fixed) | `login.microsoftonline.com` | Microsoft Graph application permission Application.Read.All, with admin consent |
-| `vault` | each vault you configure, which must be on `*.vault.azure.net` | `login.microsoftonline.com` | Key Vault Reader on each listed vault (RBAC vaults). For a vault on access policies: List on secrets and List on certificates, and nothing else |
-| `okta-app` | the Okta org you configure, which must be on `*.okta.com` or `*.oktapreview.com` | none | An SSWS API token created by a user holding the Read-only Administrator role only |
-| `cicd` | `api.github.com` (fixed) | none | A fine-grained personal access token (or a GitHub App installation) limited to the listed repositories, with Contents: Read-only and Secrets: Read-only. Metadata: Read-only is added by GitHub |
-| `gcp-sa` | `iam.googleapis.com` (fixed) | `oauth2.googleapis.com` | roles/iam.serviceAccountViewer on each listed project, held by a dedicated service account; one JSON key for that account |
-| `runtime` | `api.smith.langchain.com` or `eu.api.smith.langchain.com` (fixed, by the region you configure), or the self-hosted host you configure | none | A service key holding the workspace Viewer role |
-| `mcp` | each MCP server you configure | none | Per server, a token that can list tools and nothing else; none when the server takes none |
-| `code` | none | none | Read access to the listed directories for the user the scanner runs as |
-| `inflect-register` | the tenant you configure | the same tenant | An API key bound to the scanner agent with the admin:harness_ingest scope, plus mcp:read when the register is read |
+| Scanner | Source | Read from | Token from | Grant |
+|---|---|---|---|---|
+| agents | `entra-sp` | `graph.microsoft.com` (fixed) | `login.microsoftonline.com` | Microsoft Graph application permission Application.Read.All, with admin consent |
+| agents | `vault` | each vault you configure, which must be on `*.vault.azure.net` | `login.microsoftonline.com` | Key Vault Reader on each listed vault (RBAC vaults). For a vault on access policies: List on secrets and List on certificates, and nothing else |
+| agents | `okta-app` | the Okta org you configure, which must be on `*.okta.com` or `*.oktapreview.com` | none | An SSWS API token created by a user holding the Read-only Administrator role only |
+| agents | `cicd` | `api.github.com` (fixed) | none | A fine-grained personal access token (or a GitHub App installation) limited to the listed repositories, with Contents: Read-only and Secrets: Read-only. Metadata: Read-only is added by GitHub |
+| agents | `gcp-sa` | `iam.googleapis.com` (fixed) | `oauth2.googleapis.com` | roles/iam.serviceAccountViewer on each listed project, held by a dedicated service account; one JSON key for that account |
+| agents | `runtime` | `api.smith.langchain.com` or `eu.api.smith.langchain.com` (fixed, by the region you configure), or the self-hosted host you configure | none | A service key holding the workspace Viewer role |
+| agents | `mcp` | each MCP server you configure | none | Per server, a token that can list tools and nothing else; none when the server takes none |
+| agents | `code` | none | none | Read access to the listed directories for the user the scanner runs as |
+| agents | `inflect-register` | the tenant you configure | the same tenant | An API key bound to the scanner agent with the admin:harness_ingest scope, plus mcp:read when the register is read |
+| integrations | `entra-integrations` | `graph.microsoft.com` (fixed) | `login.microsoftonline.com` | Microsoft Graph application permissions Application.Read.All and Directory.Read.All, with admin consent; AuditLog.Read.All as well only when readSignInActivity is set |
 
-## Microsoft Entra ID (service principals and app registrations)
+## The agent scanner
+
+Report contract `inflect-agent-harness/4`. The requests of its sources:
+
+### Microsoft Entra ID (service principals and app registrations)
 
 Source kind `entra-sp`. Reads from: `graph.microsoft.com` (fixed).
 
@@ -55,7 +67,7 @@ Before reading, one token exchange: `POST https://login.microsoftonline.com/{dir
 **Must not be granted.**
 
 - Any ReadWrite permission
-- Directory.* permissions
+- Directory.* permissions, unless the same application also reads for `entra-integrations`, which needs Directory.Read.All
 - Any delegated permission
 - Any directory role
 
@@ -65,7 +77,7 @@ Before reading, one token exchange: `POST https://login.microsoftonline.com/{dir
 - `PATCH /v1.0/servicePrincipals/{id}`: changes a service principal.
 - `GET /v1.0/users`: the directory of people is not read; an owner is kept as an id only.
 
-## Azure Key Vault (credential metadata)
+### Azure Key Vault (credential metadata)
 
 Source kind `vault`. Reads from: each vault you configure, which must be on `*.vault.azure.net`.
 
@@ -90,7 +102,7 @@ Before reading, one token exchange: `POST https://login.microsoftonline.com/{dir
 - `GET /secrets/{name}/{version}`: returns the secret value.
 - `GET /keys`: keys are not read.
 
-## Okta (service apps and API tokens)
+### Okta (service apps and API tokens)
 
 Source kind `okta-app`. Reads from: the Okta org you configure, which must be on `*.okta.com` or `*.oktapreview.com`.
 
@@ -115,7 +127,7 @@ Source kind `okta-app`. Reads from: the Okta org you configure, which must be on
 - `GET /api/v1/users`: the directory of people is not read.
 - `DELETE /api/v1/api-tokens/{id}`: revokes a token.
 
-## GitHub Actions (workflows and secret names)
+### GitHub Actions (workflows and secret names)
 
 Source kind `cicd`. Reads from: `api.github.com` (fixed).
 
@@ -142,7 +154,7 @@ Source kind `cicd`. Reads from: `api.github.com` (fixed).
 - `GET /repos/{owner}/{repo}/contents/{path}`: no file outside `.github/workflows` is read.
 - `GET /repos/{owner}/{repo}/actions/runs`: runs and their logs are not read.
 
-## Google Cloud (service accounts and their keys)
+### Google Cloud (service accounts and their keys)
 
 Source kind `gcp-sa`. Reads from: `iam.googleapis.com` (fixed).
 
@@ -170,7 +182,7 @@ Before reading, one token exchange: `POST https://oauth2.googleapis.com/token`. 
 - `POST /v1/projects/{project}/serviceAccounts/{account}:getIamPolicy`: policies are not read.
 - `POST /v1/projects/{project}/serviceAccounts/{account}:signBlob`: acts as the account.
 
-## LangSmith (tracing projects and deployments)
+### LangSmith (tracing projects and deployments)
 
 Source kind `runtime`. Reads from: `api.smith.langchain.com` or `eu.api.smith.langchain.com` (fixed, by the region you configure), or the self-hosted host you configure.
 
@@ -193,7 +205,7 @@ Source kind `runtime`. Reads from: `api.smith.langchain.com` or `eu.api.smith.la
 - `POST /api/v1/runs/query`: returns runs with their inputs and outputs.
 - `GET /api/v1/datasets`: datasets are not read.
 
-## MCP servers (tool listings)
+### MCP servers (tool listings)
 
 Source kind `mcp`. Reads from: each MCP server you configure.
 
@@ -218,22 +230,7 @@ address checked: loopback, link-local (cloud metadata) and unspecified addresses
 refused, and a private address is refused unless the configuration lists its range. The same
 holds for a self-hosted LangSmith.
 
-## The register read
-
-Source kind `inflect-register`. Reads from: the tenant you configure, and only when this source is configured.
-
-1. `POST /api/mcp/token`: the ingest key is exchanged for a short-lived token whose audience is `get_harness_register` and nothing else.
-2. `POST /api/mcp` carrying `initialize`, `notifications/initialized`, `tools/call`. The one tool called is `get_harness_register`, with no arguments.
-
-**Grant asked for.** An API key bound to the scanner agent with the admin:harness_ingest scope, plus mcp:read when the register is read.
-
-**Must not be granted.**
-
-- Any other scope
-
-**Never sent.** A call of any other tool, or an exchange for any other audience.
-
-## Agent code (local directories)
+### Agent code (local directories)
 
 Source kind `code`. No network request at all.
 
@@ -249,6 +246,55 @@ Source kind `code`. No network request at all.
 
 - Write access: mount the roots read-only
 
+### The register read
+
+Source kind `inflect-register`. Reads from: the tenant you configure, and only when this source is configured.
+
+1. `POST /api/mcp/token`: the ingest key is exchanged for a short-lived token whose audience is `get_harness_register` and nothing else.
+2. `POST /api/mcp` carrying `initialize`, `notifications/initialized`, `tools/call`. The one tool called is `get_harness_register`, with no arguments.
+
+**Grant asked for.** An API key bound to the scanner agent with the admin:harness_ingest scope, plus mcp:read when the register is read.
+
+**Must not be granted.**
+
+- Any other scope
+
+**Never sent.** A call of any other tool, or an exchange for any other audience.
+
+## The integrations scanner
+
+Report contract `scanent-integrations/1`. The requests of its sources:
+
+### Microsoft Entra ID (applications and what they were granted)
+
+Source kind `entra-integrations`. Reads from: `graph.microsoft.com` (fixed).
+
+| Method | Path | What is kept |
+|---|---|---|
+| GET | `/v1.0/servicePrincipals` | Service principals: ids, application id, type, whether enabled, the owning directory, the verified publisher's id, each app role's id and value, credential ids and dates, and owner ids. A display name is kept only when it is printable and not secret-shaped; no description, hint or secret text is kept |
+| GET | `/v1.0/applications` | This directory's own app registrations: the application id and the ids of their owners, to add to the owners of each one's service principal. Nothing else is kept |
+| GET | `/v1.0/oauth2PermissionGrants` | Delegated grants: the application, the API, the consent type and the scopes. For a grant made for named people the people are counted, and their ids are dropped |
+| GET | `/v1.0/servicePrincipals/{id}/appRoleAssignments` | One application's application permissions: the app role's id and the API it is on. No display name is kept |
+| GET | `/beta/reports/servicePrincipalSignInActivities` | Each application's last sign-in, kept to the day. Only when `readSignInActivity` is set; a beta report of Microsoft Graph |
+
+Before reading, one token exchange: `POST https://login.microsoftonline.com/{directoryId}/oauth2/v2.0/token`. See "Token exchanges".
+
+**Grant asked for.** Microsoft Graph application permissions Application.Read.All and Directory.Read.All, with admin consent; AuditLog.Read.All as well only when readSignInActivity is set.
+
+**Must not be granted.**
+
+- Any ReadWrite permission
+- Any delegated permission
+- Any directory role
+- AuditLog.Read.All, unless readSignInActivity is set
+
+**Never requested.** The API offers these, and the scanner cannot make them:
+
+- `DELETE /v1.0/oauth2PermissionGrants/{id}`: revokes a delegated grant.
+- `DELETE /v1.0/servicePrincipals/{id}/appRoleAssignments/{assignment}`: removes an application permission.
+- `GET /v1.0/users/{id}`: the person who consented is not read; a grant made for named people is a count.
+- `GET /v1.0/auditLogs/signIns`: sign-in records of people are not read; only each application's own last sign-in is.
+
 ## Token exchanges
 
 A token exchange is a POST by protocol. It asks the identity provider for a token to read with,
@@ -260,14 +306,16 @@ written or logged.
 | `azure-key-vault` | `POST https://login.microsoftonline.com/{directoryTenantId}/oauth2/v2.0/token` | client credentials |
 | `entra` | `POST https://login.microsoftonline.com/{directoryId}/oauth2/v2.0/token` | client credentials |
 | `gcp-iam` | `POST https://oauth2.googleapis.com/token` | JWT bearer (RFC 7523): an assertion signed with the service-account key |
+| `entra-integrations` | `POST https://login.microsoftonline.com/{directoryId}/oauth2/v2.0/token` | client credentials |
 
 ## The one post
 
-Only when the `inflect` output is in effect, the signed report is sent to the tenant you configure:
+Only when the `inflect` output is in effect, the agent scanner's signed report is sent to the tenant you configure:
 
 - `POST /api/t/{tenantSlug}/admin/agents/harness-scans`
 
 The body is the signed report, byte for byte what the file output writes as `report.signed.json`.
+The integrations scanner's report (`report.integrations.signed.json`) is not posted anywhere: the tenant has no ingest for it yet, and the scanner says so in its log.
 With no `inflect` output (`--out`, `--dry-run`, or a configuration that names no tenant) nothing is posted anywhere.
 
 ## The egress proof

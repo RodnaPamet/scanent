@@ -44,7 +44,12 @@ label. Treat the log as you treat the configuration.
 | `not read` | warn | `source` (string: the source kind), `where` (string: the place, for the `code` source `code://<root label>/<path>#L<line>`), `reason` (string: the contract's reason for this place) | One place a source did not read. At most 25 for each source of a scan |
 | `not read: more places than are listed` | warn | `source` (string), `unlisted` (number) | The source did not read more places than the `not read` lines name |
 | `mcp server read` | info | `server` (string: the label), `tools` (number), `manifestHash` (string: `sha256:` of the listing, the value to pin) | One MCP server's listing was read in full |
-| `report signed` | info | `scan` (string: the scan id), `agents` (number), `sources` (number) | The report was built and signed |
+| `report signed` | info | `scan` (string: the scan id), `agents` (number), `sources` (number) | The agent report was built and signed. Absent from a run of the integrations scanner alone, which builds no agent report |
+| `integrations source read` | info | `source` (string: the source kind), `status` (string: `COMPLETE`), `rows` (number), `applications` (number), `signInActivity` (string: `NOT_READ`, `COMPLETE` or `INCOMPLETE`) | An integrations source was read in full. Only when the configuration has one |
+| `integrations source incomplete` | warn | the fields of `integrations source read` with `status` `INCOMPLETE`, `reason` (string: the contract's reason) and `detail` (string or null: why, in the scanner's own fixed words) | An integrations source was not read in full. What it read is reported, and nothing it did not read is concluded |
+| `sign-in activity incomplete` | warn | `source` (string), `reason` (string: the contract's reason), `detail` (string or null) | The source's sign-in activity was asked for and not read in full, for example without `AuditLog.Read.All` or a licence that records sign-ins. No application it did not reach is concluded unused |
+| `integrations report signed` | info | `scan` (string: the scan id, the agent report's when there is one), `applications` (number), `sources` (number) | The integrations report was built and signed with the same key |
+| `integrations report not posted` | info | `scan` (string), `reason` (string) | The `inflect` output posted the agent report; the tenant has no ingest for the integrations report yet, so it was not sent |
 | `results written` | info | `scan` (string), `dir` (string: `runs/<scanId>`, relative to the output directory), `files` (number), `removedRuns` (number: runs removed by `retainRuns`) | The file output wrote a run |
 | `report ingested` | info | `scan` (string), `complete` (boolean: whether the tenant reads it as a complete scan), `agents` (number) | The tenant accepted the report |
 | `report refused` | error | `scan` (string), `status` (number: the HTTP status), `refusal` (string or null: the tenant's refusal code, when it gave one) | The tenant answered and did not accept the report. A tenant that could not be reached at all is `output failed` |
@@ -72,7 +77,7 @@ the value.
 
 | Signal | Meaning |
 |---|---|
-| No `report signed` line for longer than `schedule.everyHours` plus the time a scan takes | The schedule has stopped, or a scan is hanging past its time box |
+| No `report signed` (or, for the integrations scanner alone, `integrations report signed`) line for longer than `schedule.everyHours` plus the time a scan takes | The schedule has stopped, or a scan is hanging past its time box |
 | `source incomplete` with the same `reason` on consecutive scans | A credential expired (`AUTH_FAILED`), a limit is too low (`RATE_LIMITED`), or a host is gone (`UNREACHABLE`) |
 | `report refused` or `output failed` | Results are not reaching where they should |
 | `egress not proven` | The confinement the deployment relies on is not in place |

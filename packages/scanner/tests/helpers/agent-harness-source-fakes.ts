@@ -62,6 +62,10 @@ export const ENTRA_MARKERS = {
     credentialName: 'marker-entra-credential-display-name-3686',
     principalName: 'marker-entra-principal-display-name-3686',
     applicationNotes: 'marker-entra-application-notes-3686',
+    /** What the integrations source must drop: an app role's words, a resource's name, a consenting person's name. */
+    roleDescription: 'marker-entra-app-role-description-3686',
+    resourceName: 'marker-entra-resource-display-name-3686',
+    publisherName: 'marker-entra-publisher-display-name-3686',
 } as const;
 
 /** Object ids in the fixture directory. */
@@ -87,6 +91,11 @@ export const ENTRA = {
     userJane: 'c0000001-0000-4000-8000-000000003686',
     userZed: 'c0000009-0000-4000-8000-000000003686',
     spOwnerPrincipal: 'c0000002-0000-4000-8000-000000003686',
+    /** Microsoft Graph's own app roles, by their published ids (the integrations source names an assignment by them). */
+    roleMailReadWrite: 'e2a3a72e-5f79-4c64-b1b1-878b674786c9',
+    roleUserReadAll: 'df021288-bdef-4463-88db-98f22de89214',
+    /** An app role the third-party API publishes: a permission the classification does not know. */
+    roleThirdPartyExport: 'f0000001-0000-4000-8000-000000003686',
     /** Credential key ids. */
     keySupportPasswordCred: 'd0000001-0000-4000-8000-000000003686',
     keySupportCert: 'd0000002-0000-4000-8000-000000003686',
@@ -253,6 +262,12 @@ export function registerFixture(): RegisterFixture {
 export interface GraphFixture {
     applications: unknown[][];
     servicePrincipals: unknown[][];
+    /** `/v1.0/oauth2PermissionGrants`, page by page. Absent: none. */
+    oauth2PermissionGrants?: unknown[][];
+    /** `/v1.0/servicePrincipals/{id}/appRoleAssignments`, page by page, by principal id. A principal not here has none. */
+    appRoleAssignments?: Record<string, unknown[][]>;
+    /** `/beta/reports/servicePrincipalSignInActivities`, page by page. Absent: none. */
+    signInActivities?: unknown[][];
 }
 
 const user = (id: string) => ({ '@odata.type': '#microsoft.graph.user', id, userPrincipalName: 'someone@contoso.example' });
@@ -325,6 +340,7 @@ export function graphFixture(): GraphFixture {
                     servicePrincipalType: 'Application',
                     appOwnerOrganizationId: ENTRA_DIRECTORY_ID,
                     accountEnabled: true,
+                    verifiedPublisher: { displayName: null, verifiedPublisherId: null, addedDateTime: null },
                     passwordCredentials: [],
                     keyCredentials: [cert(ENTRA.keySupportSaml, 'Sign', '2026-09-01T00:00:00Z')],
                     owners: [],
@@ -371,19 +387,93 @@ export function graphFixture(): GraphFixture {
                     passwordCredentials: [],
                     keyCredentials: [],
                     owners: [],
+                    verifiedPublisher: { displayName: null, verifiedPublisherId: null, addedDateTime: null },
+                    appRoles: [
+                        appRole(ENTRA.roleMailReadWrite, 'Mail.ReadWrite'),
+                        appRole(ENTRA.roleUserReadAll, 'User.Read.All'),
+                    ],
                 },
                 {
                     id: ENTRA.spThirdParty,
                     appId: 'e0000006-0000-4000-8000-000000003686',
+                    displayName: 'Acme Mail Sync',
                     servicePrincipalType: 'Application',
                     appOwnerOrganizationId: THIRD_PARTY_TENANT,
                     accountEnabled: true,
                     passwordCredentials: [secret(ENTRA.keyThirdPartyPasswordCred, '2026-10-01T00:00:00Z', '2027-10-01T00:00:00Z')],
                     keyCredentials: [],
                     owners: [],
+                    // A publisher nobody verified: the member is there, its id is null.
+                    verifiedPublisher: { displayName: ENTRA_MARKERS.publisherName, verifiedPublisherId: null, addedDateTime: null },
+                    appRoles: [appRole(ENTRA.roleThirdPartyExport, 'Records.Export.All')],
                 },
             ],
         ],
+        // Delegated grants, as Graph lists them: the support app for everyone (low), the reporting app for two
+        // named people (files) and on the third party's API (a scope the classification does not know), and
+        // Microsoft's own Graph principal (not an application the integrations scanner reports).
+        oauth2PermissionGrants: [
+            [
+                { id: 'grant-support', clientId: ENTRA.spSupport, consentType: 'AllPrincipals', principalId: null, resourceId: ENTRA.spGraph, scope: 'openid profile User.Read' },
+                { id: 'grant-reporting-jane', clientId: ENTRA.spReporting, consentType: 'Principal', principalId: ENTRA.userJane, resourceId: ENTRA.spGraph, scope: ' Files.Read.All User.Read ' },
+            ],
+            [
+                { id: 'grant-reporting-zed', clientId: ENTRA.spReporting, consentType: 'Principal', principalId: ENTRA.userZed, resourceId: ENTRA.spGraph, scope: 'Files.Read.All' },
+                { id: 'grant-reporting-api', clientId: ENTRA.spReporting, consentType: 'AllPrincipals', principalId: null, resourceId: ENTRA.spThirdParty, scope: 'records.read' },
+                { id: 'grant-graph-self', clientId: ENTRA.spGraph, consentType: 'AllPrincipals', principalId: null, resourceId: ENTRA.spGraph, scope: 'Directory.ReadWrite.All' },
+            ],
+        ],
+        // Application permissions: the third party holds Mail.ReadWrite on Graph, over two pages, and the reporting
+        // app a role on the third party's API and the default-access assignment, which grants no permission.
+        appRoleAssignments: {
+            [ENTRA.spThirdParty]: [
+                [assignment(ENTRA.spThirdParty, ENTRA.roleMailReadWrite, ENTRA.spGraph)],
+                [assignment(ENTRA.spThirdParty, ENTRA.roleUserReadAll, ENTRA.spGraph)],
+            ],
+            [ENTRA.spReporting]: [[assignment(ENTRA.spReporting, ENTRA.roleThirdPartyExport, ENTRA.spThirdParty), assignment(ENTRA.spReporting, '00000000-0000-0000-0000-000000000000', ENTRA.spThirdParty)]],
+        },
+        // Sign-in activity: the support app last week, the third party in March, the reporting app never.
+        signInActivities: [
+            [
+                signInActivity('e0000001-0000-4000-8000-000000003686', '2026-10-12T08:30:00Z'),
+                signInActivity('00000003-0000-0000-c000-000000000000', '2026-10-18T23:59:00Z'),
+            ],
+            [signInActivity('e0000006-0000-4000-8000-000000003686', '2026-03-02T11:00:00Z')],
+        ],
+    };
+}
+
+/** One app role as Graph lists it on its resource's service principal, with words the integrations source must drop. */
+function appRole(id: string, value: string) {
+    return { id, value, allowedMemberTypes: ['Application'], displayName: ENTRA_MARKERS.roleDescription, description: ENTRA_MARKERS.roleDescription, isEnabled: true, origin: 'Application' };
+}
+
+/** One appRoleAssignment, as Graph returns it, with the display names the integrations source must drop. */
+function assignment(principalId: string, appRoleId: string, resourceId: string) {
+    return {
+        id: `assignment-${principalId.slice(0, 8)}-${appRoleId.slice(0, 8)}`,
+        deletedDateTime: null,
+        appRoleId,
+        createdDateTime: '2026-05-01T00:00:00Z',
+        principalDisplayName: ENTRA_MARKERS.principalName,
+        principalId,
+        principalType: 'ServicePrincipal',
+        resourceDisplayName: ENTRA_MARKERS.resourceName,
+        resourceId,
+    };
+}
+
+/** One row of the beta report `servicePrincipalSignInActivities`. */
+function signInActivity(appId: string, last: string) {
+    const activity = { lastSignInDateTime: last, lastSignInRequestId: `req-${appId.slice(0, 8)}` };
+    return {
+        id: `activity-${appId.slice(0, 8)}`,
+        appId,
+        lastSignInActivity: activity,
+        delegatedClientSignInActivity: activity,
+        delegatedResourceSignInActivity: { lastSignInDateTime: null, lastSignInRequestId: null },
+        applicationAuthenticationClientSignInActivity: { lastSignInDateTime: null, lastSignInRequestId: null },
+        applicationAuthenticationResourceSignInActivity: { lastSignInDateTime: null, lastSignInRequestId: null },
     };
 }
 
@@ -751,13 +841,24 @@ export function createSourceFakes(opts: {
                 return json({ error: { code: 'InvalidAuthenticationToken' } }, 401);
             }
             if (method !== 'GET') return json({ error: { code: 'Request_BadRequest' } }, 405);
+            const assignments = /^\/v1\.0\/servicePrincipals\/([^/]+)\/appRoleAssignments$/.exec(u.pathname);
             const collection =
-                u.pathname === '/v1.0/applications' ? graph.applications : u.pathname === '/v1.0/servicePrincipals' ? graph.servicePrincipals : null;
+                u.pathname === '/v1.0/applications'
+                    ? graph.applications
+                    : u.pathname === '/v1.0/servicePrincipals'
+                        ? graph.servicePrincipals
+                        : u.pathname === '/v1.0/oauth2PermissionGrants'
+                            ? (graph.oauth2PermissionGrants ?? [[]])
+                            : u.pathname === '/beta/reports/servicePrincipalSignInActivities'
+                                ? (graph.signInActivities ?? [[]])
+                                : assignments !== null && graph.servicePrincipals.flat().some((sp) => (sp as { id?: unknown }).id === assignments[1])
+                                    ? (graph.appRoleAssignments?.[assignments[1]] ?? [[]])
+                                    : null;
             if (collection) {
                 const at = Number(u.searchParams.get('$skiptoken') ?? '0');
                 const next = at + 1 < collection.length ? `${GRAPH}${u.pathname}?$top=100&$skiptoken=${at + 1}` : undefined;
                 return json({
-                    '@odata.context': `${GRAPH}/v1.0/$metadata#${u.pathname.slice(6)}`,
+                    '@odata.context': `${GRAPH}${u.pathname.startsWith('/beta') ? '/beta' : '/v1.0'}/$metadata#${u.pathname.split('/').slice(2).join('/')}`,
                     value: collection[at] ?? [],
                     ...(next ? { '@odata.nextLink': next } : {}),
                 });

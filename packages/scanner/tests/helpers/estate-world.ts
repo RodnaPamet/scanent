@@ -232,6 +232,19 @@ export const ESTATE_SOURCES = {
     'inflect-register': { kind: 'inflect-register' },
 } as const;
 
+/**
+ * The integrations scanner's Entra source on the same fake directory, with the
+ * same application and secret as `entra-sp`: one product, two scanners. Apart
+ * from `ESTATE_SOURCES`, whose every row is an agent source.
+ */
+export const INTEGRATIONS_ESTATE_SOURCE = {
+    kind: 'entra-integrations',
+    directoryId: ENTRA_DIRECTORY_ID,
+    clientId: AZURE_CLIENT_ID,
+    clientSecretEnv: 'ENTRA_CLIENT_SECRET',
+    readSignInActivity: true,
+} as const;
+
 export type EstateSourceKind = keyof typeof ESTATE_SOURCES;
 export const ESTATE_SOURCE_KINDS = Object.keys(ESTATE_SOURCES) as EstateSourceKind[];
 

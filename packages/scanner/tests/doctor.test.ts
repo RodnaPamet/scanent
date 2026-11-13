@@ -10,6 +10,7 @@
  *      posted, and the manifest hash is what it was.
  *   5. No credential reaches the table, the JSON or the log.
  *   6. The exit code, row by row.
+ *   7. Grouped by scanner: the platform's checks, then each scanner's.
  */
 import { accessSync, chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -21,7 +22,7 @@ import { renderDoctorJson, renderDoctorText, summaryLine } from '../src/doctor/r
 import { runDoctor, type DoctorDeps } from '../src/doctor/run';
 import { assertWellFormed, doctorExitCode, isReady, type Check, type DoctorReport } from '../src/doctor/types';
 import { isDeclaredMcpMessage, isDeclaredRegisterExchange, isDeclaredRegisterMessage, isDeclaredRequest, scannerManifestHash } from '../src/scanner-surface';
-import { INGEST, MCP_CRM, MCP_TICKETS, NEVER_REPORTED } from './helpers/agent-harness-source-fakes';
+import { AZURE_CLIENT_ID, ENTRA_DIRECTORY_ID, INGEST, MCP_CRM, MCP_TICKETS, NEVER_REPORTED } from './helpers/agent-harness-source-fakes';
 import { CODE_ROOT, createDoctorWorld, fullEstateConfig, fullEstateEnv, GCP_PROJECT, GITHUB_REPO, WORLD_SECRETS, type DoctorWorld } from './helpers/doctor-world';
 
 const NOW = Date.parse('2026-10-19T03:00:00.000Z');
@@ -558,6 +559,45 @@ describe('6. the model, and the exit code', () => {
     });
 });
 
+describe('7. grouped by scanner', () => {
+    const withIntegrations = () => {
+        const c = fullEstateConfig(join(dir, 'out'));
+        const integrations = { kind: 'entra-integrations', directoryId: ENTRA_DIRECTORY_ID, clientId: AZURE_CLIENT_ID, clientSecretEnv: 'ENTRA_CLIENT_SECRET' };
+        writeFileSync(configPath, JSON.stringify({ ...c, sources: [...(c.sources as unknown[]), integrations] }), { mode: 0o600 });
+    };
+
+    it('an agents-only estate: one group, every source scope and the ingest in it, and the local checks outside it', async () => {
+        const report = await doctor(createDoctorWorld());
+        expect(report.scanners).toEqual([{ scanner: 'agents', scopes: [...NETWORK_SCOPES.slice(0, 6), 'mcp:crm', 'mcp:tickets', 'code', 'inflect-register', 'inflect'] }]);
+        const text = renderDoctorText(report);
+        expect(text.indexOf('local\n')).toBeLessThan(text.indexOf('== The agent scanner =='));
+        expect(text).not.toContain('== The integrations scanner ==');
+    });
+
+    it('both scanners: the integrations source under its own heading, after the agent scanner\'s, in the table and the JSON', async () => {
+        withIntegrations();
+        const report = await doctor(createDoctorWorld());
+        expect(report.scanners.map((g) => g.scanner)).toEqual(['agents', 'integrations']);
+        expect(report.scanners[1].scopes).toEqual(['entra-integrations']);
+        expect(statuses(report, 'entra-integrations')).toMatchObject({ 'credential.present': 'PASS', reachable: 'PASS', authenticated: 'PASS' });
+        const text = renderDoctorText(report);
+        const agents = text.indexOf('== The agent scanner ==');
+        const integrations = text.indexOf('== The integrations scanner ==');
+        expect(agents).toBeGreaterThan(text.indexOf('local\n'));
+        expect(integrations).toBeGreaterThan(agents);
+        expect(text.indexOf('\nentra-integrations\n')).toBeGreaterThan(integrations);
+        expect(text.indexOf('\nentra-sp\n')).toBeLessThan(integrations);
+        expect(JSON.parse(renderDoctorJson(report)).scanners).toEqual(report.scanners);
+    });
+
+    it('a configuration that could not be read groups nothing', async () => {
+        writeFileSync(configPath, '{', { mode: 0o600 });
+        const report = await doctor(createDoctorWorld());
+        expect(report.scanners).toEqual([]);
+        expect(renderDoctorText(report)).not.toContain('==');
+    });
+});
+
 describe('the command', () => {
     let out: string[];
     let err: string[];
@@ -609,6 +649,7 @@ describe('the command', () => {
             ready: false,
             counts: { PASS: 0, WARN: 1, FAIL: 0, SKIPPED: 0 },
             exitCode: 3,
+            scanners: [{ scanner: 'agents', scopes: ['mcp:evil\u001b[2J'] }],
             checks: [{ scope: 'mcp:evil\u001b[2J', id: 'x', status: 'WARN', detail: 'line one\nline two\u202e', fix: 'do\rthis' }],
         };
         const text = renderDoctorText(report);

@@ -18,7 +18,7 @@
 import { ACCESS_GUIDE, GUIDE_ORDER, type AccessEntry } from './init/access-guide';
 import { JWT_BEARER_GRANT, MAX_RESPONSE_BYTES, MAX_SOURCE_BYTES } from './http';
 import { SCANNER_SURFACE, scannerManifestHash, TOKEN_EXCHANGE_GRANTS } from './scanner-surface';
-import type { SourceKind } from './source';
+import { SCANNER_CONTRACT, SCANNER_OF_SOURCE, SCANNER_REPORT_FILE, SCANNER_TITLE, SCANNERS, type ScannerSourceKind } from './scanners';
 import { MAX_FILE_BYTES, MAX_FILES, MAX_MARKER_SCAN_BYTES, MAX_TOTAL_BYTES } from './sources/code/files';
 import { AZURE_KEY_VAULT_HOST_SUFFIX } from './sources/azure-key-vault';
 import { LANGSMITH_CLOUD_ORIGINS } from './sources/langsmith';
@@ -42,10 +42,20 @@ export const WHAT_IS_READ: Readonly<Record<string, string>> = {
     'langsmith /api/v1/sessions': 'Tracing projects: id, start time, and aggregate counts of tool runs by tool name over the configured window. No run, input or output',
     'langsmith /v2/deployments': 'Deployments: id and the tracing project each writes to. Only when `readDeployments` is set, because the listing also carries deployment secrets, which are dropped with the page',
     'langsmith /api-host/v2/deployments': 'The same deployments listing, on a self-hosted LangSmith',
+    'entra-integrations /v1.0/servicePrincipals':
+        "Service principals: ids, application id, type, whether enabled, the owning directory, the verified publisher's id, each app role's id and value, credential ids and dates, and owner ids. A display name is kept only when it is printable and not secret-shaped; no description, hint or secret text is kept",
+    'entra-integrations /v1.0/applications':
+        "This directory's own app registrations: the application id and the ids of their owners, to add to the owners of each one's service principal. Nothing else is kept",
+    'entra-integrations /v1.0/oauth2PermissionGrants':
+        'Delegated grants: the application, the API, the consent type and the scopes. For a grant made for named people the people are counted, and their ids are dropped',
+    'entra-integrations /v1.0/servicePrincipals/{id}/appRoleAssignments':
+        "One application's application permissions: the app role's id and the API it is on. No display name is kept",
+    'entra-integrations /beta/reports/servicePrincipalSignInActivities':
+        "Each application's last sign-in, kept to the day. Only when `readSignInActivity` is set; a beta report of Microsoft Graph",
 };
 
 /** Requests each API offers that the scanner never makes. Each is off the declared surface; a test holds that. */
-export const NEVER_REQUESTED: Readonly<Record<SourceKind, readonly { readonly method: string; readonly path: string; readonly why: string }[]>> = {
+export const NEVER_REQUESTED: Readonly<Record<ScannerSourceKind, readonly { readonly method: string; readonly path: string; readonly why: string }[]>> = {
     'entra-sp': [
         { method: 'POST', path: '/v1.0/applications/{id}/addPassword', why: 'creates a client secret' },
         { method: 'PATCH', path: '/v1.0/servicePrincipals/{id}', why: 'changes a service principal' },
@@ -79,12 +89,18 @@ export const NEVER_REQUESTED: Readonly<Record<SourceKind, readonly { readonly me
     mcp: [],
     code: [],
     'inflect-register': [],
+    'entra-integrations': [
+        { method: 'DELETE', path: '/v1.0/oauth2PermissionGrants/{id}', why: 'revokes a delegated grant' },
+        { method: 'DELETE', path: '/v1.0/servicePrincipals/{id}/appRoleAssignments/{assignment}', why: 'removes an application permission' },
+        { method: 'GET', path: '/v1.0/users/{id}', why: 'the person who consented is not read; a grant made for named people is a count' },
+        { method: 'GET', path: '/v1.0/auditLogs/signIns', why: "sign-in records of people are not read; only each application's own last sign-in is" },
+    ],
 };
 
 const LANGSMITH_HOSTS = Object.values(LANGSMITH_CLOUD_ORIGINS).map((origin) => new URL(origin).hostname);
 
 /** The hosts one source reaches for its reads, in words. Fixed hosts are named; a configured host says which rule binds it. */
-function readHostsOf(kind: SourceKind): string {
+function readHostsOf(kind: ScannerSourceKind): string {
     const fixed = SCANNER_SURFACE.reads.filter((r) => r.source === kind && 'origin' in r).map((r) => `\`${new URL((r as { origin: string }).origin).hostname}\` (fixed)`);
     if (fixed.length > 0) return fixed.join(', ');
     switch (kind) {
@@ -129,12 +145,18 @@ export function renderNetworkAndPermissionsMarkdown(): string {
         'the surface the scanner declares in its own code, the same declaration whose hash is in every',
         'signed report, so it lists what the code can do and nothing else.',
         '',
-        `Scanner \`${s.name}\`, version ${s.version}, report contract \`${s.contract}\`.`,
+        `Scanner \`${s.name}\`, version ${s.version}. One image holds ${s.scanners.length} scanners, and this page lists the requests of all of them:`,
+        '',
+        ...s.scanners.map((scanner) => `- ${SCANNER_TITLE[scanner.id]}: report contract \`${scanner.contract}\`, written as \`${SCANNER_REPORT_FILE[scanner.id]}\`; source kinds ${scanner.sources.map((k) => `\`${k}\``).join(', ')}.`),
+        '',
+        'A run reads only the sources its configuration names, and writes one signed report for each scanner',
+        'whose sources it names, all with the same key and the same scan id.',
         '',
         `Manifest hash: \`${scannerManifestHash()}\``,
         '',
-        'The hash is SHA-256 over the canonical JSON of the declared surface. A scanner that can reach',
-        'anything this page does not list has a different hash, and every report it signs carries it.',
+        'The hash is SHA-256 over the canonical JSON of the declared surface, every scanner\'s requests in one.',
+        'A scanner that can reach anything this page does not list has a different hash, and every report it',
+        'signs, of either contract, carries it.',
         '',
         '## What holds for every request',
         '',
@@ -150,25 +172,33 @@ export function renderNetworkAndPermissionsMarkdown(): string {
         '',
         '## Hosts and grants at a glance',
         '',
-        '| Source | Read from | Token from | Grant |',
-        '|---|---|---|---|',
+        '| Scanner | Source | Read from | Token from | Grant |',
+        '|---|---|---|---|---|',
     ];
-    const tokenHostOf = (kind: SourceKind): string => {
+    const tokenHostOf = (kind: ScannerSourceKind): string => {
         const products = new Set<string>(s.reads.filter((r) => r.source === kind).map((r) => r.product));
         const hosts = s.authenticates.filter((a) => products.has(a.product)).map((a) => `\`${new URL(a.origin).hostname}\``);
         return hosts.length === 0 ? (kind === 'inflect-register' ? 'the same tenant' : 'none') : hosts.join(', ');
     };
     for (const kind of GUIDE_ORDER) {
-        lines.push(`| \`${kind}\` | ${cell(readHostsOf(kind))} | ${tokenHostOf(kind)} | ${cell(ACCESS_GUIDE[kind].grant)} |`);
+        lines.push(`| ${SCANNER_OF_SOURCE[kind]} | \`${kind}\` | ${cell(readHostsOf(kind))} | ${tokenHostOf(kind)} | ${cell(ACCESS_GUIDE[kind].grant)} |`);
     }
     lines.push('');
 
-    // ── One section per source that reads over GET ──
-    for (const kind of GUIDE_ORDER) {
+    for (const scanner of SCANNERS) {
+        lines.push(`## ${SCANNER_TITLE[scanner]}`, '', `Report contract \`${SCANNER_CONTRACT[scanner]}\`. The requests of its sources:`, '');
+        for (const kind of GUIDE_ORDER.filter((k) => SCANNER_OF_SOURCE[k] === scanner)) sourceSection(kind);
+    }
+
+    // ── One section per source ──
+    function sourceSection(kind: ScannerSourceKind): void {
+        if (kind === 'mcp') return mcpSection();
+        if (kind === 'inflect-register') return registerSection();
+        if (kind === 'code') return codeSection();
         const entry = ACCESS_GUIDE[kind];
         const reads = s.reads.filter((r) => r.source === kind);
-        if (reads.length === 0) continue;
-        lines.push(`## ${entry.title}`, '', `Source kind \`${kind}\`. Reads from: ${readHostsOf(kind)}.`, '');
+        if (reads.length === 0) return;
+        lines.push(`### ${entry.title}`, '', `Source kind \`${kind}\`. Reads from: ${readHostsOf(kind)}.`, '');
         lines.push('| Method | Path | What is kept |', '|---|---|---|');
         for (const read of reads) {
             for (const path of read.paths) {
@@ -190,15 +220,16 @@ export function renderNetworkAndPermissionsMarkdown(): string {
     }
 
     // ── MCP ──
-    const mcp = ACCESS_GUIDE.mcp;
-    lines.push(`## ${mcp.title}`, '', `Source kind \`mcp\`. Reads from: ${readHostsOf('mcp')}.`, '');
-    for (const list of s.lists) {
-        lines.push(
-            `To each server the scanner sends \`${list.method}\` requests carrying these JSON-RPC messages, and no other:`,
-            '',
-            ...list.jsonRpc.map((m) => `- \`${m}\``),
-            '',
-        );
+    function mcpSection(): void {
+        const mcp = ACCESS_GUIDE.mcp;
+        lines.push(`### ${mcp.title}`, '', `Source kind \`mcp\`. Reads from: ${readHostsOf('mcp')}.`, '');
+        for (const list of s.lists) {
+            lines.push(
+                `To each server the scanner sends \`${list.method}\` requests carrying these JSON-RPC messages, and no other:`,
+                '',
+                ...list.jsonRpc.map((m) => `- \`${m}\``),
+                '',
+            );
     }
     lines.push(
         'It keeps each tool\'s name and annotations, and a hash of the whole listing. It offers the server no capability (no sampling, no roots, no elicitation).',
@@ -212,33 +243,38 @@ export function renderNetworkAndPermissionsMarkdown(): string {
         'holds for a self-hosted LangSmith.',
         '',
     );
+    }
 
     // ── The register ──
-    const registerEntry = ACCESS_GUIDE['inflect-register'];
-    lines.push('## The register read', '', 'Source kind `inflect-register`. Reads from: the tenant you configure, and only when this source is configured.', '');
-    for (const register of s.readsRegister) {
-        lines.push(
-            `1. \`${register.exchange.method} ${register.exchange.path}\`: the ingest key is exchanged for a short-lived token whose audience is \`${register.exchange.audience.join(', ')}\` and nothing else.`,
-            `2. \`${register.method} ${register.path}\` carrying ${register.jsonRpc.map((m) => `\`${m}\``).join(', ')}. The one tool called is \`${register.tool}\`, with no arguments.`,
-            '',
-        );
+    function registerSection(): void {
+        const registerEntry = ACCESS_GUIDE['inflect-register'];
+        lines.push('### The register read', '', 'Source kind `inflect-register`. Reads from: the tenant you configure, and only when this source is configured.', '');
+        for (const register of s.readsRegister) {
+            lines.push(
+                `1. \`${register.exchange.method} ${register.exchange.path}\`: the ingest key is exchanged for a short-lived token whose audience is \`${register.exchange.audience.join(', ')}\` and nothing else.`,
+                `2. \`${register.method} ${register.path}\` carrying ${register.jsonRpc.map((m) => `\`${m}\``).join(', ')}. The one tool called is \`${register.tool}\`, with no arguments.`,
+                '',
+            );
     }
     lines.push(...accessLines(registerEntry), '**Never sent.** A call of any other tool, or an exchange for any other audience.', '');
+    }
 
     // ── Code ──
-    const code = ACCESS_GUIDE.code;
-    lines.push(`## ${code.title}`, '', 'Source kind `code`. No network request at all.', '');
-    for (const files of s.readsFiles) {
-        lines.push(
-            `- File operations: ${files.operations.map((o) => `\`${o}\``).join(', ')}. Nothing is written, created, renamed or removed.`,
-            `- Files read: those ending ${files.extensions.map((e) => `\`${e}\``).join(', ')}.`,
-            `- Directories not entered: ${files.skips.map((d) => `\`${d}\``).join(', ')}.`,
-            `- Symbolic links followed: ${files.followsSymlinks ? 'yes' : 'never'}. Code executed: ${files.executes ? 'yes' : 'never'}. Files are parsed as text.`,
-            `- Bounds: ${mib(MAX_FILE_BYTES)} per file that is parsed, ${MAX_FILES.toLocaleString('en-US')} files, ${mib(MAX_TOTAL_BYTES)} in total. A larger file, up to ${mib(MAX_MARKER_SCAN_BYTES)}, is read only to look for the name of a framework or of a model provider's SDK and is never parsed; one that names one is reported as not read.`,
-            '',
-        );
+    function codeSection(): void {
+        const code = ACCESS_GUIDE.code;
+        lines.push(`### ${code.title}`, '', 'Source kind `code`. No network request at all.', '');
+        for (const files of s.readsFiles) {
+            lines.push(
+                `- File operations: ${files.operations.map((o) => `\`${o}\``).join(', ')}. Nothing is written, created, renamed or removed.`,
+                `- Files read: those ending ${files.extensions.map((e) => `\`${e}\``).join(', ')}.`,
+                `- Directories not entered: ${files.skips.map((d) => `\`${d}\``).join(', ')}.`,
+                `- Symbolic links followed: ${files.followsSymlinks ? 'yes' : 'never'}. Code executed: ${files.executes ? 'yes' : 'never'}. Files are parsed as text.`,
+                `- Bounds: ${mib(MAX_FILE_BYTES)} per file that is parsed, ${MAX_FILES.toLocaleString('en-US')} files, ${mib(MAX_TOTAL_BYTES)} in total. A larger file, up to ${mib(MAX_MARKER_SCAN_BYTES)}, is read only to look for the name of a framework or of a model provider's SDK and is never parsed; one that names one is reported as not read.`,
+                '',
+            );
     }
     lines.push(...accessLines(code));
+    }
 
     // ── Token exchanges ──
     lines.push(
@@ -261,11 +297,12 @@ export function renderNetworkAndPermissionsMarkdown(): string {
     lines.push(
         '## The one post',
         '',
-        'Only when the `inflect` output is in effect, the signed report is sent to the tenant you configure:',
+        "Only when the `inflect` output is in effect, the agent scanner's signed report is sent to the tenant you configure:",
         '',
         ...s.sends.map((send) => `- \`${send.method} ${send.path}\``),
         '',
         'The body is the signed report, byte for byte what the file output writes as `report.signed.json`.',
+        `The integrations scanner's report (\`${SCANNER_REPORT_FILE.integrations}\`) is not posted anywhere: the tenant has no ingest for it yet, and the scanner says so in its log.`,
         'With no `inflect` output (`--out`, `--dry-run`, or a configuration that names no tenant) nothing is posted anywhere.',
         '',
     );

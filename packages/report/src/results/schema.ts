@@ -24,7 +24,29 @@ import { PAYMENT_CLIENT_LIBRARIES, PAYMENT_PROTOCOLS, SOURCE_KINDS } from '@rodn
 import { MAX_PAYMENT_CAPABILITIES_PER_AGENT } from '@rodnapamet/scanent-contract/harness-contract';
 import { ALL_HARNESS_CRITERIA, HARNESS_LEVELS, isHarnessCriterionId, type HarnessCriterionId } from '@rodnapamet/scanent-contract/harness-ladder';
 
-import { MODEL_SIGNS, RESULTS_SCHEMA, type LocalResults } from './types';
+import {
+    APPLICATION_ORIGINS,
+    CONSENT_TYPES,
+    ENTRA_APPLICATION_ID,
+    ENTRA_OBJECT_ID,
+    INTEGRATIONS_CONTRACT_IDS,
+    INTEGRATIONS_SOURCE_KINDS,
+    ISO_DATE,
+    OWNER_KINDS,
+    SIGN_IN_READ_STATES,
+} from '@rodnapamet/scanent-contract/integrations-contract-rules';
+import { INTEGRATION_FINDING_CODES, INTEGRATION_NOT_CONCLUDED_WHY, MAX_UNUSED_DAYS, MIN_UNUSED_DAYS } from '@rodnapamet/scanent-contract/integrations-findings';
+import { PERMISSION_CLASSES } from '@rodnapamet/scanent-contract/integrations-scopes';
+
+import {
+    INTEGRATIONS_ONLY_RESULTS_SCHEMA,
+    MODEL_SIGNS,
+    RESULTS_SCHEMA,
+    type IntegrationsOnlyResults,
+    type LocalIntegrationsResults,
+    type LocalResults,
+    type RunResults,
+} from './types';
 
 const MAX_TEXT = 4_096;
 const id = z.string().min(1).max(256);
@@ -133,6 +155,132 @@ const FindingSchema = z
 
 const credentialSeen = { ref: z.string().min(1).max(512), sourceKind };
 
+// ── The integrations section ──
+
+const guid = z.string().regex(ENTRA_OBJECT_ID);
+const permissionName = z.string().min(1).max(128);
+const severity = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
+const integrationsSourceKind = z.enum(INTEGRATIONS_SOURCE_KINDS);
+const applicationId = z.string().regex(ENTRA_APPLICATION_ID);
+const ApplicationPermissionSchema = z.object({ via: z.enum(['DELEGATED', 'APPLICATION']), resourceAppId: guid.nullable(), name: permissionName.nullable() }).strict();
+
+const ApplicationSchema = z
+    .object({
+        id: applicationId,
+        sourceKind: integrationsSourceKind,
+        appId: guid.nullable(),
+        displayName: z.string().min(1).max(256).nullable(),
+        origin: z.enum(APPLICATION_ORIGINS),
+        publisherVerified: z.boolean().nullable(),
+        owners: z.array(z.object({ kind: z.enum(OWNER_KINDS), id: guid }).strict()).max(20).nullable(),
+        delegatedGrants: z
+            .object({
+                read: z.boolean(),
+                grants: z.array(
+                    z
+                        .object({
+                            resourceAppId: guid.nullable(),
+                            consentType: z.enum(CONSENT_TYPES),
+                            principalCount: z.number().int().min(1).nullable(),
+                            scopes: z.array(permissionName),
+                            unreadableScopes: count,
+                        })
+                        .strict(),
+                ),
+            })
+            .strict(),
+        applicationPermissions: z
+            .object({ read: z.boolean(), permissions: z.array(z.object({ resourceAppId: guid.nullable(), roleId: guid, name: permissionName.nullable() }).strict()) })
+            .strict(),
+        privilege: z.enum(['HIGH', 'NOT_HIGH', 'NOT_CONCLUDED']),
+        classes: z.array(z.enum(PERMISSION_CLASSES)).max(PERMISSION_CLASSES.length),
+        highPermissions: z.array(ApplicationPermissionSchema),
+        unknownPermissions: z.array(ApplicationPermissionSchema),
+        signIn: z.object({ read: z.boolean(), lastSeen: z.string().regex(ISO_DATE).nullable(), daysSince: count.nullable() }).strict(),
+        usage: z.enum(['USED', 'UNUSED', 'NOT_CONCLUDED']),
+        credentials: count,
+    })
+    .strict()
+    .superRefine((a, ctx) => {
+        // What the file concludes must be what it lists.
+        if ((a.privilege === 'HIGH') !== (a.highPermissions.length > 0) || (a.privilege === 'HIGH') !== (a.classes.length > 0)) {
+            ctx.addIssue({ code: 'custom', message: 'a high-privilege application lists what makes it so, and only one does', path: ['privilege'] });
+        }
+        if (a.privilege === 'NOT_HIGH' && (!a.delegatedGrants.read || !a.applicationPermissions.read || a.unknownPermissions.length > 0)) {
+            ctx.addIssue({ code: 'custom', message: 'not high is concluded only from grants read in full and all known', path: ['privilege'] });
+        }
+        if (a.usage !== 'NOT_CONCLUDED' && !a.signIn.read) {
+            ctx.addIssue({ code: 'custom', message: 'use is concluded only where sign-in activity was read', path: ['usage'] });
+        }
+        if (!a.signIn.read && (a.signIn.lastSeen !== null || a.signIn.daysSince !== null)) {
+            ctx.addIssue({ code: 'custom', message: 'a sign-in that was not read has no date', path: ['signIn'] });
+        }
+    });
+
+const IntegrationFindingSchema = z
+    .object({
+        code: z.enum(INTEGRATION_FINDING_CODES),
+        sourceRef: z.string().min(1).max(1_024),
+        severity,
+        applicationId: applicationId.nullable(),
+        title: text,
+        description: z.string().max(16_384),
+    })
+    .strict();
+
+export const LocalIntegrationsResultsSchema: z.ZodType<LocalIntegrationsResults> = z
+    .object({
+        contract: z.enum(INTEGRATIONS_CONTRACT_IDS),
+        report: z.object({ file: z.string().min(1).max(256), sha256: sha256Hex }).strict(),
+        complete: z.boolean(),
+        unusedDays: z.number().int().min(MIN_UNUSED_DAYS).max(MAX_UNUSED_DAYS),
+        sources: z.array(
+            z
+                .object({
+                    kind: integrationsSourceKind,
+                    status: z.enum(['COMPLETE', 'INCOMPLETE']),
+                    reason: id.nullable(),
+                    rows: count,
+                    applications: count,
+                    signInActivity: z.object({ status: z.enum(SIGN_IN_READ_STATES), reason: id.nullable(), rows: count.nullable() }).strict(),
+                    detail: z.string().min(1).max(800).optional(),
+                })
+                .strict(),
+        ).min(1),
+        applications: z.array(ApplicationSchema),
+        findings: z.array(IntegrationFindingSchema),
+        notConcluded: z.array(
+            z.object({ code: z.enum(INTEGRATION_FINDING_CODES), applicationId: applicationId.nullable(), sourceKind: integrationsSourceKind, why: z.enum(INTEGRATION_NOT_CONCLUDED_WHY) }).strict(),
+        ),
+        unknownPermissions: z.array(z.object({ resourceAppId: guid.nullable(), name: z.string().min(1).max(256) }).strict()),
+        counts: z.object({ applications: count, highPrivilege: count, unverifiedPublisher: count, noOwner: count, unused: count }).strict(),
+    })
+    .strict()
+    .superRefine((r, ctx) => {
+        const complete = r.sources.length > 0 && r.sources.every((s) => s.status === 'COMPLETE' && s.signInActivity.status !== 'INCOMPLETE');
+        if (r.complete !== complete) ctx.addIssue({ code: 'custom', message: 'complete means every source and every sign-in read was read in full', path: ['complete'] });
+        const by = (code: string) => r.findings.filter((f) => f.code === code).length;
+        const c = r.counts;
+        if (
+            c.applications !== r.applications.length ||
+            c.highPrivilege !== by('INTEGRATION_HIGH_PRIVILEGE_GRANT') ||
+            c.unverifiedPublisher !== by('INTEGRATION_UNVERIFIED_PUBLISHER') ||
+            c.noOwner !== by('INTEGRATION_NO_OWNER') ||
+            c.unused !== by('INTEGRATION_UNUSED')
+        ) {
+            ctx.addIssue({ code: 'custom', message: 'the counts are the applications and findings listed', path: ['counts'] });
+        }
+        if (new Set(r.applications.map((a) => a.id)).size !== r.applications.length) {
+            ctx.addIssue({ code: 'custom', message: 'an application id appears once', path: ['applications'] });
+        }
+        // An empty inventory from a whole read is a finding, never a quiet empty list.
+        for (const s of r.sources) {
+            if (s.status === 'COMPLETE' && s.applications === 0 && !r.findings.some((f) => f.code === 'INTEGRATION_EMPTY_INVENTORY' && f.sourceRef.endsWith(`:${s.kind}`))) {
+                ctx.addIssue({ code: 'custom', message: 'a source read in full that holds no application is a finding', path: ['findings'] });
+            }
+        }
+    });
+
 export const LocalResultsSchema: z.ZodType<LocalResults> = z
     .object({
         schema: z.literal(RESULTS_SCHEMA),
@@ -230,6 +378,8 @@ export const LocalResultsSchema: z.ZodType<LocalResults> = z
             .strict(),
         agents: z.array(AgentSchema),
         findings: z.array(FindingSchema),
+        // Added with the integrations scanner, and optional: an agents-only run, and a file written before it, carries none.
+        integrations: LocalIntegrationsResultsSchema.optional(),
     })
     .strict()
     .superRefine((r, ctx) => {
@@ -298,3 +448,33 @@ export const LocalResultsSchema: z.ZodType<LocalResults> = z
             ctx.addIssue({ code: 'custom', message: 'a discoveredId appears once', path: ['agents'] });
         }
     });
+
+/** `results.json` of a run in which only the integrations scanner ran. Strict, as the agent results are. */
+export const IntegrationsOnlyResultsSchema: z.ZodType<IntegrationsOnlyResults> = z
+    .object({
+        schema: z.literal(INTEGRATIONS_ONLY_RESULTS_SCHEMA),
+        scanners: z.tuple([z.literal('integrations')]),
+        scan: z
+            .object({
+                id,
+                asOf: z.string().datetime(),
+                estate: id.nullable(),
+                scanner: z.object({ agentId: id, version: id, manifestHash: z.string().regex(/^sha256:[0-9a-f]{64}$/) }).strict(),
+            })
+            .strict(),
+        signer: z.object({ keyFingerprint: sha256Hex, pinned: z.boolean() }).strict(),
+        integrations: LocalIntegrationsResultsSchema,
+    })
+    .strict();
+
+/**
+ * A run's `results.json`, by the schema it names: the agent results, or the
+ * integrations scanner's alone. Null when it names neither, or fails the one
+ * it names: a file is never half-read under the other's rules.
+ */
+export function parseRunResults(json: unknown): { readonly ok: true; readonly results: RunResults } | { readonly ok: false; readonly issues: readonly string[] } {
+    const schema = json !== null && typeof json === 'object' ? (json as { schema?: unknown }).schema : undefined;
+    const parsed = schema === INTEGRATIONS_ONLY_RESULTS_SCHEMA ? IntegrationsOnlyResultsSchema.safeParse(json) : LocalResultsSchema.safeParse(json);
+    return parsed.success ? { ok: true, results: parsed.data } : { ok: false, issues: parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.code}`) };
+}
+

@@ -18,8 +18,12 @@ import { firstCredentialInAnswers } from './secret-shapes';
 
 export const INIT_ANSWERS_SCHEMA = 'scanent-init-answers/1';
 
-/** The kinds a person may choose. The register source comes only from `inflect.readRegister`. */
-export const ANSWERABLE_KINDS = ['entra-sp', 'vault', 'okta-app', 'cicd', 'gcp-sa', 'runtime', 'mcp', 'code'] as const;
+/**
+ * The kinds a person may choose, the agent scanner's first and the
+ * integrations scanner's last. The register source comes only from
+ * `inflect.readRegister`.
+ */
+export const ANSWERABLE_KINDS = ['entra-sp', 'vault', 'okta-app', 'cicd', 'gcp-sa', 'runtime', 'mcp', 'code', 'entra-integrations'] as const;
 export type AnswerableKind = (typeof ANSWERABLE_KINDS)[number];
 
 const envName = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/);

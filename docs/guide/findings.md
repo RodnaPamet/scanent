@@ -2,7 +2,9 @@
 
 A finding is one thing the scan saw that somebody should look at. There are
 nine kinds. This page says, for each: what it means, why it matters, what to
-do, and who usually owns the fix.
+do, and who usually owns the fix. The integrations scanner, which reads what
+your directory has granted to applications, raises five more of its own: they
+are at the end of this page, under "Integration findings".
 
 Three things are true of every finding:
 
@@ -348,9 +350,159 @@ scan. Deal with it, and note what you did.
 
 **Who usually owns it.** The owner of the agent.
 
+## Integration findings
+
+These come from the **integrations scanner**, only when it is set up
+([what-it-reads.md](what-it-reads.md#microsoft-entra-id-for-integrations)).
+They are about the applications your directory has granted access to, not
+about agents, and they are listed in a section of their own in the results
+page and in `integration-findings.csv`.
+
+Two rules decide when they can be raised:
+
+- **Something seen counts; something missing counts only after a full read.**
+  A grant the scan saw is reported even if the read stopped early. "This
+  application holds no high-privilege grant", "no grant at all" and "has not
+  signed in" are concluded only when that part was read in full. Otherwise
+  the results list the question as **not concluded**, with the reason, and
+  never as clean.
+- **A permission the scanner does not know is not called high, and not
+  called low.** Which Microsoft Graph permissions are high-privilege is a
+  written list of about 130 names. Any permission not on it, and every
+  permission on another company's API, is listed in the results as "not known"
+  for a person to judge.
+
+<!-- guide:integration-findings -->
+| Code | Severity | Can a scan on its own raise it? |
+|---|---|---|
+| `INTEGRATION_HIGH_PRIVILEGE_GRANT` | HIGH | Yes |
+| `INTEGRATION_UNVERIFIED_PUBLISHER` | HIGH | Yes |
+| `INTEGRATION_NO_OWNER` | MEDIUM | Yes |
+| `INTEGRATION_UNUSED` | LOW | Yes, only when sign-in activity is read |
+| `INTEGRATION_EMPTY_INVENTORY` | HIGH | Yes |
+<!-- /guide:integration-findings -->
+
+## `INTEGRATION_HIGH_PRIVILEGE_GRANT`
+
+**What it means.** An application holds a permission that reaches your
+directory (its groups, applications, roles or policies), your mail, your files
+or SharePoint sites, your chats and Teams channel messages, or your calendars,
+or that can change something. Reading people's profiles (`User.Read.All`) or
+the directory's sign-in and audit logs (`AuditLog.Read.All`) does not count:
+those are profiles and logs, not content. That line was decided on 13
+November 2026 and is written into the scanner's list. The finding lists the
+permissions, and says
+whether each was granted on behalf of people ("delegated") or to the
+application itself.
+
+**Why it matters.** A permission like this is used without anybody signing in
+each time. Whoever controls the application can read or change what the
+permission names, for as long as the grant stands.
+
+**What to do.**
+
+1. Ask the application's owner, or the team that uses it, whether it still
+   needs each permission listed.
+2. Remove the permissions it does not need: in the Entra admin centre,
+   Enterprise applications, the application, Permissions.
+3. Keep the ones it needs, and record why. The scanner will keep reporting
+   them: holding such a grant is the finding, not a mistake.
+
+**When it closes.** When a later scan reads the application's grants in full
+and none of them is high-privilege.
+
+**Who usually owns it.** The owner of the application, with whoever approves
+access to the directory.
+
+## `INTEGRATION_UNVERIFIED_PUBLISHER`
+
+**What it means.** An application from outside your organisation holds a
+high-privilege grant, and your directory records no verified publisher for
+it. A verified publisher is a company Microsoft has checked; without one,
+nobody has shown who is behind the application.
+
+**Why it matters.** Granting broad access to an application from an unknown
+publisher is a common way in for attackers: a convincing name and a consent
+screen are all it takes.
+
+**What to do.**
+
+1. Find out who publishes it and why it was granted access.
+2. If nobody can vouch for it, remove its access, or disable the application
+   in Enterprise applications.
+3. If it is wanted, record who approved it and why.
+
+If the scan could not tell whether the publisher is verified, it does not
+raise this finding. It lists the question as not concluded.
+
+**When it closes.** When a later scan sees a verified publisher, or no
+high-privilege grant, for the application.
+
+**Who usually owns it.** Whoever approves third-party applications for your
+organisation.
+
+## `INTEGRATION_NO_OWNER`
+
+**What it means.** An application holds access granted in your directory,
+and the directory records nobody as its owner.
+
+**Why it matters.** With no owner, nobody is on record to say whether the
+application still needs its access, or to answer for it when something goes
+wrong.
+
+**What to do.** Assign an owner in the Entra admin centre (the application's
+Owners page). For an application your organisation registered, the owners of
+its registration count too.
+
+**When it closes.** When a later scan sees an owner for the application.
+
+**Who usually owns it.** Whoever approves access to the directory.
+
+## `INTEGRATION_UNUSED`
+
+**What it means.** An application has not signed in for longer than the
+window you set (90 days unless your configuration says otherwise), or has
+never signed in that the directory recorded.
+
+**You will see this only if sign-in activity is read.** That needs the extra
+permission `AuditLog.Read.All` and a licence that records sign-ins. Without
+them, the results say that "unused" was not concluded, and why. Not seeing
+this finding then says nothing about use.
+
+**Why it matters.** An application nobody uses still holds whatever it was
+granted. It is access with no purpose, kept open.
+
+**What to do.** Ask its owner whether it is still needed. If not, remove its
+permissions or delete it from Enterprise applications.
+
+**When it closes.** When a later scan, reading sign-in activity in full,
+sees a sign-in within the window.
+
+**Who usually owns it.** The owner of the application.
+
+## `INTEGRATION_EMPTY_INVENTORY`
+
+**What it means.** The integrations scan read your directory in full and
+found no application at all, other than Microsoft's own.
+
+**Why it matters.** It is almost never true. A directory in use holds
+applications. An empty answer is what a read of the wrong directory, or one
+made with permissions that see only part of it, looks like. The report shows
+it as a finding and never as a clean result.
+
+**What to do.** Check the directory id in the configuration, and that the
+application the scanner reads with holds both permissions and admin consent.
+Run the check step again ([run-it.md](run-it.md#5-check)).
+
+**When it closes.** When a later scan finds at least one application.
+
+**Who usually owns it.** Whoever runs the scan.
+
 ## Where the detail is
 
 - [../contract.md](../contract.md#findings): the exact rule for each kind,
   for a technical reader.
+- [../contract.md](../contract.md#the-integrations-contract): the same for the
+  integration findings.
 - [read-the-report.md](read-the-report.md): how the findings appear in the
   report and the spreadsheet.

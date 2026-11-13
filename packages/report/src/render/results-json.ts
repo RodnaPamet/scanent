@@ -6,7 +6,7 @@
  * Two-space indentation and one trailing newline: the file is meant to be
  * read and compared by people as well as by `scanent diff`.
  */
-import type { LocalResults } from '../results/types';
+import type { RunResults } from '../results/types';
 
 function sorted(value: unknown): unknown {
     if (Array.isArray(value)) return value.map(sorted);
@@ -26,6 +26,6 @@ export function stableJson(value: unknown): string {
     return `${JSON.stringify(sorted(value), null, 2)}\n`;
 }
 
-export function renderResultsJson(results: LocalResults): string {
+export function renderResultsJson(results: RunResults): string {
     return stableJson(results);
 }
