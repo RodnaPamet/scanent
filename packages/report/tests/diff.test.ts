@@ -337,17 +337,62 @@ describe('findings close only on positive evidence', () => {
         // Declared on a scan that was not read in full: not concluded.
         const partial = diffResults(identityResults(), score(withSource(later(withIdentityBody()), 'mcp', 'TIME_BOX'), [fullRow(CHARLIE)]));
         expect(partial.findings.find((f) => f.code === 'UNREGISTERED_IDENTITY')).toMatchObject({ change: 'NOT_CONCLUDED', why: 'SCAN_INCOMPLETE' });
-        // It now lists a tool: it is a shadow agent, and the finding about the identity is not closed by that.
+        // It now lists a tool: it is a shadow agent. One principal holds one class, so the identity's finding ends
+        // where the shadow agent's takes its place. A sign is a presence: it counts on a scan not read in full too.
         const withTool = later(withIdentityBody());
         const tool = { server: 'https://mcp.internal.example/crm', name: 'list_accounts', manifestHash: HASH, pinned: true, readOnlyHint: true };
         withTool.agents = withTool.agents.map((a) => (a.discoveredId === CHARLIE ? { ...a, tools: [tool] } : a));
-        expect(forCharlie(diffResults(identityResults(), score(withTool)))).toEqual(
+        for (const body of [withTool, withSource(withTool, 'mcp', 'TIME_BOX')]) {
+            const moved = forCharlie(diffResults(identityResults(), score(body)));
+            expect(moved).toHaveLength(3);
+            expect(moved).toEqual(
+                expect.arrayContaining([
+                    ['UNREGISTERED_IDENTITY', 'CLOSED', null],
+                    ['SHADOW_AGENT', 'OPENED', null],
+                    ['HARNESS_SHORTFALL', 'OPENED', null],
+                ]),
+            );
+        }
+    });
+
+    it('a shadow agent that a later scan shows no sign for becomes an identity only on a scan read in full', () => {
+        const score = (b: HarnessReportBodyV3) => scoreReportLocally(input(b));
+        const later = (b: HarnessReportBodyV3): HarnessReportBodyV3 => ({ ...b, scan: { ...b.scan, id: 'acme-20261104T033000Z-0a1b2c3e', asOf: '2026-11-04T03:30:00.000Z' } });
+        const forCharlie = (diff: ResultsDiff) => diff.findings.filter((f) => f.discoveredId === CHARLIE).map((f) => [f.code, f.change, f.why]);
+        const tool = { server: 'https://mcp.internal.example/crm', name: 'list_accounts', manifestHash: HASH, pinned: true, readOnlyHint: true };
+        const asAgent = withIdentityBody();
+        asAgent.agents = asAgent.agents.map((a) => (a.discoveredId === CHARLIE ? { ...a, tools: [tool] } : a));
+        const before = score(asAgent);
+        expect(before.findings.filter((f) => f.discoveredId === CHARLIE).map((f) => f.code).sort()).toEqual(['HARNESS_SHORTFALL', 'SHADOW_AGENT']);
+
+        // Read in full, and nothing shows a model: the absence is evidence. Both of the agent's findings end.
+        const complete = forCharlie(diffResults(before, score(later(withIdentityBody()))));
+        expect(complete).toHaveLength(3);
+        expect(complete).toEqual(
             expect.arrayContaining([
-                ['UNREGISTERED_IDENTITY', 'NOT_CONCLUDED', 'AGENT_NOT_REGISTERED'],
-                ['SHADOW_AGENT', 'OPENED', null],
-                ['HARNESS_SHORTFALL', 'OPENED', null],
+                ['SHADOW_AGENT', 'CLOSED', null],
+                ['HARNESS_SHORTFALL', 'CLOSED', null],
+                ['UNREGISTERED_IDENTITY', 'OPENED', null],
             ]),
         );
+        // Not read in full: the sign may be in the part that was not read. Nothing the agent had is closed.
+        const partial = forCharlie(diffResults(before, score(withSource(later(withIdentityBody()), 'mcp', 'TIME_BOX'))));
+        expect(partial).toEqual(
+            expect.arrayContaining([
+                ['SHADOW_AGENT', 'NOT_CONCLUDED', 'SCAN_INCOMPLETE'],
+                ['HARNESS_SHORTFALL', 'NOT_CONCLUDED', 'SCAN_INCOMPLETE'],
+            ]),
+        );
+        expect(partial.some(([, change]) => change === 'CLOSED')).toBe(false);
+    });
+
+    it('a file written before a principal carried its signs is compared as it was: neither finding ends on a class', () => {
+        const score = (b: HarnessReportBodyV3) => scoreReportLocally(input(b));
+        const later = (b: HarnessReportBodyV3): HarnessReportBodyV3 => ({ ...b, scan: { ...b.scan, id: 'acme-20261104T033000Z-0a1b2c3e', asOf: '2026-11-04T03:30:00.000Z' } });
+        const next = score(later(withIdentityBody()));
+        const older = { ...next, agents: next.agents.map(({ modelSigns: _signs, ...rest }) => rest) };
+        const shadow = diffResults({ ...identityResults(), findings: identityResults().findings.map((f) => (f.code === 'UNREGISTERED_IDENTITY' ? { ...f, code: 'SHADOW_AGENT' as const, sourceRef: `SHADOW_AGENT:${CHARLIE}` } : f)) }, older);
+        expect(shadow.findings.find((f) => f.code === 'SHADOW_AGENT' && f.discoveredId === CHARLIE)).toMatchObject({ change: 'NOT_CONCLUDED', why: 'AGENT_NOT_REGISTERED' });
     });
 
     it('an agent\'s findings are not closed by the agent being gone or not seen', () => {

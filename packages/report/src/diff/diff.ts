@@ -207,9 +207,23 @@ function findingStillOpenWhy(
             // declared closes it only on a complete scan (the planner's rule).
             if (agent.registration.basis === 'OBSERVED_REGISTER') return null;
             if (agent.registration.basis === 'DECLARED_INVENTORY') return complete ? null : 'SCAN_INCOMPLETE';
+            // Still on no list, and the later run may class it the other way.
+            // One principal holds one class, so the earlier finding ends where
+            // the later one takes its place. A sign is a presence, and counts
+            // on any scan. The absence of a sign counts only as far as the scan
+            // read. A file written before `modelSigns` existed says neither.
+            if (agent.modelSigns !== undefined) {
+                if (finding.code === 'UNREGISTERED_IDENTITY' && agent.modelSigns.length > 0) return null;
+                if (finding.code === 'SHADOW_AGENT' && agent.modelSigns.length === 0) return complete ? null : 'SCAN_INCOMPLETE';
+            }
             return 'AGENT_NOT_REGISTERED';
         }
         if (agent.judgement.state !== 'JUDGED') return 'AGENT_NOT_JUDGED';
+        // An unregistered identity is held to no bar. That it shows no sign of a
+        // model is an absence, so it ends a shortfall only on a complete scan.
+        if (finding.code === 'HARNESS_SHORTFALL' && agent.registration.basis === 'NONE' && agent.modelSigns !== undefined && agent.modelSigns.length === 0) {
+            return complete ? null : 'SCAN_INCOMPLETE';
+        }
         if (finding.code === 'UNPINNED_WRITE_TOOL') {
             // A tool's absence closes nothing unless every source that would
             // have reported it was read in full: the planner's

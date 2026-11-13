@@ -58,7 +58,11 @@ when it is no longer needed.
    remove it. The scanner does not do this for you.
 
 **When it closes.** When a later scan that read everything in full finds the
-agent in your inventory.
+agent in your inventory. It also closes when a later scan that read
+everything in full shows no sign of a model for it: it is then an
+unregistered identity (below), and that finding takes this one's place. A
+scan that did not read everything closes nothing, because the sign may be in
+the part it did not read.
 
 **Who usually owns it.** The team that looks after the system the agent was
 found in (identity, cloud platform, or the development team for agent code),
@@ -98,8 +102,9 @@ table and the spreadsheet, and it is not held to the bar. So it has no
 `HARNESS_SHORTFALL` finding.
 
 **When it closes.** When a later scan that read everything in full finds it
-in your inventory. If a later scan sees a sign of a model, this finding stays
-open and a `SHADOW_AGENT` finding is raised beside it.
+in your inventory. It also closes when a later scan sees a sign of a model:
+the account is then a shadow agent, and a `SHADOW_AGENT` finding takes this
+one's place. A sign counts on any scan, also one that did not read everything.
 
 **Who usually owns it.** The team that looks after the system the account
 was found in: identity, the cloud platform, or the team that owns the build
@@ -183,7 +188,9 @@ priorities:
 If the level rests partly on your inventory, the finding says so, and gives
 the level that the systems alone support.
 
-**When it closes.** When a later scan shows the agent at its bar.
+**When it closes.** When a later scan shows the agent at its bar. Also when a
+later scan that read everything in full shows it to be an unregistered
+identity, which is held to no bar.
 
 The finding's own text also mentions "a time-limited acceptance by the
 agent's owner". An acceptance is recorded in an Inflect tenant. A scan on its
