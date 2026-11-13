@@ -54,12 +54,62 @@
  *   • AN AGENT ABSENT FROM THE SCAN IS UNTOUCHED, as always: the planner only
  *     iterates the agents the report names.
  *
+ * ── AN UNREGISTERED IDENTITY IS NOT A SHADOW AGENT ─────────────────────────
+ *
+ * A principal no register row is linked to, and that shows no sign of running a
+ * model, is an UNREGISTERED AUTOMATED IDENTITY: a service account, a build
+ * workflow holding a credential, a directory application. The signs are the
+ * five in `MODEL_SIGNS` and no others: it was found in agent code, in a
+ * tracing system or on an MCP server, or its report lists a tool or a model
+ * endpoint. THE NAME OF A CREDENTIAL IS NOT A SIGN: a secret called after a
+ * model provider is a guess about what holds it.
+ *
+ * Such a principal has ONE finding, UNREGISTERED_IDENTITY (MEDIUM,
+ * OBSERVATION), in place of SHADOW_AGENT, and NO HARNESS_SHORTFALL: it is
+ * held to no bar. It keeps its row, its derived level and its verdicts. A
+ * linked principal is an agent whatever it shows: the register said so.
+ *
+ * WHAT IS ON RECORD, AND WHAT AN INCOMPLETE SCAN MAY CONCLUDE. A sign is a
+ * presence, and a presence is evidence on any scan. The ABSENCE of a sign is
+ * evidence only as far as the scan read, so:
+ *
+ *   • A SIGN, ON ANY SCAN: a shadow agent. SHADOW_AGENT is asserted and the
+ *     identity finding is resolved — the scan saw what that finding says
+ *     nothing showed.
+ *   • NO SIGN, ON A COMPLETE SCAN (`isScanComplete`): an identity.
+ *     UNREGISTERED_IDENTITY is asserted, and the SHADOW_AGENT and
+ *     HARNESS_SHORTFALL findings are resolved.
+ *   • NO SIGN, ON AN INCOMPLETE SCAN: nothing on record is undone. A principal
+ *     ON RECORD AS AN AGENT (`PriorHarnessState.onRecordAsAgent`: its
+ *     SHADOW_AGENT or HARNESS_SHORTFALL finding is open) is still treated as
+ *     one, exactly as before this rule existed — the sign may be in the part
+ *     the scan did not read. Any other principal is an identity, and the scan
+ *     resolves nothing for it.
+ *
+ * The record is the OPEN FINDING, not the stored scan rows: those are
+ * overwritten by every scan, an incomplete one included, so a second incomplete
+ * scan would read the first one's missing sign as the record and flip the
+ * principal. The finding moves only on the evidence above, so the class does
+ * not flap between scans, and one principal does not hold both findings open:
+ * every move asserts one and resolves the other in the same plan. (Both can be
+ * open only off that path: a person reopened one by hand, or an identity was
+ * registered through the intake and its register row stopped linking before a
+ * complete scan had closed its finding. The next complete scan settles it, and
+ * until then a reader takes the shadow agent's class, the more severe —
+ * `unregisteredIdentitiesOnRecord`.)
+ *
+ * It closes as a shadow agent's finding does, by being registered: a link the
+ * report claimed on any scan, a link from the intake's record on a complete one.
+ *
  * ── FINDINGS, AND WHEN THIS SCAN MAY CLOSE ONE ──────────────────────────────
  *
  * Every finding is keyed by a `sourceRef` so re-ingesting is idempotent:
  *
  *   SHADOW_AGENT:<discoveredId>              not in the register (whatever the
- *                                            report claims, the register decides)
+ *                                            report claims, the register decides),
+ *                                            and showing a sign of a model
+ *   UNREGISTERED_IDENTITY:<discoveredId>     not in the register, and showing no
+ *                                            sign of a model (next section)
  *   UNPINNED_WRITE_TOOL:<discoveredId>       a write-capable tool with no pin
  *   LEVEL_DROP:<discoveredId>:<scanRef>      the level fell since the last scan —
  *                                            an event, never closed by a scan
@@ -69,6 +119,10 @@
  *   ORPHAN_CREDENTIAL:<scannerAgentId>:<kind>:<ref>
  *                                            `/2` only: a credential that source
  *                                            saw bound to no discovered agent
+ *   SPENDING_AGENT_UNDECLARED:<registeredAgentId>
+ *                                            `/4` only: a registered agent whose
+ *                                            code can pay, with no spending
+ *                                            authority declared (below)
  *
  * A scan closes a finding only on POSITIVE evidence: an agent now in the
  * register, a level now at the bar, a source now read in full, a population now
@@ -128,6 +182,33 @@
  * (`PriorHarnessState.openOrphanCredentials`), because closing is about rows the
  * report does not mention.
  *
+ * ── SPENDING_AGENT_UNDECLARED, FROM `/4`'s `paymentCapabilities[]` ─────────
+ *
+ * The register decides, never the report: the finding is keyed by the REGISTER
+ * ROW the planner linked, so an agent the register does not know raises
+ * SHADOW_AGENT and nothing here (registering it is the first act), and a
+ * report cannot raise it against a row the register does not hold.
+ *
+ *   • IT OPENS when a linked agent's code calls a payment client and the
+ *     register row holds no spending authority that is not WITHDRAWN.
+ *   • IT CLOSES on positive evidence only, and the scan holds none: an
+ *     envelope a second person REVIEWED (`spendingAuthority` reads
+ *     `REVIEWED`) is the one close the planner makes. A code read reporting
+ *     `paymentCapabilities: []` closes NOTHING, complete or not: `[]` is "the
+ *     reader saw no payment client called in the agent's own file", and the
+ *     reader cannot see a client wrapped in a helper module, reached through a
+ *     name it cannot resolve, or loaded by a dynamic import elsewhere. Absence
+ *     a static, one-file reader cannot vouch for is not evidence. A team that
+ *     removed the client closes the finding itself, on the finding; the next
+ *     scan reopens it only if it sees the client again.
+ *   • AN UNREVIEWED ENVELOPE HOLDS IT: neither opened nor closed. The
+ *     declaration exists, and its review is the register's own rule —
+ *     activation refuses `SPENDING_AUTHORITY_UNREVIEWED` until it lands.
+ *
+ * Two discovered agents linked to one register row share the key, so the
+ * finding is raised once per row; one row's code read saying none does not
+ * close it while another linked agent in the same scan still shows a payment.
+ *
  * ── THE BAR IS REPORT-ONLY ──────────────────────────────────────────────────
  *
  * A shortfall is a finding, never a refusal. Nothing here is consulted by the
@@ -147,12 +228,13 @@ import {
 } from './harness-ladder';
 import type {
     HarnessModelEndpoint,
+    HarnessPaymentCapability,
     HarnessReportAgent,
     HarnessReportBody,
     HarnessUnboundCredential,
     SOURCE_KINDS,
 } from './harness-contract';
-import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
+import { containsCardNumber, isScanComplete, looksLikeSecret } from './harness-contract-rules';
 
 /**
  * The path of the first string member of a verified body whose value is
@@ -175,8 +257,24 @@ import { isScanComplete, looksLikeSecret } from './harness-contract-rules';
  * what the refusal prints, and it must not carry the secret it refuses.
  */
 export function firstSecretShapedMember(body: unknown): string | null {
+    return firstSecretShapedPath(body);
+}
+
+/**
+ * The same walk over any JSON-shaped value: the path of its first secret-shaped
+ * string, card numbers included, or null. A writer that stores values a person
+ * or a scanner typed refuses through this rather than a copy, so the shapes
+ * stay one list. A card number fits in a JSON number, so a numeric member is
+ * read as its digits too.
+ */
+export function firstSecretShapedPath(root: unknown): string | null {
     const walk = (node: unknown, path: string): string | null => {
         if (typeof node === 'string') return looksLikeSecret(node) ? path : null;
+        // A card number fits in a JSON number (sixteen digits are below 2^53),
+        // so a numeric member is read as its digits too.
+        if (typeof node === 'number' || typeof node === 'bigint') {
+            return containsCardNumber(String(node)) ? path : null;
+        }
         if (Array.isArray(node)) {
             for (let i = 0; i < node.length; i++) {
                 const hit = walk(node[i], `${path}[${i}]`);
@@ -193,7 +291,7 @@ export function firstSecretShapedMember(body: unknown): string | null {
         }
         return null;
     };
-    return walk(body, '');
+    return walk(root, '');
 }
 
 // ─── Agent SDK options, as the scanner reads them from code ─────────
@@ -287,6 +385,8 @@ export const HARNESS_FINDING_CODES = [
     'EMPTY_SCAN',
     'INCOMPLETE_SOURCE',
     'ORPHAN_CREDENTIAL',
+    'SPENDING_AGENT_UNDECLARED',
+    'UNREGISTERED_IDENTITY',
 ] as const;
 export type HarnessFindingCode = (typeof HARNESS_FINDING_CODES)[number];
 
@@ -298,6 +398,16 @@ const LADDER_REACH: Record<StoredReach, HarnessReach | 'unknown'> = {
     WRITE_OR_EXTERNAL: 'write-or-external',
     UNKNOWN: 'unknown',
 };
+
+/**
+ * What a scan read that suggests a principal runs a model: it was found in
+ * agent code, in a tracing system or on an MCP server, or its report lists a
+ * tool or a model endpoint. A credential's NAME is not one: a secret called
+ * after a model provider is a guess about what holds it. Five, in this order;
+ * a sixth is a decision about what counts as evidence, not a detail.
+ */
+export const MODEL_SIGNS = ['FOUND_IN_CODE', 'FOUND_IN_RUNTIME', 'FOUND_ON_MCP_SERVER', 'LISTS_A_TOOL', 'LISTS_A_MODEL'] as const;
+export type ModelSign = (typeof MODEL_SIGNS)[number];
 
 /** How many unpinned tools a finding names before it stops listing. */
 const MAX_TOOLS_NAMED = 10;
@@ -334,6 +444,61 @@ export interface PlannedAgent {
      * ingest stores as NULL, apart from `[]`, reported empty.
      */
     readonly models: readonly HarnessModelEndpoint[] | null;
+    /**
+     * `/4`'s payment capabilities, as reported. `null` is NOT REPORTED (a `/2`
+     * or `/3` report, or an agent no code read reported), apart from `[]`, a
+     * code read that saw no payment client called.
+     */
+    readonly paymentCapabilities: readonly HarnessPaymentCapability[] | null;
+    /** What this report says of the principal that suggests it runs a model, in the order of `MODEL_SIGNS`. */
+    readonly modelSigns: readonly ModelSign[];
+    /**
+     * This scan classes the principal as an UNREGISTERED AUTOMATED IDENTITY:
+     * linked to no register row, showing no sign of a model, and not held as
+     * an agent by what is on record (an incomplete scan undoes nothing). It
+     * then has the UNREGISTERED_IDENTITY finding and no shortfall.
+     */
+    readonly unregisteredIdentity: boolean;
+}
+
+/** What the report says of one principal that suggests it runs a model. In the order of `MODEL_SIGNS`. */
+export function modelSignsOf(agent: Pick<PlannedAgent, 'discoveredVia' | 'tools' | 'models'>): ModelSign[] {
+    const via = agent.discoveredVia as readonly string[];
+    const signs: ModelSign[] = [];
+    if (via.includes('code')) signs.push('FOUND_IN_CODE');
+    if (via.includes('runtime')) signs.push('FOUND_IN_RUNTIME');
+    if (via.includes('mcp')) signs.push('FOUND_ON_MCP_SERVER');
+    if (agent.tools.length > 0) signs.push('LISTS_A_TOOL');
+    if (agent.models !== null && agent.models.length > 0) signs.push('LISTS_A_MODEL');
+    return signs;
+}
+
+/**
+ * What the register holds for one row's spending authority, as the harness planner needs it: `REVIEWED` when an envelope a
+ * second person reviewed is in force (REVIEWED, or SUSPENDED_REQUESTED after
+ * a review); `UNREVIEWED` when the only live envelopes await review. A row
+ * absent from the map holds no envelope that is not WITHDRAWN.
+ */
+export type SpendingAuthorityStanding = 'REVIEWED' | 'UNREVIEWED';
+
+/**
+ * One register row's standing from its stored envelopes. WITHDRAWN rows are
+ * ignored; any reviewed live envelope makes the row REVIEWED.
+ */
+export function spendingAuthorityStandingOf(
+    envelopes: readonly { readonly status: string; readonly reviewedAt: Date | null }[],
+): SpendingAuthorityStanding | null {
+    const live = envelopes.filter((e) => e.status !== 'WITHDRAWN');
+    if (live.length === 0) return null;
+    const reviewed = live.some(
+        (e) => e.reviewedAt !== null && (e.status === 'REVIEWED' || e.status === 'SUSPENDED_REQUESTED'),
+    );
+    return reviewed ? 'REVIEWED' : 'UNREVIEWED';
+}
+
+/** The `sourceRef` of a register row's SPENDING_AGENT_UNDECLARED finding. */
+export function spendingUndeclaredRefOf(registeredAgentId: string): string {
+    return `SPENDING_AGENT_UNDECLARED:${registeredAgentId}`;
 }
 
 /**
@@ -401,6 +566,19 @@ export interface PriorHarnessState {
      * ignored, whoever passed it.
      */
     readonly openOrphanCredentials: ReadonlySet<string>;
+    /**
+     * Each register row's spending-authority standing,
+     * keyed by register id. A row absent from the map holds no live envelope.
+     */
+    readonly spendingAuthority: ReadonlyMap<string, SpendingAuthorityStanding>;
+    /**
+     * Discovered agents ON RECORD AS AGENTS, by `discoveredId`: an open
+     * SHADOW_AGENT or HARNESS_SHORTFALL finding names them
+     * (`onRecordAsAgentOf`). Read only for a principal an INCOMPLETE scan
+     * reports with no sign of a model: the missing sign undoes nothing, so it
+     * is still treated as an agent. A complete scan decides by itself.
+     */
+    readonly onRecordAsAgent: ReadonlySet<string>;
 }
 
 /**
@@ -512,11 +690,15 @@ export function isIdentityBearingSource(kind: string): boolean {
     return Object.hasOwn(IDENTITY_BEARING_SOURCE, kind) ? IDENTITY_BEARING_SOURCE[kind as HarnessSourceKind] : true;
 }
 
-export function shortfallRefOf(discoveredId: string): string {
-    return `HARNESS_SHORTFALL:${discoveredId}`;
-}
+const SHORTFALL_REF_PREFIX = 'HARNESS_SHORTFALL:';
+/** Every SHADOW_AGENT `sourceRef` starts with this; the `discoveredId` is everything after it. */
+export const SHADOW_REF_PREFIX = 'SHADOW_AGENT:';
+/** Every UNREGISTERED_IDENTITY `sourceRef` starts with this; the `discoveredId` is everything after it. */
+export const UNREGISTERED_IDENTITY_REF_PREFIX = 'UNREGISTERED_IDENTITY:';
 
-const SHADOW_REF_PREFIX = 'SHADOW_AGENT:';
+export function shortfallRefOf(discoveredId: string): string {
+    return `${SHORTFALL_REF_PREFIX}${discoveredId}`;
+}
 
 /** The `sourceRef` of a discovered agent's SHADOW_AGENT finding. */
 export function shadowRefOf(discoveredId: string): string {
@@ -534,9 +716,107 @@ export function discoveredIdOfShadowFinding(finding: {
     sourceRef: string | null;
 }): string | null {
     if (finding.sourceKind !== HARNESS_FINDING_SOURCE_KIND) return null;
-    if (!finding.sourceRef?.startsWith(SHADOW_REF_PREFIX)) return null;
-    const id = finding.sourceRef.slice(SHADOW_REF_PREFIX.length);
+    return idAfter(finding.sourceRef, SHADOW_REF_PREFIX);
+}
+
+/** The id a `sourceRef` carries after `prefix`, or null: another kind's ref, or an empty id. */
+function idAfter(sourceRef: string | null, prefix: string): string | null {
+    if (!sourceRef?.startsWith(prefix)) return null;
+    const id = sourceRef.slice(prefix.length);
     return id.length > 0 ? id : null;
+}
+
+/** The `sourceRef` of a discovered principal's UNREGISTERED_IDENTITY finding. */
+export function unregisteredIdentityRefOf(discoveredId: string): string {
+    return `${UNREGISTERED_IDENTITY_REF_PREFIX}${discoveredId}`;
+}
+
+/**
+ * The finding the registration intake registers from, read off a stored
+ * finding: a harness SHADOW_AGENT or UNREGISTERED_IDENTITY finding, and the
+ * `discoveredId` it names. `null` for a finding of any other kind. Both say
+ * "this principal has no register row", and both close by its being
+ * registered, so the intake takes either: if it is an agent, register it.
+ */
+export function registrableFindingOf(finding: {
+    sourceKind: string | null;
+    sourceRef: string | null;
+}): { readonly code: 'SHADOW_AGENT' | 'UNREGISTERED_IDENTITY'; readonly discoveredId: string } | null {
+    if (finding.sourceKind !== HARNESS_FINDING_SOURCE_KIND) return null;
+    const shadow = idAfter(finding.sourceRef, SHADOW_REF_PREFIX);
+    if (shadow !== null) return { code: 'SHADOW_AGENT', discoveredId: shadow };
+    const identity = idAfter(finding.sourceRef, UNREGISTERED_IDENTITY_REF_PREFIX);
+    return identity === null ? null : { code: 'UNREGISTERED_IDENTITY', discoveredId: identity };
+}
+
+/** A stored harness finding, as the two on-record readers below take it. */
+export interface HarnessFindingOnRecord {
+    readonly sourceRef: string | null;
+    /** `Finding.status`. Every status but CLOSED is open. */
+    readonly status: string;
+}
+
+/**
+ * The discovered ids ON RECORD AS AGENTS among these findings: an open
+ * SHADOW_AGENT or HARNESS_SHORTFALL finding names them. What the ingest hands
+ * the planner as `PriorHarnessState.onRecordAsAgent`.
+ */
+export function onRecordAsAgentOf(findings: readonly HarnessFindingOnRecord[]): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const f of findings) {
+        if (f.status === 'CLOSED') continue;
+        const id = idAfter(f.sourceRef, SHADOW_REF_PREFIX) ?? idAfter(f.sourceRef, SHORTFALL_REF_PREFIX);
+        if (id !== null) ids.add(id);
+    }
+    return ids;
+}
+
+/**
+ * The discovered ids ON RECORD AS UNREGISTERED IDENTITIES among these
+ * findings: the UNREGISTERED_IDENTITY finding is open and the SHADOW_AGENT
+ * finding is not. THE ONE RULE every reader of a stored principal's class
+ * uses — the harness matrix, the shortfall acceptance, the acceptance expiry
+ * sweep and the evidence emitter — so none of them re-derives the class from
+ * stored scan rows, which an incomplete scan overwrites.
+ *
+ * It says nothing about whether the principal is LINKED: a caller asks it only
+ * of a principal with no live register row. With both findings open the
+ * principal reads as a shadow agent, the more severe reading.
+ */
+export function unregisteredIdentitiesOnRecord(findings: readonly HarnessFindingOnRecord[]): ReadonlySet<string> {
+    const identity = new Set<string>();
+    const shadow = new Set<string>();
+    for (const f of findings) {
+        if (f.status === 'CLOSED') continue;
+        const s = idAfter(f.sourceRef, SHADOW_REF_PREFIX);
+        if (s !== null) shadow.add(s);
+        const i = idAfter(f.sourceRef, UNREGISTERED_IDENTITY_REF_PREFIX);
+        if (i !== null) identity.add(i);
+    }
+    for (const id of shadow) identity.delete(id);
+    return identity;
+}
+
+/**
+ * The finding for a principal no register row names and nothing shows to run a
+ * model, in place of SHADOW_AGENT. It is still a finding: an identity nobody
+ * has classified does not leave the record.
+ */
+function unregisteredIdentityFinding(discoveredId: string, discoveredVia: readonly string[], where: string): PlannedFinding {
+    return {
+        code: 'UNREGISTERED_IDENTITY',
+        sourceRef: unregisteredIdentityRefOf(discoveredId),
+        severity: 'MEDIUM',
+        type: 'OBSERVATION',
+        title: `Unregistered automated identity ${discoveredId}`,
+        description:
+            `A harness scan (${where}) found ${discoveredId} via ${discoveredVia.join(', ')}. It has no row in the `
+            + 'agent register. Nothing the scan read shows that it runs a model: it was not found in agent code, in '
+            + 'a tracing system or on an MCP server, and its report lists no tool and no model endpoint. So it is '
+            + 'reported as an automated identity and not as an agent, and it is not held to the harness bar. '
+            + 'The scan cannot show that it runs no model. If it is an agent, register it, and it is then scored as '
+            + 'one. If it is not, it still needs an owner on record; or retire the principal.',
+    };
 }
 
 /** Is this stored (level, reach) below the report-only bar? */
@@ -604,6 +884,31 @@ function orphanCredentialFinding(scanRef: string, scanner: string, u: HarnessUnb
     };
 }
 
+/** How many payment call sites a finding names before it stops listing. */
+const MAX_PAYMENT_SITES_NAMED = 10;
+
+function spendingUndeclaredFinding(where: string, registeredAgentId: string, paying: readonly PlannedAgent[]): PlannedFinding {
+    const sites = paying.flatMap((p) => (p.paymentCapabilities ?? []).map((c) => `${c.library} at ${c.at}`));
+    const named = sites.slice(0, MAX_PAYMENT_SITES_NAMED);
+    const more = sites.length > MAX_PAYMENT_SITES_NAMED ? ` and ${sites.length - MAX_PAYMENT_SITES_NAMED} more` : '';
+    return {
+        code: 'SPENDING_AGENT_UNDECLARED',
+        sourceRef: spendingUndeclaredRefOf(registeredAgentId),
+        severity: 'HIGH',
+        type: 'NONCONFORMITY',
+        title: `Registered agent ${registeredAgentId} can pay, with no spending authority declared`,
+        description:
+            `A harness scan (${where}) read the code of ${paying.map((p) => p.discoveredId).join(', ')}, linked to `
+            + `registered agent ${registeredAgentId}, and found it calling a payment client: ${named.join('; ')}${more}. `
+            + 'The register holds no spending authority for the agent, so nobody has declared, or a second person '
+            + 'reviewed, how much it may spend, where, or until when. Declare the envelope on the register for '
+            + 'review, or remove the payment client from the agent. This finding closes when a reviewed envelope '
+            + 'is in force. A scan that no longer sees the payment client does not close it, because a static read '
+            + 'cannot show an agent has no other way to pay: if the client was removed, close the finding yourself; '
+            + 'a later scan reopens it only if it sees the client again.',
+    };
+}
+
 /** Plan what one verified report means for the tenant. */
 export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessState): HarnessPlan {
     const scanRef = body.scan.id;
@@ -636,13 +941,36 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
         const registeredAgentId = reported ?? intake;
         const linkBasis: PlannedAgent['linkBasis'] = reported !== null ? 'REPORT' : intake !== null ? 'INTAKE' : null;
 
-        // SHADOW. A link the report claimed is resolved by the register, which
-        // is evidence whatever the scan's completeness: the row exists or it
-        // does not. A link from the intake's record closes the finding only on
-        // a complete scan, and an incomplete one leaves the finding as it is.
+        // THE CLASS OF AN UNLINKED PRINCIPAL. A
+        // sign of a model makes it a shadow agent on any scan. No sign makes
+        // it an unregistered identity — unless the scan is incomplete and the
+        // principal is on record as an agent: the sign may be in the part the
+        // scan did not read, so what is on record stands.
+        const models = 'models' in a ? (a.models ?? null) : null;
+        const modelSigns = modelSignsOf({ discoveredVia: a.discoveredVia, tools: a.tools, models });
+        const heldAsAgent = !scanComplete && prior.onRecordAsAgent.has(id);
+        const unregisteredIdentity = registeredAgentId === null && modelSigns.length === 0 && !heldAsAgent;
+
+        // SHADOW, OR UNREGISTERED IDENTITY. A link the report claimed is
+        // resolved by the register, which is evidence whatever the scan's
+        // completeness: the row exists or it does not. A link from the
+        // intake's record closes the finding only on a complete scan, and an
+        // incomplete one leaves the finding as it is. Either finding closes
+        // under that one rule: both say "no register row".
         const shadowRef = shadowRefOf(id);
+        const identityRef = unregisteredIdentityRefOf(id);
         const shadowHeld = linkBasis === 'INTAKE' && !scanComplete;
-        if (registeredAgentId === null) {
+        if (unregisteredIdentity) {
+            assert.push(unregisteredIdentityFinding(id, a.discoveredVia, where));
+            // Absence of a sign is evidence only on a complete scan. (On an
+            // incomplete one nothing is open to close: an open SHADOW_AGENT
+            // would have held it as an agent above.)
+            if (scanComplete) resolve.push(shadowRef);
+        } else if (registeredAgentId === null) {
+            // A sign the scan SAW is positive evidence against the identity
+            // finding, complete scan or not. A principal held as an agent with
+            // no sign resolves nothing.
+            if (modelSigns.length > 0) resolve.push(identityRef);
             assert.push({
                 code: 'SHADOW_AGENT',
                 sourceRef: shadowRef,
@@ -655,7 +983,7 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
                     + 'risk tier and no grants on record. Register it, or retire the principal.',
             });
         } else if (!shadowHeld) {
-            resolve.push(shadowRef);
+            resolve.push(shadowRef, identityRef);
         }
 
         // UNPINNED WRITE TOOLS. Absence is evidence only when every source
@@ -696,8 +1024,12 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
             });
         }
 
-        // SHORTFALL against the report-only bar.
-        if (isHarnessShortfall(score.level, reach)) {
+        // SHORTFALL against the report-only bar. An unregistered identity is
+        // held to no bar: it raises none, and a complete scan closes one on
+        // record (an incomplete one has none to close, as above).
+        if (unregisteredIdentity) {
+            if (scanComplete) resolve.push(shortfallRefOf(id));
+        } else if (isHarnessShortfall(score.level, reach)) {
             if (!prior.acceptedShortfalls.has(id)) {
                 assert.push(shortfallFinding(id, score.level, reach, `A harness scan (${where})`, score.blockingNextRung));
             }
@@ -717,9 +1049,33 @@ export function planHarnessScan(body: HarnessReportBody, prior: PriorHarnessStat
             blockingNextRung: score.blockingNextRung,
             verdicts: a.verdicts,
             tools: a.tools,
-            models: 'models' in a ? (a.models ?? null) : null,
+            models,
+            paymentCapabilities: 'paymentCapabilities' in a ? (a.paymentCapabilities ?? null) : null,
+            modelSigns,
+            unregisteredIdentity,
         };
     });
+
+    // SPENDING AUTHORITY THE REGISTER DOES NOT KNOW (`/4`). Per register row:
+    // any linked agent paying opens. Only a reviewed envelope closes; a read
+    // reporting `[]` is not evidence the agent cannot pay, so it closes nothing.
+    const payingByRow = new Map<string, PlannedAgent[]>();
+    for (const p of agents) {
+        if (p.registeredAgentId === null) continue;
+        const caps = p.paymentCapabilities;
+        const row = payingByRow.get(p.registeredAgentId) ?? [];
+        if (caps !== null && caps.length > 0) row.push(p);
+        payingByRow.set(p.registeredAgentId, row);
+    }
+    for (const [rowId, paying] of payingByRow) {
+        const ref = spendingUndeclaredRefOf(rowId);
+        const standing = prior.spendingAuthority.get(rowId);
+        if (standing === 'REVIEWED') {
+            resolve.push(ref);
+            continue;
+        }
+        if (paying.length > 0 && standing === undefined) assert.push(spendingUndeclaredFinding(where, rowId, paying));
+    }
 
     // ZERO IS NEVER CLEAN. A scan that found nothing evidences nothing.
     const emptyRef = `EMPTY_SCAN:${scanner}`;

@@ -21,6 +21,7 @@
  * NO CLOCK AND NO PATH. The page holds no generation time and no absolute
  * path, so the same results give the same bytes.
  */
+import { HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3 } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import { harnessBarFor } from '@rodnapamet/scanent-contract/harness-findings';
 import { HARNESS_LEVEL_NAMES, HARNESS_LEVELS, levelAtLeast, type HarnessCriterionId, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 
@@ -120,6 +121,11 @@ function cellStyle(cell: LocalCriterionCell): CellStyle {
 
 const SEVERITY_CLASS: Readonly<Record<string, string>> = { LOW: 'sev-low', MEDIUM: 'sev-medium', HIGH: 'sev-high', CRITICAL: 'sev-critical' };
 const SEVERITY_ORDER: Readonly<Record<string, number>> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+
+/** The subject of a finding that names no one agent, by code: a spending finding is about a registration several agents share. */
+const SUBJECT_WITHOUT_AGENT: Readonly<Record<string, string>> = {
+    SPENDING_AGENT_UNDECLARED: 'One registration, several agents',
+};
 
 const REACH_TEXT: Readonly<Record<string, string>> = {
     READ_ONLY: 'Read only',
@@ -334,6 +340,7 @@ ${stat('Not judged', e.notJudgedCount, e.notJudgedCount === 0 ? '' : 'no level s
 ${stat('Below their bar', e.shortfallCount, identities === undefined || identities.length === 0 ? 'of the judged agents' : 'of the judged agents held to a bar')}
 ${stat('Shadow agents', e.shadowAgents.length, identities === undefined ? 'not registered' : 'not registered, with a sign of a model')}
 ${identities === undefined ? '' : stat('Unregistered identities', identities.length, 'no sign of a model')}
+${e.payingAgents === undefined ? '' : stat('Can pay', e.payingAgents.length, 'code calls a payment client')}
 ${stat('Orphan credentials', e.orphanCredentials.length, 'bound to no agent')}
 </dl>
 <p>Registration is taken from: ${fixed(ESTATE_REGISTRATION_TEXT, e.registrationBasis, 'Not stated')}.</p>
@@ -358,6 +365,7 @@ function agentLabel(agent: LocalAgentResult): SafeHtml {
 
 function matrixRow(agent: LocalAgentResult, order: readonly HarnessCriterionId[]): SafeHtml {
     const j = agent.judgement;
+    const pays = (agent.paymentCapabilities ?? []).length > 0 ? html`<br><span class="tag warn">Code calls a payment client</span>` : '';
     const cells = new Map(agent.criteria.map((c) => [c.criterion, c]));
     const under =
         j.state === 'NOT_JUDGED'
@@ -372,7 +380,7 @@ function matrixRow(agent: LocalAgentResult, order: readonly HarnessCriterionId[]
             : html`<td class="lvl"><span class="tag warn">Not judged</span></td>
 <td class="lvl"><span class="tag warn">Not judged</span></td>`;
     return html`<tr>
-<th scope="row" class="agent">${agentLabel(agent)}${under}</th>
+<th scope="row" class="agent">${agentLabel(agent)}${pays}${under}</th>
 <td>${fixed(REGISTRATION_TEXT, agent.registration.basis, 'Not stated')}</td>
 <td>${fixed(REACH_TEXT, agent.reach, 'Unknown')}</td>
 ${level}
@@ -488,6 +496,56 @@ ${listed.shown.map((id) => {
 </section>`;
 }
 
+/**
+ * Where agents' code calls a payment client (`/4`). Three states per agent,
+ * never collapsed: seen calling one, read and none seen, and not reported.
+ * "None seen" is what a read of the agent's own file saw: a payment client
+ * wrapped in another module, or loaded by a name the reader cannot follow, is
+ * out of its sight, so it is never "cannot pay".
+ */
+function payments(r: LocalResults): SafeHtml {
+    const paying = r.estate.payingAgents ?? [];
+    const byId = new Map(r.agents.map((a) => [a.discoveredId, a]));
+    const read = r.agents.filter((a) => a.paymentCapabilities !== undefined && a.paymentCapabilities !== null).length;
+    const code = r.sources.find((s) => s.kind === 'code');
+    const spending = new Map<string, LocalFinding>();
+    for (const f of r.findings) if (f.code === 'SPENDING_AGENT_UNDECLARED' && f.discoveredId !== null) spending.set(f.discoveredId, f);
+    const listed = capped(paying, SECTION_MAX_ROWS, 'agents whose code calls a payment client', 'in the order the results list them', RUN_FILE_NAMES.agents);
+    const meaning = html`<p>An agent whose code calls a payment client can pay for something on its own. scanent reads this from code: the payer side of the x402 protocol, in an agent's own file. It reports where the call is, never an amount, a wallet or a key. It does not read any spending limit, so it cannot say whether one is in place.</p>
+<p>${plural(read, 'agent was', 'agents were')} read for this, out of ${r.agents.length}. For the others the report says nothing about payment.</p>`;
+    const none =
+        r.scan.contract === HARNESS_CONTRACT_V2 || r.scan.contract === HARNESS_CONTRACT_V3
+            ? html`<p>Not reported: this report's contract, <code>${r.scan.contract}</code>, carries no payment facts.</p>`
+            : code === undefined
+                ? html`<p>None seen. This scan did not read code, so this is not a statement that no agent can pay.</p>`
+                : code.status !== 'COMPLETE'
+                    ? html`<p>None seen. The code was not read in full, so this is not a statement that no agent can pay.</p>`
+                    : html`<p>None seen in the code this scan read. That is not a statement that no agent can pay: a payment client wrapped in another module is out of the reader's sight.</p>`;
+    return html`<section id="payments" aria-labelledby="payments-h">
+<h2 id="payments-h">Payment capabilities</h2>
+${meaning}
+${paying.length === 0
+        ? none
+        : html`${listed.notice}<div class="scroll"><table>
+<caption>Agents whose code calls a payment client</caption>
+<thead><tr><th scope="col">Agent</th><th scope="col">Registration</th><th scope="col">Where the code calls it</th><th scope="col">Spending authority</th></tr></thead>
+<tbody>
+${listed.shown.map((id) => {
+            const agent = byId.get(id);
+            const sites = agent?.paymentCapabilities ?? [];
+            const registered = agent !== undefined && agent.registration.basis !== 'NONE';
+            const finding = spending.get(id);
+            return html`<tr><th scope="row"><code class="id">${id}</code></th><td>${fixed(REGISTRATION_TEXT, agent?.registration.basis ?? 'NONE', 'Not stated')}</td><td><ul class="reasons">${sites.map((s) => html`<li><code>${s.library}</code> at <code class="id">${s.at}</code></li>`)}</ul></td><td>${registered
+                ? finding === undefined
+                    ? 'See the findings'
+                    : html`<span class="tag bad">None seen by this run</span>`
+                : 'Register it first: it is a shadow agent'}</td></tr>`;
+        })}
+</tbody>
+</table></div>`}
+</section>`;
+}
+
 function orphans(r: LocalResults): SafeHtml {
     const e = r.estate;
     const concluded = capped(e.orphanCredentials, SECTION_MAX_ROWS, 'orphan credentials', 'in the order the results list them', RUN_FILE_NAMES.results);
@@ -535,7 +593,7 @@ ${listed.shown.map(
             (f) => html`<tr>
 <td><span class="tag ${fixed(SEVERITY_CLASS, f.severity, 'sev-low')}">${f.severity}</span></td>
 <td><code>${f.code}</code></td>
-<td>${f.discoveredId === null ? 'The scan' : html`<code class="id">${f.discoveredId}</code>`}</td>
+<td>${f.discoveredId === null ? fixed(SUBJECT_WITHOUT_AGENT, f.code, 'The scan') : html`<code class="id">${f.discoveredId}</code>`}</td>
 <td><details><summary>${f.title}</summary><p>${f.description}</p><p class="ref">Reference <code class="id">${f.sourceRef}</code></p></details></td>
 </tr>`,
         )}
@@ -725,6 +783,8 @@ export function renderSummaryHtml(results: LocalResults): string {
               ['shadow', 'Shadow agents', shadowAgents(r)],
               // Absent for results written before the member existed: there, every unregistered principal is a shadow agent.
               ...(r.estate.unregisteredIdentities === undefined ? [] : [['identities', 'Unregistered identities', unregisteredIdentities(r)] as const]),
+              // Absent for results written before the member existed: they hold no payment facts.
+              ...(r.estate.payingAgents === undefined ? [] : [['payments', 'Payment capabilities', payments(r)] as const]),
               ['orphans', 'Orphan credentials', orphans(r)],
               ['findings', 'Findings', findings(r)],
               ...(r.inventory === null ? [] : [['inventory', 'Inventory', inventory(r)] as const]),

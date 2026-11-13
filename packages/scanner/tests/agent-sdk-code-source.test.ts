@@ -37,6 +37,7 @@ import { rawPublicKeyHex } from '../src/report';
 import { runScan } from '../src/scan';
 import type { CodeFs } from '../src/sources/code/files';
 import type { DetectedAgent } from '../src/sources/code/recognize';
+import type { CodeAgent } from '../src/sources/langchain';
 import { langchainCodeSource, observationOf, scanLangChainCode } from '../src/sources/langchain';
 import type { SourceContext } from '../src/source';
 
@@ -59,7 +60,7 @@ async function agentsIn(...trees: Readonly<Record<string, string>>[]) {
 }
 
 const loc = (path: string, line: number) => `code://acme/${path}#L${line}`;
-const verdictsOf = (a: DetectedAgent) => observationOf(a).verdicts.map((v) => [v.criterion, v.met, v.evidence]);
+const verdictsOf = (a: CodeAgent) => observationOf(a).verdicts.map((v) => [v.criterion, v.met, v.evidence]);
 const toolsOf = (a: DetectedAgent) => a.tools.map((t) => [t.kind, t.name, t.server]);
 const DEFAULT_BUILTINS = ['Bash', 'Read', 'Edit', 'Write', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'Agent', 'Skill'];
 

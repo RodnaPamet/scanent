@@ -1,13 +1,13 @@
 # The scanner
 
 `@scanent/scanner` runs inside an estate, reads that estate's sources
-**read-only**, builds an `inflect-agent-harness/3` report, signs it with an
+**read-only**, builds an `inflect-agent-harness/4` report, signs it with an
 Ed25519 key, and either prints it (`scan --dry-run`) or posts it unchanged to
 an Inflect tenant's ingest. The report's schema, the ladder its verdicts are
 scored on and the signature rule are `@rodnapamet/scanent-contract`
 (`packages/contract/src/harness-contract.ts` is the specification of record).
-The ingest accepts `/2` and `/3`; `/3` adds the `gcp-sa` source kind. `/1` is
-retired.
+The verifier accepts `/2`, `/3` and `/4`; `/3` adds the `gcp-sa` source kind,
+and `/4` an agent's `paymentCapabilities[]`. `/1` is retired.
 
 This document was carried over from the scanner's README in the repository it
 was extracted from (see [EXTRACTION.md](EXTRACTION.md)) and rewritten to this
@@ -482,6 +482,43 @@ secret scan can know. An MCP server in code is still matched to a server the
 `mcp` source read by its whole URL; that URL is held in memory for the
 comparison and is not reported. The ingest verifies them and
 keeps them on the agent's scan item, and the harness matrix lists them.
+
+#### Payment capabilities
+
+`/4` adds one fact the `code` source states for every agent it reports:
+`paymentCapabilities[]`, each place the agent's own file calls a recognised
+payment client (`packages/scanner/src/sources/code/payment.ts`), by protocol,
+library and `code://` locator. Never an amount, a wallet or a key. The
+recognised entry points are the payer side of x402:
+
+| Library | Entry points |
+|---|---|
+| `x402-fetch` | `wrapFetchWithPayment` |
+| `x402-axios` | `withPaymentInterceptor` |
+| `@x402/fetch` | `wrapFetchWithPayment`, `wrapFetchWithPaymentFromConfig` |
+| `@x402/axios` | `wrapAxiosWithPayment`, `wrapAxiosWithPaymentFromConfig` |
+| `x402` (Python) | `x402Client`, `x402ClientSync`, and the HTTP client wrappers of `x402.http.clients` (`x402HttpxClient`, `x402_requests`, …), also under the 1.x path `x402.clients` |
+
+Seller-side middleware accepts payments, initiates none, and is not
+recognised. A name counts only when it resolves through the file's imports to
+one of these packages, as an agent's framework does: a local function called
+`wrapFetchWithPayment` is not x402's. A call, a binding to a name and a use as
+a value (an alias, a callback, `getattr(x402, "x402Client")`) each count, at
+their line. An import that is never used does not. A dynamic import, or a
+member read with a name the reader cannot see (`getattr(mod, name)`,
+`mod[name]` on a payment module), in a file that names a payment library or
+defines an agent, makes the source `UNPARSEABLE` at that line, because which
+member the code then calls is out of sight. A dynamic import of a literal
+module that is not a payment library is ordinary code and is left alone.
+
+The fact is attributed to every agent the same file defines. A helper module
+that wraps the client for an agent defined elsewhere is not followed, and a
+file with a payment call and no agent reports nothing. So `[]` means "no
+payment client seen in the agent's own file", never "cannot pay", and the
+planner never closes `SPENDING_AGENT_UNDECLARED` on it. An agent no `code`
+read reported carries no member at all. The record of synthetic repositories
+the reader is held to is
+`packages/scanner/tests/fixtures/agent-pay-scanner/payment-capability-record.json`.
 
 **Unbound credentials.** `/2`'s `unboundCredentials[]` lists credential
 references a source saw bound to no principal, from which the ingest derives
@@ -1277,6 +1314,13 @@ any host that could not be reached. `doctor` tells it apart and names the fix.
 
 ## Changes that can stop a setup that scanned before
 
+**Reports are written under `inflect-agent-harness/4`.** A consumer that
+accepts only `/2` and `/3` refuses them as `SCHEMA`. The reference verifier in
+`@rodnapamet/scanent-contract` accepts all three. A `/3` verifier refuses `/4`
+because its schema is strict and `/4` adds a member, which is why the change
+is a new id and not a wider `/3`. The scanner's manifest hash moves with it,
+because the contract id is part of the declared surface; no request changed.
+
 Two refusals are new with `init` and `doctor`, and both are deliberate:
 
 - **`NAME` and `NAME_FILE` both set is refused** (exit 4). There is no
@@ -1491,9 +1535,22 @@ What the results say, and do not:
   criteria in every file. The name of a credential is not a sign: a secret
   called after a model provider is a guess about what holds it. The scan
   cannot show that such a principal runs no model, and the finding says so.
-  This is the local results' own reading. The signed report is the
-  contract's and does not change, and a system that ingests it applies its
-  own rules.
+  The class is the contract planner's own, so a system that plans the same
+  report with the contract package reaches the same one; the local results
+  word the finding for a run whose list is an inventory or the register.
+- **What an agent's code can pay with is shown, and "none seen" is not
+  "cannot pay".** Each agent carries `paymentCapabilities` (`/4`): `null` when
+  the report did not say (an older contract, or an agent no code read
+  reported), `[]` when its code was read and no payment client was seen in its
+  own file, and otherwise each call site. `estate.payingAgents` lists the
+  agents with one. The page has a "Payment capabilities" section, the matrix
+  marks such an agent "Code calls a payment client", and `agents.csv` has a
+  `paymentCapabilities` column (`NOT_REPORTED`, `NONE_SEEN`, or the sites).
+  A registered agent whose code pays has `SPENDING_AGENT_UNDECLARED`, the
+  planner's finding: no run reads a spending authority, so the local wording
+  says that this run saw none, not that none exists. An unregistered agent
+  that pays is a shadow agent and has no spending finding: register it first.
+  Both members are optional, so a file written before them still reads.
 - **An empty scan is a finding** (`EMPTY_SCAN`), never a clean result.
 
 `summary.html` is one self-contained file: no script, no image, no font, no
@@ -1554,7 +1611,8 @@ Absence is evidence only on a full read:
 | agent `not seen` | in the older run only, and one of those sources was incomplete or not listed, or the newer run found no agent at all. Nothing is concluded |
 | level up or down | only when both runs judged the agent |
 | orphan credential or finding `closed` | only on the evidence that would close it: its source read in full, the agent present and judged, the scan complete where the rule needs it. An unpinned write tool closes only when every source in the agent's `toolEvidenceSources`, from both runs, is listed and read in full. A file with no such member (written by an earlier version) is decided from where the agent was found, and the diff carries the warning `TOOL_EVIDENCE_OLDER_RULE`. An empty newer run closes no orphan credential |
-| `no longer reported, not concluded` | everything else that is absent from the newer run |
+| `no longer reported, not concluded` | everything else that is absent from the newer run. A `SPENDING_AGENT_UNDECLARED` finding is never closed by a scan (`NOT_CLOSED_BY_A_SCAN`): only a reviewed spending authority closes it, and no scan reads one |
+| `payment` | an agent's payment call sites changed, where both runs reported them. `NONE_SEEN` after a call site is a change in what was seen, not that the agent can no longer pay. Where one run reported them and the other did not, `PAYMENT_NOT_COMPARED:<agent>` is listed as not concluded |
 
 Refused, with exit code 2: a file that cannot be read or is neither kind, a
 results file that fails its schema, a report that fails verification, a newer

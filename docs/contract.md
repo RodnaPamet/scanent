@@ -24,20 +24,23 @@ that accepts more is not reading this contract.
 
 ## Contract ids
 
-Three ids have existed. A new id is a new strict schema beside the others,
-never a looser schema that reads either.
+Four ids have existed. A new id is a new strict schema beside the others,
+never a looser schema that reads several.
 
 <!-- contract:ids -->
 | Id | State | What it adds |
 |---|---|---|
 | `inflect-agent-harness/1` | Retired: refused as `SCHEMA` | The first contract |
 | `inflect-agent-harness/2` | Accepted | The `code` source kind, the `UNPARSEABLE` reason, `unboundCredentials[]`, a tool's optional `calls` and `windowDays`, an agent's optional `models[]` |
-| `inflect-agent-harness/3` | Accepted; what scanent writes | The `gcp-sa` source kind, and nothing else |
+| `inflect-agent-harness/3` | Accepted | The `gcp-sa` source kind, and nothing else |
+| `inflect-agent-harness/4` | Accepted; what scanent writes | An agent's optional `paymentCapabilities[]`, and nothing else. See "Payment capabilities" |
 <!-- /contract:ids -->
 
 The source kinds are a closed list on the wire, which is why `/3` is a new id
 and not a wider `/2`: a `/2` report that names `gcp-sa` is refused, and a `/2`
-verifier refuses a `/3` report. The id names itself with the product it was
+verifier refuses a `/3` report. `/4` is a new id for the same reason: a `/3`
+verifier refuses the new member, and a `/3` report that carries it is refused
+here. The id names itself with the product it was
 first written for; it is an identifier and is not changed.
 
 ## The body
@@ -111,6 +114,7 @@ Zero sources is not complete: a scan that looked nowhere evidences nothing.
 | `credentials[]` | 0 to `MAX_CREDENTIALS_PER_AGENT` | See below |
 | `tools[]` | 0 to `MAX_TOOLS_PER_AGENT` | See below |
 | `models[]` | optional, 0 to `MAX_MODELS_PER_AGENT` | Model endpoints the agent calls. Absent means not reported; an empty list means reported as none |
+| `paymentCapabilities[]` | `/4` only; optional, 0 to `MAX_PAYMENT_CAPABILITIES_PER_AGENT` | Where the agent's code calls a payment client. See "Payment capabilities" |
 | `skills[]` | 0 to `MAX_SKILLS_PER_AGENT` | `name`, `license` (or null), `declared` |
 | `verdicts[]` | 0 to twice the number of criteria | The criteria the scanner holds evidence about |
 
@@ -141,6 +145,51 @@ userinfo) and `model` (an id or null).
 A **verdict** is `criterion` (an id of the ladder), `met` (boolean) and
 `evidence` (a pointer of at most `MAX_EVIDENCE_CHARS` characters, or null).
 
+### Payment capabilities
+
+`/4` adds one optional member to an agent, `paymentCapabilities[]`: each place
+the agent's code calls a recognised payment CLIENT, so the agent can initiate a
+payment. An entry is:
+
+| Member | Type | Meaning |
+|---|---|---|
+| `protocol` | payment protocol | From the closed list below |
+| `library` | payment client library | From the closed list below |
+| `at` | `code://` locator | Where the code makes the call |
+
+Never an amount, an address, a wallet, a key or a token: what a call would pay,
+and with what, is out of a static reader's sight, and a value there is refused
+as secret-shaped anyway.
+
+<!-- contract:payment-libraries -->
+| Library | Protocol | Where |
+|---|---|---|
+| `x402-fetch` | `x402` | npm |
+| `x402-axios` | `x402` | npm |
+| `@x402/fetch` | `x402` | npm |
+| `@x402/axios` | `x402` | npm |
+| `x402` | `x402` | PyPI |
+<!-- /contract:payment-libraries -->
+
+Each is the payer side of its protocol. Seller-side middleware accepts payments
+and initiates none, and is not on the list.
+
+Four rules, each a refusal:
+
+- the member is carried only by an agent whose `discoveredVia` includes `code`:
+  only a code read can state it, even empty;
+- each (library, locator) pair appears once;
+- the protocol and the library are from the lists above;
+- `at` is a `code://` locator.
+
+**Three states, never collapsed.** Absent is NOT REPORTED: no code read saw
+this agent. An empty list is a code read that saw no payment client called in
+the agent's own file. That is what the reader saw, not evidence that the agent
+cannot pay: a client wrapped in another module, or reached through a name the
+reader cannot follow, is out of its sight. Entries are what it saw. Like every
+fact code yields, a capability shows that the agent CAN pay, never that a
+control over the payment works.
+
 ### An unbound credential
 
 `ref` (a credential reference) and `sourceKind`. Three rules, each of which
@@ -162,6 +211,7 @@ refuses a report that contradicts itself:
 | `MAX_TOOLS_PER_AGENT` | 500 | Tools of one agent |
 | `MAX_SKILLS_PER_AGENT` | 100 | Skills of one agent |
 | `MAX_MODELS_PER_AGENT` | 50 | Model endpoints of one agent |
+| `MAX_PAYMENT_CAPABILITIES_PER_AGENT` | 50 | Payment capabilities of one agent (`/4`) |
 | `MAX_FINDINGS` | 20,000 | Entries of `findings` |
 | `MAX_UNBOUND_CREDENTIALS` | 10,000 | Entries of `unboundCredentials` |
 | `MAX_TOOL_CALLS` | 1,000,000,000 | A tool's `calls` |
@@ -187,6 +237,15 @@ anything is stored:
    password in its userinfo. A match inside a longer string is a match. A
    member's name is checked as a value is, and the refusal writes `<key>` in
    its place.
+3. No string and no number anywhere in the body may contain a payment card
+   number (`containsCardNumber`, part of `looksLikeSecret`; a number is read
+   as its digits by `firstSecretShapedPath`). A card number is 13 to 19
+   digits that pass the Luhn check and start with 2 to 6, written
+   contiguously or in the groups cards are printed in, with one kind of
+   separator. A run of digits joined to a letter (a hex digest, a UUID) is
+   never one, and neither is a run after a `+` or beside a decimal point. So
+   no reader of a report is brought into PCI DSS cardholder-data scope by
+   it.
 
 A refusal names the member's path and never the value.
 
@@ -305,14 +364,33 @@ the reference each finding is keyed by:
 <!-- contract:planned-finding-codes -->
 | Code | Keyed by | Opened when |
 |---|---|---|
-| `SHADOW_AGENT` | the agent | The agent is not in the register the reader holds |
+| `SHADOW_AGENT` | the agent | The agent is not in the register the reader holds, and the scan read a sign that it runs a model (below) |
 | `UNPINNED_WRITE_TOOL` | the agent | It holds a tool that can write and is not pinned |
 | `LEVEL_DROP` | the agent and the scan | Its level fell since the reader's last scan. An event: never closed by a scan |
 | `HARNESS_SHORTFALL` | the agent | Its level is below its bar |
 | `EMPTY_SCAN` | the scanner | The scan found no agent at all |
 | `INCOMPLETE_SOURCE` | the scanner and the source kind | A source was not read in full |
 | `ORPHAN_CREDENTIAL` | the scanner, the source kind and the reference | A source read in full saw a credential bound to no agent, and every source that could name the agent it belongs to was read in full too |
+| `SPENDING_AGENT_UNDECLARED` | the register row | `/4`: an agent linked to the row has code that calls a payment client, and the reader holds no spending authority for the row. Closed only by a spending authority a second person reviewed: a scan never closes it |
+| `UNREGISTERED_IDENTITY` | the agent | The agent is not in the register, and nothing the scan read shows that it runs a model. In place of `SHADOW_AGENT` |
 <!-- /contract:planned-finding-codes -->
+
+**An unregistered identity is not a shadow agent.** A principal with no
+register row is a shadow agent when the scan read a sign that it runs a model:
+it was found through `code`, `runtime` or `mcp`, or it lists a tool or a model
+endpoint (`MODEL_SIGNS`, `modelSignsOf`). A credential's name is not a sign.
+With none, it is an unregistered automated identity: one finding of medium
+severity, and no `HARNESS_SHORTFALL`, because it is held to no bar. A sign is a
+presence and counts on any scan. Its absence counts only on a complete one, so
+an incomplete scan leaves a principal the reader holds on record as an agent
+(an open `SHADOW_AGENT` or `HARNESS_SHORTFALL`) as one.
+
+**Spending authority is the register's, never the report's.** The finding is
+keyed by the register row the planner linked, so an unregistered agent that
+can pay is a shadow agent and nothing more, and a report cannot raise it
+against a row the reader does not hold. A spending authority awaiting review
+holds it: neither opened nor closed. An empty `paymentCapabilities[]` closes
+nothing, for the reason under "Payment capabilities".
 
 **A scan closes a finding only on positive evidence.** An agent now registered,
 a level now at the bar, a source now read in full, a population now not empty.
@@ -352,6 +430,7 @@ A report written to a file (`report.signed.json`) is the same bytes.
 - That `findings` lists what is wrong. It lists where the scanner could not
   read.
 - That a later contract id reads as an earlier one. Each id is its own schema.
+- That an agent whose `paymentCapabilities[]` is empty, or absent, cannot pay.
 
 ## Use the reference implementation
 

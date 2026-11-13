@@ -371,12 +371,12 @@ class ProviderSdkReader {
         if (q === null) return null;
         // `from google import genai` binds `genai` to the module `google.genai`: the module may run into the path.
         for (let k = 0; k <= q.path.length; k++) {
-            const module = [q.module, ...q.path.slice(0, k)].join('.');
-            const family = FAMILIES.find((f) => IS_MODULE[f](module));
+            const moduleName = [q.module, ...q.path.slice(0, k)].join('.');
+            const family = FAMILIES.find((f) => IS_MODULE[f](moduleName));
             if (family === undefined) continue;
             const rest = q.path.slice(k);
             const last = rest[rest.length - 1];
-            const name = last === undefined || last === 'default' ? (DEFAULT_EXPORT[module] ?? 'default') : last;
+            const name = last === undefined || last === 'default' ? (DEFAULT_EXPORT[moduleName] ?? 'default') : last;
             return { family, name };
         }
         return null;

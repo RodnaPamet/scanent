@@ -34,7 +34,9 @@ files and their originals is:
 Kept exactly as they were, because they are on the wire or in the signed
 report: `SCANNER_VERSION` (`0.13.2`), `SCANNER_NAME`
 (`inflect-agent-harness-scanner`), the MCP client name and the GitHub
-`User-Agent`, and the contract ids `inflect-agent-harness/2` and `/3`.
+`User-Agent`, and the contract ids `inflect-agent-harness/2` and `/3`. The id
+`inflect-agent-harness/4` came later, from the same repository, and is spelt
+as it is there (see "Taken from the originating repository after the copy").
 
 Comments in the source were not rewritten, with one exception: the package
 name in the header of `packages/scanner/src/index.ts`. The rest still refer to
@@ -50,6 +52,63 @@ the original repository, and those references do not resolve here:
   repository's `docs/` holds `scanner.md` and this file;
 - paths and lint-configuration names are the original layout's (the file
   mapping below translates them).
+
+## Taken from the originating repository after the copy
+
+The copy above is a snapshot, and the originating repository went on changing
+its own copy. These changes were brought over afterwards, by reading its
+`main` at `d55726e19` and porting what scanent did not already have. Each
+keeps scanent's own changes beside it.
+
+| Change there | Commit there | Here |
+|---|---|---|
+| Contract `inflect-agent-harness/4`: an agent's optional `paymentCapabilities[]`, the closed lists `PAYMENT_PROTOCOLS` and `PAYMENT_CLIENT_LIBRARIES`, `MAX_PAYMENT_CAPABILITIES_PER_AGENT` and the strict `/4` schema beside `/2` and `/3`. The retired-id refusal now names `/4` | `2d4d7f220` | `packages/contract/src/harness-contract-rules.ts`, `harness-contract.ts` |
+| A payment card number is secret-shaped (`containsCardNumber`, `passesLuhn`, inside `looksLikeSecret`), and `firstSecretShapedPath` walks any value, reading a number as its digits. `firstSecretShapedMember` is a wrapper over it | `0276ec9bf` | `harness-contract-rules.ts`, `harness-findings.ts` |
+| The planner's `SPENDING_AGENT_UNDECLARED`, keyed by register row, with `spendingAuthority` in the prior state, `spendingAuthorityStandingOf` and `spendingUndeclaredRefOf` | `2d4d7f220` | `harness-findings.ts` |
+| The planner's `UNREGISTERED_IDENTITY`: `MODEL_SIGNS`, `modelSignsOf`, `onRecordAsAgent` in the prior state, `onRecordAsAgentOf`, `unregisteredIdentitiesOnRecord`, `registrableFindingOf`. The originating repository built it from scanent's local results; it is now the contract's, and the local results use the planner's class | `fc24b93f4` | `harness-findings.ts`; `packages/report/src/results/score.ts` |
+| The scanner writes `/4`: the `code` source reports each agent's payment client calls (`sources/code/payment.ts`), the report builder merges them, and a dynamic `import(…)` is named `import` in the JavaScript reader | `2d4d7f220` | `packages/scanner/src/sources/code/payment.ts`, `sources/langchain.ts`, `sources/code/javascript.ts`, `report.ts`, `source.ts`, `scan.ts`, `outputs.ts`, `scanner-surface.ts` |
+| The schedule waits in steps no timer misreads (`boundedSleep`), so a cadence over 596 hours does not run scans back to back | `656f25f9b` | `packages/scanner/src/schedule.ts` |
+
+Their tests came with them, adapted to this layout: the `/4` cases of
+`harness-contract.test.ts`, the identity cases of `harness-findings.test.ts`,
+the fake scanner's `/4` body and malformations, and three new suites:
+`packages/contract/tests/harness-spending-agent-undeclared.test.ts`,
+`packages/contract/tests/card-numbers-are-refused-as-secrets.test.ts` (its
+test card numbers are named by length and first digit here) and
+`packages/scanner/tests/payment-capability-code-source.test.ts`, with its
+record in `packages/scanner/tests/fixtures/agent-pay-scanner/`. The two
+schedule cases joined `scanner-config-and-schedule.test.ts`.
+
+What is not the same as there, on purpose:
+
+- **`SCANNER_VERSION` is this repository's own release line.** The
+  originating repository named its `/4` scanner `0.13.0`, a number this
+  repository's line had already used for something else. The release that
+  first carries `/4` here takes the next version; the manifest hash moved
+  with the contract id, which is part of the declared surface.
+- **`firstSecretShapedMember` takes `unknown`**, as it did here before: the
+  local results, an inventory and a diff input are walked by it too. Both
+  copies refuse a secret-shaped member name and write `<key>` in its place
+  (fixed here and there separately, the same way).
+- **The refusal codes are the `HARNESS_REFUSALS` array**, and the type is
+  derived from it. Same codes, same order.
+- **Local results word two planner findings for a run with no register
+  behind it.** `UNREGISTERED_IDENTITY` names the register or inventory this
+  run read; `SPENDING_AGENT_UNDECLARED` says this run read no spending
+  authority, because the scanner cannot, rather than that the register holds
+  none. Codes, keys and severities are the planner's.
+
+**Nothing contract-level is now only in the originating repository.**
+`scripts/compare-inflect-copy.js <path to that repository>` compares its
+eight contract files and its scanner sources with the files here, ignoring
+comments and import paths, and prints every code line that is only there. At
+`d55726e19` it prints none outside its list of deliberate differences: the
+three above that are contract-level, and, in the scanner, lines this
+repository replaced with its own hardened forms (the Python reader's work
+budget, the egress proxy's address check, the file reader that follows no
+link, the outputs, the command line). The list names each with its reason,
+and the script reports an entry that no longer matches, so it cannot outlive
+what it explains.
 
 ## File mapping
 

@@ -29,7 +29,7 @@ import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LE
 import { AGENTS_CSV_LEADING_COLUMNS, csvCriterionState, FINDINGS_CSV_COLUMNS } from '@scanent/report/render/csv';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
 import { coverageOf, scoreReportLocally } from '@scanent/report/results/score';
-import { LOCAL_FINDING_CODES, type ReaderKind } from '@scanent/report/results/types';
+import type { ReaderKind } from '@scanent/report/results/types';
 
 import { HELP, main, USAGE_HINT } from '../src/cli';
 import { ConfigError } from '../src/config';
@@ -140,7 +140,7 @@ describe('docs/guide/read-the-report.md: the ladder', () => {
     it('names each section of the page by the heading the page gives it, and quotes the page\'s own sentences', () => {
         const html = fs.readFileSync(path.join(REPO, 'packages/report/src/render/html.ts'), 'utf8');
         const headings = [...new Set([...html.matchAll(/<h2 id="[a-z]+-h">([^<]+)<\/h2>/g)].map((m) => m[1]))];
-        expect(headings.length).toBe(10);
+        expect(headings.length).toBe(11);
         for (const heading of headings) expect(text).toContain(`### ${heading}\n`);
         // Sentences the guide puts in quotation marks are the page's own.
         for (const quoted of [
@@ -151,6 +151,8 @@ describe('docs/guide/read-the-report.md: the ladder', () => {
             'A reader exists; this run did not configure it',
             'Seen unbound, not concluded',
             'The scan cannot show that one of these runs no model.',
+            'None seen in the code this scan read. That is not a statement that no agent can pay',
+            'Code calls a payment client',
             'No finding was raised',
             'The scan is incomplete, so this is not a clean result.',
             'name declared by the operator',
@@ -172,7 +174,7 @@ describe('docs/guide/findings.md: the findings', () => {
 
     const body = (over: Record<string, unknown>): HarnessReportBody =>
         ({
-            contract: 'inflect-agent-harness/3',
+            contract: 'inflect-agent-harness/4',
             scan: { id: 'guide-scan', asOf: '2026-11-12T00:00:00.000Z', scanner: { agentId: 'guide-scanner', version: '0', manifestHash: 'sha256:0' } },
             population: { sources: [] },
             agents: [],
@@ -190,39 +192,57 @@ describe('docs/guide/findings.md: the findings', () => {
         verdicts: [],
     });
     const writeTool = { server: 'code://guide/agent.py#L1', name: 'send', manifestHash: null, pinned: false, readOnlyHint: null };
+    const readTool = { server: 'https://mcp.guide.example/crm', name: 'list_accounts', manifestHash: 'sha256:0', pinned: true, readOnlyHint: true };
+    const PAYING_ROW = 'agt_guide_paying';
 
-    /** Three scans that between them raise every kind of finding. */
+    /** Four scans that between them raise every kind of finding. */
     const BODIES: readonly HarnessReportBody[] = [
         // An unknown agent with a write tool nobody pinned, beside a source that was not read in full.
         body({
             population: { sources: [{ kind: 'code', status: 'COMPLETE', rows: 1 }, { kind: 'runtime', status: 'INCOMPLETE', reason: 'TIME_BOX', rows: 0 }] },
             agents: [agent('code:guide/agent.py#a', 'code', [writeTool])],
         }),
-        // An agent that only reads, and a credential nothing uses, on a scan read in full.
+        // An agent that only reads, an automated account with no sign of a model, and a credential nothing uses, on a scan read in full.
         body({
-            population: { sources: [{ kind: 'entra-sp', status: 'COMPLETE', rows: 1 }, { kind: 'mcp', status: 'COMPLETE', rows: 0 }] },
-            agents: [agent('entra:sp:00000000-0000-0000-0000-000000000001', 'entra-sp', [])],
+            population: { sources: [{ kind: 'entra-sp', status: 'COMPLETE', rows: 2 }, { kind: 'mcp', status: 'COMPLETE', rows: 1 }] },
+            agents: [
+                agent('entra:sp:00000000-0000-0000-0000-000000000001', 'entra-sp', [readTool]),
+                agent('entra:sp:00000000-0000-0000-0000-000000000002', 'entra-sp', []),
+            ],
             unboundCredentials: [{ sourceKind: 'entra-sp', ref: 'entra://guide/applications/a/password/k' }],
+        }),
+        // A registered agent whose code calls a payment client.
+        body({
+            population: { sources: [{ kind: 'code', status: 'COMPLETE', rows: 1 }] },
+            agents: [
+                {
+                    ...(agent('code:guide/shop.ts#agent', 'code', []) as Record<string, unknown>),
+                    registeredAgentId: PAYING_ROW,
+                    paymentCapabilities: [{ protocol: 'x402', library: 'x402-fetch', at: 'code://guide/shop.ts#L5' }],
+                },
+            ],
         }),
         // Nothing found.
         body({ population: { sources: [{ kind: 'code', status: 'COMPLETE', rows: 0 }] } }),
     ];
     const NO_HISTORY: PriorHarnessState = {
         previousLevels: new Map(),
-        registeredAgentIds: new Set(),
+        registeredAgentIds: new Set([PAYING_ROW]),
         acceptedShortfalls: new Set(),
         intakeClaims: new Map(),
         openOrphanCredentials: new Set(),
+        spendingAuthority: new Map(),
+        onRecordAsAgent: new Set(),
     };
 
     it('has one section for every finding code the planner has, and a row for each', () => {
-        // The planner's, and the one the local results raise in place of a shadow agent.
-        const codes = [...HARNESS_FINDING_CODES, ...LOCAL_FINDING_CODES];
+        // The planner's: the local results raise no code of their own.
+        const codes = [...HARNESS_FINDING_CODES];
         const sections = [...text.matchAll(/^## `([A-Z_]+)`$/gm)].map((m) => m[1]);
         expect([...sections].sort()).toEqual([...codes].sort());
         expect(tableRows(text, 'findings').map((r) => r[0]).sort()).toEqual(codes.map((c) => `\`${c}\``).sort());
-        expect(text).toContain('There are\neight kinds.');
-        expect(codes.length).toBe(8);
+        expect(text).toContain('There are\nnine kinds.');
+        expect(codes.length).toBe(9);
         // Each section answers the same five questions.
         for (const section of text.split(/^## `/m).slice(1)) {
             for (const part of ['**What it means.**', '**Why it matters.**', '**What to do.**', '**When it closes.**', '**Who usually owns it.**']) expect(section).toContain(part);
@@ -237,19 +257,6 @@ describe('docs/guide/findings.md: the findings', () => {
             for (const f of planHarnessScan(b, withHistory).assert) planned.set(f.code, (planned.get(f.code) ?? new Set()).add(f.severity));
         }
         expect([...planned.keys()].sort()).toEqual([...HARNESS_FINDING_CODES].sort());
-        // The local results' own finding, raised by the second scan: an agent that only reads, with no tool and no model.
-        for (const b of BODIES) {
-            const local = scoreReportLocally({
-                body: b,
-                inventory: null,
-                readers: { table: CRITERION_READERS, configuredSources: ['code', 'entra-sp', 'mcp', 'runtime'] },
-                meta: { estate: 'guide', registerClaimsVerified: true, report: { sha256: '0'.repeat(64), signerKeyFingerprint: 'guide', signerPinned: true } },
-            });
-            for (const f of local.findings.filter((x) => (LOCAL_FINDING_CODES as readonly string[]).includes(x.code))) {
-                planned.set(f.code, (planned.get(f.code) ?? new Set()).add(f.severity));
-            }
-        }
-        expect([...LOCAL_FINDING_CODES].every((code) => planned.has(code))).toBe(true);
         for (const [code, severity] of tableRows(text, 'findings')) {
             const stated = SEVERITIES.filter((s) => new RegExp(`\\b${s}\\b`).test(severity));
             expect({ code, severities: stated.sort() }).toEqual({ code, severities: [...(planned.get(code.replace(/`/g, '')) ?? [])].sort() });

@@ -189,7 +189,7 @@ guide uses plainer ones:
 
 ### Estate summary
 
-Seven numbers:
+Eight numbers:
 
 | Number | Meaning |
 |---|---|
@@ -199,6 +199,7 @@ Seven numbers:
 | Below their bar | Judged agents below the level expected of them (see "The bar" below). An unregistered identity is held to no bar and is not counted here |
 | Shadow agents | On no list, and showing a sign of an AI model |
 | Unregistered identities | On no list, and showing no sign of an AI model |
+| Can pay | Agents whose code calls a payment client. Only in a scan that read code under the newest report format |
 | Orphan credentials | Keys and secrets that no agent uses |
 
 Then a small chart of how many judged agents are on each level.
@@ -216,7 +217,7 @@ The first columns:
 
 | Column | Meaning |
 |---|---|
-| Agent | The scanner's id for the agent. If your inventory names it, the name is shown, marked "name declared by the operator" |
+| Agent | The scanner's id for the agent. If your inventory names it, the name is shown, marked "name declared by the operator". An agent whose code calls a payment client is marked "Code calls a payment client" |
 | Registration | "Not registered", "Declared by the operator" (it is in your inventory) or "In the Inflect register" |
 | Reach | "Read only", "Write or external", or "Unknown" |
 | Level | The level, or "Not judged" |
@@ -273,6 +274,23 @@ build workflow that holds a key, a service account. The page says "The scan
 cannot show that one of these runs no model." Each has one finding of medium
 severity, and none is held to the bar.
 [findings.md](findings.md#unregistered_identity) says what to do with them.
+
+### Payment capabilities
+
+The agents whose code calls a payment client: a library that lets a program
+pay for something on its own. For each, the page names the library and the
+place in the code, as a file and a line, and never an amount, a wallet or a
+key. The scanner reads this from code only, and only from the file that
+defines the agent. The page says how many agents were read for it: for the
+others, the scan says nothing about payment.
+
+"None seen" is never "cannot pay". A payment client wrapped in another module
+is out of the reader's sight, so the page says, for example, "None seen in the
+code this scan read. That is not a statement that no agent can pay". The
+scanner reads no spending limit either, so a registered agent that can pay
+has a `SPENDING_AGENT_UNDECLARED` finding, and an unregistered one is a shadow
+agent to register first.
+[findings.md](findings.md#spending_agent_undeclared) says what to do.
 
 ### Orphan credentials
 
@@ -374,6 +392,7 @@ One line for each agent. The first columns:
 | `shortfall` | `yes` when the agent is below its bar. `not held to a bar` for an unregistered identity |
 | `blockingNextRung` | The checks that stand between the agent and the next level |
 | `credentials`, `tools`, `writeCapableTools`, `unpinnedWriteTools` | Counts: its keys, its tools, the tools that can change things, and those of them that are not pinned |
+| `paymentCapabilities` | Where its code calls a payment client, as `<library> at <place>`, separated by `;`. `NONE_SEEN` when the code was read and none was seen in the agent's own file, which is not "cannot pay". `NOT_REPORTED` when the scan said nothing about it |
 
 Then one column for each check, holding one of the six words in the table of
 cells above.
@@ -431,14 +450,20 @@ with nothing to say is left out.
    now.
 6. **Criteria reported, not concluded.** The same lines, for an agent that
    one of the two scans did not judge. Nothing is concluded from them.
-7. **Reach, bar, shortfall and registration.** One line for each of these
-   that changed for an agent, for example
+7. **Reach, bar, shortfall, registration and payment.** One line for each of
+   these that changed for an agent, for example
    `registration: NONE -> DECLARED_INVENTORY` when you add an agent to your
-   inventory.
+   inventory. A payment line shows what the code was seen to call before and
+   after. `NONE_SEEN` after a payment client is a change in what was seen, not
+   evidence that the agent can no longer pay. Where only one of the two scans
+   said anything about payment, nothing is compared, and the comparison says
+   so under "Not concluded".
 8. **Orphan credentials.** "opened" is new. "closed" is used only when the
    newer scan has the evidence to close it. Otherwise the line reads "no
    longer reported, not concluded".
-9. **Findings.** The same three words.
+9. **Findings.** The same three words. A `SPENDING_AGENT_UNDECLARED` finding
+   is never closed by a scan (`NOT_CLOSED_BY_A_SCAN`): see
+   [findings.md](findings.md#spending_agent_undeclared).
 10. **Not concluded.** Every comparison that could not be made, and why.
 
 The rule is the same as for one scan: **something missing counts as gone only

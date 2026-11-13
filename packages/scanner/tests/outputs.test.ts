@@ -360,14 +360,17 @@ describe('4. delivery', () => {
 });
 
 describe('5. the declared surface', () => {
-    it('outputs added no request: but for the version and the grants 0.13.0 declared inside it, the surface hashes to what it did before them', () => {
+    it('outputs added no request: but for the version, the grants 0.13.0 declared inside it and the contract id, the surface hashes to what it did before them', () => {
         // 0.13.0 put each token exchange's grant inside the surface, so the hash moved once, on purpose,
-        // and the surface names its own version. Put those two back and the surface is, to the byte,
+        // and the surface names its own version. The move to `inflect-agent-harness/4` changed the
+        // contract id it names, and no request. Put those three back and the surface is, to the byte,
         // the one from before outputs existed: nothing else was added to it, by outputs or by anything since.
         expect(SCANNER_SURFACE.version).toBe('0.13.2');
+        expect(SCANNER_SURFACE.contract).toBe('inflect-agent-harness/4');
         const withoutGrants = {
             ...SCANNER_SURFACE,
             version: '0.12.0',
+            contract: 'inflect-agent-harness/3',
             authenticates: SCANNER_SURFACE.authenticates.map((entry) => Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'grant'))),
         };
         expect(`sha256:${createHash('sha256').update(canonicalJson(withoutGrants), 'utf8').digest('hex')}`).toBe(MANIFEST_BEFORE_OUTPUTS);

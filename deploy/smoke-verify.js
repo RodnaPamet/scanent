@@ -15,7 +15,7 @@
  */
 const { readFileSync } = require('node:fs');
 
-const { HARNESS_CONTRACT_V3, verifyAndParseHarnessReport } = require('@rodnapamet/scanent-contract/harness-contract');
+const { HARNESS_CONTRACT_V4, verifyAndParseHarnessReport } = require('@rodnapamet/scanent-contract/harness-contract');
 const { SCANNER_VERSION, scannerManifestHash } = require('./packages/scanner/dist/scanner-surface.js');
 
 /** The agents `smoke.sh`'s estate defines, by the id the `code` source gives each, and a tool each binds. */
@@ -36,7 +36,7 @@ const parsed = verifyAndParseHarnessReport(raw, publicKeyHex ? [publicKeyHex] : 
 check(parsed.ok, `the report verifies against the printed key${parsed.ok ? '' : ` (refused: ${parsed.reason})`}`);
 if (parsed.ok) {
     const { body } = parsed;
-    check(body.contract === HARNESS_CONTRACT_V3, `it speaks ${HARNESS_CONTRACT_V3}`);
+    check(body.contract === HARNESS_CONTRACT_V4, `it speaks ${HARNESS_CONTRACT_V4}`);
     check(body.scan.scanner.version === SCANNER_VERSION, `it names scanner version ${SCANNER_VERSION}`);
     check(body.scan.scanner.manifestHash === scannerManifestHash(), 'it carries the scanner surface hash');
     check(

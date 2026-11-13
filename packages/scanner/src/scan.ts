@@ -14,7 +14,7 @@
  */
 import { createPrivateKey, createPublicKey, randomBytes, type KeyObject } from 'crypto';
 
-import type { HarnessReportBodyV3 } from '@rodnapamet/scanent-contract/harness-contract';
+import type { HarnessReportBodyV4 } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { sourceCredentialEnv, type InflectConfig, type ScannerConfig } from './config';
 import { customerHostCheckFor, type CustomerHostCheck, type ResolveHost } from './customer-host';
@@ -220,7 +220,7 @@ export function sourceNotesOf(reads: readonly SourceRead[]): readonly SourceNote
     }));
 }
 
-export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: HarnessReportBodyV3; sourceNotes: readonly SourceNote[] }> {
+export async function runScan(deps: ScanDeps): Promise<{ raw: string; body: HarnessReportBodyV4; sourceNotes: readonly SourceNote[] }> {
     const { config, env, log } = deps;
     const now = deps.now ?? Date.now;
     const fetchImpl: FetchLike = deps.fetchImpl ?? ((url, init) => fetch(url, init));
@@ -300,7 +300,7 @@ export function ingestTarget(config: ScannerConfig, env: Env): { inflect: Inflec
 export async function postSignedReport(
     deps: Pick<ScanDeps, 'fetchImpl' | 'log'>,
     target: { readonly inflect: InflectConfig; readonly apiKey: string },
-    scan: { readonly raw: string; readonly body: HarnessReportBodyV3 },
+    scan: { readonly raw: string; readonly body: HarnessReportBodyV4 },
 ): Promise<PostResult> {
     const result = await postReport({
         baseUrl: target.inflect.baseUrl,
