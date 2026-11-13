@@ -1,3 +1,0 @@
-discoveredId,name,owner,purpose,autonomyLevel,dataAccessScope,reversibility,provenance,riskTier,riskAssessedOn
-code:example/support/agent.py#support_executor,Support order lookup,support-operations,Answers customers' questions about an order's status,1,READ_TENANT_DATA,REVERSIBLE,FIRST_PARTY,LOW,2026-10-01
-code:example/billing/agent.py#billing_executor,Billing reconciliation,finance-operations,"Declared here and not in the example estate, to show what a declared agent the scan does not find looks like",,,,,,

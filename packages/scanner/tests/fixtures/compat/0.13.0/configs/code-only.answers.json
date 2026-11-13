@@ -1,7 +1,0 @@
-{
-  "answers": "scanent-init-answers/1",
-  "estate": "acme-code",
-  "sources": [
-    { "kind": "code", "roots": [{ "label": "agents", "path": "/estate" }] }
-  ]
-}

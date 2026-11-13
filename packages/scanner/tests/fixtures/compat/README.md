@@ -24,11 +24,5 @@ kept as what that commit read and are not converted. The comparison of that
 commit's run with a run by the current code uses the current example inventory
 (`examples/code-only/inventory.example.json`), which declares the same agents.
 
-`0.13.0` was made from commit `b07f533`, whose scanner code is the code of
-the first release: the commits after it change documents and this directory.
-Its results carry what 0.12.0's do not: `toolEvidenceSources` and
-`modelSigns` on each agent, and `estate.unregisteredIdentities`. Its
-inventory is `scanent-inventory/2`.
-
 A release adds a directory. None is removed while that version is supported
 (`docs/release-checklist.md`).
