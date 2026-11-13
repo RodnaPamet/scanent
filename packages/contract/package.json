@@ -1,6 +1,6 @@
 {
   "name": "@rodnapamet/scanent-contract",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "license": "BUSL-1.1",
   "description": "The scanner report contract: the strict report schemas, the harness ladder, the findings planner, and the signature and canonical-JSON rules a report is verified by.",
   "author": "Inflect Ltd.",

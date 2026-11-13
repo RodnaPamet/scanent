@@ -775,6 +775,16 @@ jobs:
       - name: The package holds the compiled contract and its licence, and nothing else
         run: node scripts/check-contract-package.js "contract-package/rodnapamet-scanent-contract-${VERSION}.tgz" --version "${VERSION}"
 
+      # npm resolves the path `publish-contract` hands it the same way here:
+      # as a file, not as a GitHub shorthand (0.13.1's publish failed on that).
+      # `npm pack --dry-run` parses the spec as `npm publish` does and writes
+      # and sends nothing.
+      - name: npm reads the publish path as this file
+        run: |
+          set -euo pipefail
+          npm pack --dry-run --ignore-scripts "./contract-package/rodnapamet-scanent-contract-${VERSION}.tgz" 2>&1 \
+            | grep -F "rodnapamet-scanent-contract-${VERSION}.tgz"
+
       - name: Upload the package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -849,10 +859,14 @@ jobs:
 
       # The tarball itself, not the directory: what is published is what was
       # checked and attested, and no script of the package runs.
+      # `./` is load-bearing: without it npm reads `contract-package/<file>`
+      # as a GitHub `owner/repo` shorthand and runs `git ls-remote` on it,
+      # which is how 0.13.1's publish failed. `contract-package` asks npm to
+      # read the same path, so a branch run proves it before a tag needs it.
       - name: Publish to GitHub Packages
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
-        run: npm publish "contract-package/rodnapamet-scanent-contract-${VERSION}.tgz" --ignore-scripts --registry "${REGISTRY}"
+        run: npm publish "./contract-package/rodnapamet-scanent-contract-${VERSION}.tgz" --ignore-scripts --registry "${REGISTRY}"
 
   release:
     name: GitHub release with the bundle, its checksum, the SBOMs, the signature and the provenance

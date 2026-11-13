@@ -557,7 +557,10 @@ describe('the release workflow and the contract package', () => {
 
     it('publishes that tarball and no directory, runs no script of it, and gives the token to the two steps that ask the registry', () => {
         const step = named(publish, 'Publish to GitHub Packages');
-        expect(step.run).toBe(`npm publish "${WORKFLOW_TARBALL}" --ignore-scripts --registry "\${REGISTRY}"`);
+        // `./`: without it npm reads the path as a GitHub shorthand and runs git (0.13.1's publish failed so).
+        expect(step.run).toBe(`npm publish "./${WORKFLOW_TARBALL}" --ignore-scripts --registry "\${REGISTRY}"`);
+        // The pack job, which every run reaches, asks npm to read the very same path.
+        expect(String(named(pack, 'npm reads the publish path as this file').run)).toContain(`npm pack --dry-run --ignore-scripts "./${WORKFLOW_TARBALL}"`);
         // GitHub Packages documents no support for npm's own provenance statement: the attestation above is the provenance.
         expect(String(step.run)).not.toContain('--provenance');
         const tokened = steps(publish).filter((s) => JSON.stringify(s).includes('github.token'));

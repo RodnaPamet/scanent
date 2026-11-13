@@ -48,7 +48,7 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * SDK (Anthropic, OpenAI, Gemini, Bedrock), which changes what it reports and
  * no file operation, so the surface and its hash are as they were.
  */
-export const SCANNER_VERSION = '0.13.1';
+export const SCANNER_VERSION = '0.13.2';
 
 /** The ingest route, as `docs/contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';

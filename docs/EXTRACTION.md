@@ -32,7 +32,7 @@ files and their originals is:
    lines.
 
 Kept exactly as they were, because they are on the wire or in the signed
-report: `SCANNER_VERSION` (`0.13.1`), `SCANNER_NAME`
+report: `SCANNER_VERSION` (`0.13.2`), `SCANNER_NAME`
 (`inflect-agent-harness-scanner`), the MCP client name and the GitHub
 `User-Agent`, and the contract ids `inflect-agent-harness/2` and `/3`.
 
