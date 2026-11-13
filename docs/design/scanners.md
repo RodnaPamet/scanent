@@ -1,11 +1,10 @@
 # Several scanners in one scanent
 
-> **Status: proposed (2026-11-13).** The owner decided the shape on
-> 2026-11-13: one scanent with several scanners, the integrations scanner
-> first, then a vulnerability scanner, then a static, model-assisted
-> adversarial reviewer that sends nothing to a client's agents. This page
-> proposes how. The decisions it still needs are listed at the end; nothing
-> here is built.
+> **Status: decided, not built (2026-11-13).** The owner decided the shape:
+> one scanent with several scanners, the integrations scanner first, then a
+> vulnerability scanner, then a static, model-assisted adversarial reviewer
+> that sends nothing to a client's agents. The owner's answers to this page's
+> questions are under "Decisions" at the end. Nothing here is built.
 
 ## What exists today
 
@@ -70,7 +69,9 @@ What a client's directories have granted to third-party applications, and
 whether anybody owns those grants. It extends what the agent scanner already
 knows about credentials and owners.
 
-Readers for version 1, all GET requests on the products' documented APIs:
+Readers for version 1 are Entra, Okta and GitHub (owner decision,
+2026-11-13); Google Workspace follows later. All are GET requests on the
+products' documented APIs:
 
 | Product | What is read | Least privilege |
 |---|---|---|
@@ -79,18 +80,18 @@ Readers for version 1, all GET requests on the products' documented APIs:
 | GitHub | App installations of the organisation, with their permissions and repository selection; organisation webhooks (target host only) | A fine-grained token with organisation Administration read and Webhooks read |
 | Google Workspace | Third-party application access per user (Admin SDK tokens) | Domain-wide delegation with the user security read scope. Per-user reads are many; version 1 may leave this product out |
 
-Findings proposed for version 1 (each to be confirmed before it is built):
+Findings for version 1 (owner decision, 2026-11-13: the first four):
 
 - An application holds a high-privilege grant (directory, mail, files, or any
   write scope), HIGH.
 - That application's publisher is not verified, HIGH.
 - An application with any grant has no owner, MEDIUM.
-- An application has not signed in within a window the client sets, where
-  sign-in activity is readable; where it is not, the finding is not concluded
-  and the report says why.
-- An application is also an identity the agent scanner reported, linking the
-  two reports by the identity's id. An integration an agent can use is an
-  agent's reach.
+- An application has not signed in within a window the client sets (90 days
+  by default), where sign-in activity is readable; where it is not, the
+  finding is not concluded and the report says why.
+
+Not in version 1: linking an application to an identity the agent scanner
+reported.
 
 The same rules as the agent scanner: a source read in part closes nothing, an
 empty inventory is a finding, and a webhook's URL is reported by host only,
@@ -133,17 +134,20 @@ What is new, and why it needs care:
   with planted weaknesses and some without, is run on each model revision, and
   its record (found, missed, invented) ships with the release.
 
-## Decisions this needs
+## Decisions
 
-1. Whether the agent scanner's report keeps `inflect-agent-harness/*` for
-   good, or moves to `scanent-agents/*` with a period in which Inflect accepts
-   both.
-2. Whether the declared surface stays one list for the image (proposed), or
-   becomes one per scanner with one hash each.
-3. The integrations scanner's version 1 readers: all four, or Entra, Okta and
-   GitHub first, with Google Workspace later.
-4. The integrations findings above: which to build, their severities, and the
-   default "unused" window.
-5. For the adversarial reviewer: which model providers may be configured, and
-   whether any model call may run from the image at all without a client
-   hosting the model.
+Taken by the owner on 2026-11-13:
+
+1. **The agent report keeps `inflect-agent-harness/*`.** New scanners take
+   `scanent-<scanner>/<n>`.
+2. **One declared surface for the image**, grouped by scanner, with one hash
+   (as proposed; not separately asked).
+3. **Integrations version 1 reads Entra, Okta and GitHub.** Google Workspace
+   later.
+4. **Integrations version 1 raises the four findings above**: high-privilege
+   grant (HIGH), unverified publisher (HIGH), no owner (MEDIUM), unused for 90
+   days by default.
+5. **The adversarial reviewer's model runs where the client says**: off by
+   default; a model the client hosts, or a named external provider the client
+   opts in to (Anthropic, Azure OpenAI or Bedrock). Its host is declared in
+   the network statement and named in the report.
