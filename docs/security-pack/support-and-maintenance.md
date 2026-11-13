@@ -171,6 +171,13 @@ run: no release exists.**
 Before anything is built, the workflow holds the tagged commit to what a
 commit on `main` is held to, and refuses a tag whose commit is not on `main`.
 
+Nobody tags a release by hand (owner decision, 2026-11-13). A change of
+`SCANNER_VERSION` with its release notes is the release: once CI passes on
+`main`, the auto-release workflow (`.github/workflows/auto-release.yml`) tags
+that commit `v<version>` as GitHub Actions and starts the release workflow on
+the tag. A person's manual run of the release workflow publishes and signs
+nothing.
+
 How a client checks each item is in [Verify a release](../verify-a-release.md).
 What the maintainers do before and after a tag is in
 `docs/release-checklist.md`.

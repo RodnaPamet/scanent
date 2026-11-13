@@ -118,13 +118,19 @@ output only, and reaches no network.
 
 ### No signed release
 
-No tag has been pushed and no release exists. So:
+No version tag exists and no release exists. So:
 
 - Keyless signing, the SBOM attestations and the provenance attestations have
   never run.
 - The release workflow (`.github/workflows/release.yml`) has never run for a
   tag. Its signing, publishing and release jobs, and its check that a tagged
   commit is on `main`, have never run.
+- Nobody tags a release by hand (owner decision, 2026-11-13): when CI passes
+  on `main` and the version in the code has no tag, has its release notes
+  and is main's head, `.github/workflows/auto-release.yml` makes the tag as
+  GitHub Actions and starts the release workflow on it. That workflow has
+  never run on GitHub; its script has been run against local repositories
+  and a stand-in for `gh` only.
 - It has been run by hand, which signs and publishes nothing: twice on
   2026-11-12, where the first run failed at the SBOM step and the second
   passed, and once on 2026-11-13 at commit `8388ff0`, which passed
@@ -143,7 +149,7 @@ No tag has been pushed and no release exists. So:
 The image is to be public (owner decision, 2026-11-12, issue 19): once a
 release exists, pulling it will need no login. The contract package is to be
 published to GitHub Packages by the same workflow (issue 7). Neither has
-happened: no tag has been pushed.
+happened: no version tag exists.
 
 ### Repository settings that are not on
 
@@ -153,7 +159,9 @@ Read from GitHub's API on 2026-11-12:
   directs reports to it. Until it is switched on, that route does not work.
 - **Secret scanning and push protection are not enabled.**
 - **The `main` branch is not protected**, and no ruleset exists. So nothing
-  on GitHub's side restricts who can push to `main` or push a tag.
+  on GitHub's side restricts who can push to `main` or create a tag. The
+  ruleset to be made on `v*` must let GitHub Actions create tags, because
+  the release tag is made by a workflow.
 
 `docs/release-checklist.md` requires all of these before the first release.
 Residual risk 8 of the threat model (the release identity) rests on them.

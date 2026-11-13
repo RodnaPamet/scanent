@@ -1,11 +1,16 @@
 # Release checklist
 
-What is done before a tag is pushed, at the tag, and after it. A release is
-made by pushing a tag `v<MAJOR>.<MINOR>.<PATCH>`; `.github/workflows/release.yml`
-does the rest. Nothing here is automated away: each line is something a person
-checks.
+What is done before a release's tag is made, at the tag, and after it. A
+release happens when the version in the code changes (owner decision,
+2026-11-13): a session raises `SCANNER_VERSION` and writes the release notes,
+and once CI is green on `main`, `.github/workflows/auto-release.yml` tags that
+commit `v<MAJOR>.<MINOR>.<PATCH>` and starts `.github/workflows/release.yml` on
+the tag, which does the rest. Nobody signs or pushes a tag by hand. The lines
+before the tag are what the session raising the version checks; the person's
+steps left are the repository settings below and, after the first release,
+making the image public.
 
-**No release has been made yet.** No tag has been pushed, so no image, bundle
+**No release has been made yet.** No version tag exists, so no image, bundle
 or package is published, and neither package named below exists on GitHub.
 
 ## Settings that must be on
@@ -21,10 +26,15 @@ repository's **Settings**.
 - [ ] **Branch protection on `main`**: pull requests required, the CI jobs
       required (`checks` on both Node versions, `image`, `chart`,
       `chart-install`, CodeQL), no force push, no deletion.
-- [ ] **Tag protection** (a ruleset on `v*`): only the people who release may
-      create a version tag, and a tag cannot be moved or deleted. The signing
-      identity of a release is "the release workflow at this tag", so whoever
-      can push a tag can make a signed release.
+- [ ] **Tag protection** (a ruleset on `v*`): a version tag cannot be moved
+      or deleted, and only the release may create one. The ruleset **must
+      allow GitHub Actions to create tags** (GitHub Actions on its bypass
+      list): `auto-release.yml` pushes the tag with the workflow's
+      `GITHUB_TOKEN`, and if the ruleset refuses it no release happens. The
+      signing identity of a release is "the release workflow at this tag", so
+      whoever can create a `v*` tag, a workflow of this repository holding a
+      token that can write tags among them, can make a signed release of a
+      commit on `main` that has release notes.
 - [ ] **Actions**: workflow permissions default to read-only; "Allow GitHub
       Actions to create and approve pull requests" is off.
 - [ ] **The organisation lets its packages be public**: the organisation's
@@ -46,6 +56,10 @@ repository's **Settings**.
       `id-token: write` on that job.
 
 ## Before the tag
+
+All of this is done before the change of version reaches `main`: that change
+is the decision to publish, and nothing stops the release after it but a
+failing check.
 
 - [ ] The version is the same in four places:
       `SCANNER_VERSION` in `packages/scanner/src/scanner-surface.ts`,
@@ -71,7 +85,10 @@ repository's **Settings**.
       `packages/scanner/tests/fixtures/compat/README.md` says, from the commit
       to be tagged. No earlier directory is removed while that version is
       supported.
-- [ ] CI is green on the commit to be tagged, every job.
+- [ ] CI is green on the commit to be tagged, every job. `auto-release.yml`
+      asks this itself and tags nothing otherwise: a run of the `CI`
+      workflow on that exact commit, started by a push to `main`, concluded
+      success.
 - [ ] The long tests were run on that commit: the **Long tests** workflow
       (`long-tests.yml`), by hand. Record the run's URL in the release notes.
 - [ ] The soak was run on the commit, or on one whose scanner code is the
@@ -83,22 +100,43 @@ repository's **Settings**.
 - [ ] The release notes are written: `docs/releases/<version>.md`, saying
       what changed, what was run before the tag, and what has not been
       tested. The release workflow refuses a tag whose page is missing, and
-      the release's own text points at it.
+      the release's own text points at it. `auto-release.yml` does not tag a
+      version whose page is missing or empty at the commit.
 - [ ] `npm audit --omit=dev` and the two image scans are clean today, not only
       when CI last ran.
 - [ ] A manual run of the **Release** workflow (`workflow_dispatch`) on the
-      commit passes. It builds, tests, bundles and packs the contract
-      package, and pushes, publishes and signs nothing.
+      commit, or on the branch that carries the change of version, passes. A
+      person's manual run builds, tests, bundles and packs the contract
+      package, and pushes, publishes and signs nothing, on any ref, a tag's
+      included.
 
 ## The tag
 
-- [ ] The owner tags the commit that passed and pushes the tag:
-      `git tag -a v<version> -m "scanent <version>" <commit>`, then
-      `git push origin v<version>`. Pushing the tag is the decision to
-      publish, so it is the owner's act. The tag is annotated, not signed
-      (owner decision, 2026-11-13): nothing checks a tag signature, the
-      release's artefacts are signed by the workflow, and the tag ruleset
-      limits who can create a `v*` tag.
+Nobody makes it by hand (owner decision, 2026-11-13).
+
+- [ ] When CI passes on a push to `main`, `.github/workflows/auto-release.yml`
+      runs `scripts/auto-release.sh` on that commit. It reads the version
+      from `SCANNER_VERSION` at the commit, and stops, saying why, if the tag
+      `v<version>` exists at another commit, if
+      `docs/releases/<version>.md` is missing or empty at the commit, if the
+      commit is no longer the head of `main`, or if no run of `CI` on that
+      exact commit, pushed to `main`, concluded success. Otherwise it makes the annotated tag `v<version>` (message
+      `scanent <version>`) on the commit as `github-actions[bot]`, pushes it,
+      and dispatches the **Release** workflow on the tag's ref. If the tag
+      exists already at this commit, it makes no tag: after the same checks,
+      it stops if the **Release** workflow has a run on that tag, whatever
+      its status, and otherwise dispatches one. A run that failed because the
+      remote or GitHub's API did not answer is retried by running
+      **Auto-release** by hand on `main`; it asks the same questions.
+- [ ] Why a dispatch: a tag pushed with a workflow's `GITHUB_TOKEN` starts no
+      workflow. `release.yml` publishes for a tag that was pushed, or for a
+      run on a tag that GitHub Actions dispatched (its actor is
+      `github-actions[bot]`); a person's manual run on a tag publishes
+      nothing. The run is on `refs/tags/v<version>`, so the release is signed
+      as the identity [Verify a release](verify-a-release.md) names.
+- [ ] The tag is annotated, not signed (owner decision, 2026-11-13): nothing
+      checks a tag signature, the release's artefacts are signed by the
+      workflow, and the tag ruleset limits who can create a `v*` tag.
 - [ ] The **Release** workflow passes: `gates` (the tagged commit is on main
       and passes what main is held to), `build` on both architectures,
       `bundle`, `sign-bundle`, `publish`, `contract-package`,
@@ -106,7 +144,16 @@ repository's **Settings**.
 
 A version is never released twice. If the workflow fails after the images were
 pushed or the contract package was published, fix forward with a new patch
-version; do not delete and re-push.
+version; do not delete and re-push. A failed **Release** run may be re-run from
+its page: a re-run keeps the actor of the run's first attempt
+(`github-actions[bot]`), so it publishes as the first attempt would have, and
+refuses a version already published. If the tag was pushed and the dispatch
+then failed, no **Release** run exists for the tag: run **Auto-release** by
+hand on `main` (`workflow_dispatch`). It finds the tag at `main`'s head and no
+run on it, and dispatches the release on the tag; no new version is needed. It
+does not start a second run beside one that is running or that failed: a
+failed run is re-run from its page. A person's manual run of **Release**
+publishes nothing, so it is never the recovery.
 
 ## After the tag
 
@@ -176,6 +223,10 @@ when it has happened once, and say in which release.
 - `verify.sh` against a real Sigstore bundle and a real `cosign`, with and
   without network. It has been run against a stand-in `cosign` only.
 - `sign-bundle.sh` with a real `cosign`: run against a stand-in only.
+- `auto-release.yml` and `scripts/auto-release.sh` on GitHub: the tag made
+  and pushed with the workflow's token, the tag ruleset letting GitHub
+  Actions create it, and the dispatch of `release.yml` on the tag. The
+  script has been run against local repositories and a stand-in `gh` only.
 - The release workflow by tag, and with it the jobs a manual run skips:
   `sign-bundle`, `publish`, `publish-contract` and `release`, and the `gates`
   job's two tag-only steps (the tagged commit is on main; the release has its

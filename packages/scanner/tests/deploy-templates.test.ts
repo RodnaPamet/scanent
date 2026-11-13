@@ -2101,7 +2101,8 @@ describe('the other workflows', () => {
     const load = (name: string): Json => yaml.load(read(`.github/workflows/${name}`)) as Json;
 
     it('are exactly these six', () => {
-        expect(fs.readdirSync(abs('.github/workflows')).sort()).toEqual(['ci.yml', 'codeql.yml', 'long-tests.yml', 'release.yml', 'scorecard.yml']);
+        // auto-release.yml is held in auto-release.test.ts.
+        expect(fs.readdirSync(abs('.github/workflows')).sort()).toEqual(['auto-release.yml', 'ci.yml', 'codeql.yml', 'long-tests.yml', 'release.yml', 'scorecard.yml']);
     });
 
     it('CodeQL analyses the TypeScript on pull requests, pushes to main and weekly, and may write security events only', () => {

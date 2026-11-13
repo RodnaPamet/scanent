@@ -146,7 +146,8 @@ every example configuration.
 | | Threat | Mitigation | Held by |
 |---|---|---|---|
 | S, T | A client runs an image or a bundle that the release did not produce | Images are signed by digest, keyless, by the release workflow at the tag; the bundle's checksum list is signed the same way, and `verify.sh` and `load.sh` refuse a bundle whose signature is missing unless told the bundle is one you built. `.github/workflows/release.yml`, `deploy/airgap/verify.sh`, `docs/verify-a-release.md` | `packages/scanner/tests/deploy-templates.test.ts`; the first tagged release for the signing itself |
-| S, T | A tag is pushed on a commit that is not on main, or that fails the tests | The release workflow first holds the tagged commit to what a commit on main is held to (the dependency gates, lint, type-check, the tests under the coverage gate, the reproducible build), and refuses a tag whose commit main does not hold. Nothing is built or signed before that passes. `.github/workflows/release.yml` | `packages/scanner/tests/deploy-templates.test.ts`; never run on GitHub |
+| S, T | A release is started that nobody meant: a person's manual run, or a commit that is not main's head, has no release notes or did not pass CI | Nobody tags by hand: `.github/workflows/auto-release.yml` tags only the head of main, only when its version has no tag yet, its release notes exist at that commit and a CI run on that exact commit, pushed to main, passed (`scripts/auto-release.sh`). The release workflow publishes and signs only for a tag that was pushed or a run on a tag that GitHub Actions dispatched, never for a person's manual run on any ref. `.github/workflows/release.yml` | `packages/scanner/tests/auto-release.test.ts` runs the script against real repositories; `packages/scanner/tests/deploy-templates.test.ts`; never run on GitHub |
+| S, T | A tag is made on a commit that is not on main, or that fails the tests | The release workflow first holds the tagged commit to what a commit on main is held to (the dependency gates, lint, type-check, the tests under the coverage gate, the reproducible build), and refuses a tag whose commit main does not hold. Nothing is built or signed before that passes. `.github/workflows/release.yml` | `packages/scanner/tests/deploy-templates.test.ts`; never run on GitHub |
 | T | A dependency or a base image is replaced | The lockfile's integrity hashes decide what is installed, with no install script; both base images are pinned by digest; every action is pinned by commit. `deploy/Dockerfile` | `packages/scanner/tests/image.test.ts` |
 | T | A vulnerable dependency or base ships | Written as gates: Trivy and Grype on the image for fixed high and critical findings; `npm audit` on production dependencies; a licence allowlist; CodeQL. Each has run in CI on `main`; CodeQL's findings have not been reviewed (see [What has not been done](#what-has-not-been-done)). `.github/workflows/ci.yml`, `scripts/check-licences.js` | The gates themselves, once they run; `packages/scanner/tests/supply-chain.test.ts` holds how they are written |
 | R | Nobody can say what is in the image | A CycloneDX SBOM per image, attached as an attestation, in the release and in the bundle; build provenance for the pushed manifest, for each architecture's image and for the bundle's archive | `packages/scanner/tests/deploy-templates.test.ts` |
@@ -191,9 +192,13 @@ Stated plainly. None of these is closed by the code.
    secret files or its process memory has its credentials and its signing key.
    Nothing here defends against root on the host or a cluster administrator.
 8. **The release identity.** A signature proves the release workflow made the
-   bytes. An attacker who can change that workflow, or push a tag, in this
-   repository could make a signed release. Branch protection and who may push
-   tags are repository settings (`docs/release-checklist.md`).
+   bytes. An attacker who can change that workflow or the one that makes the
+   tag, create a `v*` tag, or run a workflow of this repository with a token
+   that can write tags and start workflows, could make a signed release; the
+   release workflow still holds it to a commit on main that has release
+   notes. Tags are made by GitHub Actions, not by a person, so the tag
+   ruleset must let GitHub Actions create them. Branch protection and who may
+   create tags are repository settings (`docs/release-checklist.md`).
 9. **The report's size.** Two caps, which behave differently. A report over
    5 MiB is refused locally: nothing is signed, written or posted. A report
    of more than 5,000 agents is cut: it carries the first 5,000 by id, it is
@@ -259,7 +264,9 @@ Stated plainly. None of these is closed by the code.
   tag. They are written and reviewed. No release exists, so nothing has been
   signed and no client-side verification command has been run against a real
   signature. The release workflow has never run for a tag: its on-main
-  check and its signing, publishing and release jobs have never run. It has
+  check and its signing, publishing and release jobs have never run, and
+  neither has the workflow that makes the tag and starts it
+  (`.github/workflows/auto-release.yml`). It has
   been run by hand once to the end, which signs and publishes nothing: its
   gates, the build and smoke test on both architectures, the Syft SBOM step
   and the bundle.

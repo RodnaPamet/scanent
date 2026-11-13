@@ -1,0 +1,90 @@
+# Makes the release tag, so that nobody has to.
+#
+# A release happens when the version in the code changes (owner decision,
+# 2026-11-13). A session raises SCANNER_VERSION
+# (packages/scanner/src/scanner-surface.ts) and writes
+# docs/releases/<version>.md. When CI then passes on main, this workflow asks
+# scripts/auto-release.sh whether main's head is a release, and if it is, the
+# script makes the annotated tag `v<version>` on that commit as
+# github-actions[bot], pushes it, and dispatches release.yml on the tag's ref.
+# Nobody signs or pushes a tag by hand.
+#
+# The script stops, and says why, when there is nothing to release: the tag
+# exists at another commit, the version has no release notes at the commit,
+# the commit is no longer main's head, or no CI run on that exact commit,
+# pushed to main, concluded success. It asks the last of the API even when the
+# event that started this run says so, so a retry by hand is held to it too.
+# A tag that exists already at this commit is not made again: after the same
+# checks, release.yml is dispatched on it only if it has no run on that tag,
+# of any status. That is the recovery when the tag was pushed and the
+# dispatch failed: run this workflow by hand on main.
+#
+# WHY A DISPATCH. A tag pushed with the repository's GITHUB_TOKEN starts no
+# workflow; a workflow_dispatch is the one event that token can start one
+# with. So release.yml is dispatched, on `refs/tags/v<version>`, and its run's
+# actor is github-actions[bot]: release.yml publishes for a tag that was
+# pushed, or for a tag GitHub Actions dispatched, and never for a person's
+# manual run. A re-run of that run keeps the actor of its first attempt.
+#
+# THE IDENTITY. The run is on the tag's ref, so release.yml signs as
+# `release.yml@refs/tags/v<version>` of this repository, the identity
+# docs/verify-a-release.md and deploy/airgap/verify.sh name. This workflow
+# signs nothing and holds no identity token.
+#
+# Two things stay a person's, once: the tag ruleset on `v*` must let GitHub
+# Actions create tags, and after the first release somebody sets the image's
+# package to Public. GitHub creates a package private and offers no API to
+# change that (docs/release-checklist.md).
+#
+# Every action is pinned to a full commit SHA, as in ci.yml.
+name: Auto-release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # A retry, on main only: the same decision, asked again.
+  workflow_dispatch:
+
+# One decision at a time: two runs never race to the same tag.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tag:
+    name: Tag main's head when its version has no release yet
+    # CI on a push to main that passed, or a retry started on main. A pull
+    # request from a fork's branch named main is a `pull_request` run, and is
+    # not one of them.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # To push the tag.
+      contents: write
+      # To dispatch release.yml, and to read CI's runs.
+      actions: write
+    steps:
+      # The commit CI passed, with the whole history. The credential stays in
+      # the checkout because the tag is pushed with it; nothing but git, gh and
+      # the script below runs in this job.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Tag the release and start it, or say why not
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/auto-release.sh
