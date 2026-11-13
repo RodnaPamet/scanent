@@ -368,7 +368,7 @@ describe('5. the declared surface', () => {
         // (its reads, its token exchange, and the scanners in place of the one contract id). Put those
         // back and the surface is, to the byte, the one from before outputs existed: nothing else was
         // added to it, by outputs or by anything since.
-        expect(SCANNER_SURFACE.version).toBe('0.14.0');
+        expect(SCANNER_SURFACE.version).toBe('0.15.0');
         expect(SCANNER_SURFACE.scanners.map((s) => [s.id, s.contract])).toEqual([
             ['agents', 'inflect-agent-harness/4'],
             ['integrations', 'scanent-integrations/1'],
