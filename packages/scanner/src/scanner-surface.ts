@@ -43,7 +43,10 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * register tool alone, and the register source reports the gate's enforcement
  * as H2 and H3 verdicts. 0.12.0: the egress proof, and the proxy it
  * runs behind. 0.13.0: the grant of each token exchange is declared inside the
- * surface, so the manifest hash covers it; no request changed.
+ * surface, so the manifest hash covers it; no request changed. Also in
+ * 0.13.0: the `code` source reads agents built directly on a model provider's
+ * SDK (Anthropic, OpenAI, Gemini, Bedrock), which changes what it reports and
+ * no file operation, so the surface and its hash are as they were.
  */
 export const SCANNER_VERSION = '0.13.0';
 

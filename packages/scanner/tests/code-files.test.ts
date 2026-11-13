@@ -13,10 +13,12 @@
  */
 import {
     FRAMEWORK_MARKERS,
+    markersFor,
     MAX_FILE_BYTES,
     MAX_MARKER_SCAN_BYTES,
     MAX_FILES,
     MAX_TOTAL_BYTES,
+    PROVIDER_SDK_MARKERS,
     readCodeFiles,
     SKIPPED_DIRECTORIES,
     SOURCE_EXTENSIONS,
@@ -127,6 +129,42 @@ describe('1. the walk', () => {
         expect(rows).toBe(6);
         expect(problems).toEqual([]);
         expect(FRAMEWORK_MARKERS).toEqual(['langchain', 'langgraph', 'claude-agent-sdk', 'claude_agent_sdk']);
+    });
+
+    it('hands on a file that names a model provider\'s SDK as well, unless the caller looks for the frameworks alone', async () => {
+        const tree = {
+            src: dir({
+                'claude.ts': file('import type Anthropic from "@anthropic-ai/sdk";\n'),
+                'gpt.py': file('from openai import OpenAI\n'),
+                'gemini.py': file('from google import genai\n'),
+                'gemini-old.py': file('import google.generativeai as genai\n'),
+                'gemini-old.ts': file('import { GoogleGenerativeAI } from "@google/generative-ai";\n'),
+                'nova.ts': file('import { ConverseCommand } from "@aws-sdk/client-bedrock-runtime";\n'),
+                'nova.py': file('import boto3\n'),
+                'errors.py': file('from botocore.exceptions import ClientError\n'),
+                'agent.py': file(AGENT),
+                'plain.py': file('print("hello")\n'),
+            }),
+        };
+        const all = await walk(tree);
+        expect(all.paths).toEqual(['agent.py', 'claude.ts', 'errors.py', 'gemini-old.py', 'gemini-old.ts', 'gemini.py', 'gpt.py', 'nova.py', 'nova.ts']);
+        expect(all.rows).toBe(10);
+
+        // The frameworks alone: exactly what was handed on before a provider's SDK was looked for.
+        const { fs } = fakeFs(tree);
+        const files: ReadableFile[] = [];
+        const narrowed = await readCodeFiles([ROOT], fs, { ...NEVER, markers: markersFor(false) }, (f) => files.push(f));
+        expect(files.map((f) => f.path)).toEqual(['agent.py']);
+        expect(narrowed).toEqual({ rows: 10, problems: [] });
+        expect(markersFor(false)).toBe(FRAMEWORK_MARKERS);
+        expect(markersFor(true)).toEqual([...FRAMEWORK_MARKERS, ...PROVIDER_SDK_MARKERS]);
+    });
+
+    it('a file too large to parse that names a provider\'s SDK is reported, and only while that is looked for', async () => {
+        const tree = { src: dir({ 'generated.py': file(Buffer.concat([Buffer.alloc(MAX_FILE_BYTES + 1, 0x20), Buffer.from('import anthropic\n')])) }) };
+        expect((await walk(tree)).problems).toEqual([{ reason: 'BYTE_CAP', at: at('generated.py') }]);
+        const { fs } = fakeFs(tree);
+        expect(await readCodeFiles([ROOT], fs, { ...NEVER, markers: markersFor(false) }, () => undefined)).toEqual({ rows: 1, problems: [] });
     });
 
     it('reads every source extension in any case, and nothing else — not even a declaration file', async () => {

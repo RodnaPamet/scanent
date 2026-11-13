@@ -1,8 +1,11 @@
 /**
  * THE `code` SOURCE: LANGCHAIN, LANGGRAPH AND CLAUDE AGENT SDK AGENTS IN AN
- * ESTATE'S CODE.
+ * ESTATE'S CODE, AND AGENTS BUILT DIRECTLY ON A MODEL PROVIDER'S SDK.
  *
- * Agents built on these frameworks are things the scanner DISCOVERS: it does
+ * Agents built on these frameworks, or on Anthropic's, OpenAI's, Google's or
+ * AWS Bedrock's own SDK (a model call that is given tools:
+ * `code/provider-sdk.ts`; on unless the configuration says
+ * `providerSdks: false`), are things the scanner DISCOVERS: it does
  * not run them and does not depend on them. None of the frameworks is a
  * dependency of this scanner; it reads the text of the code and configuration
  * it is pointed at and reports each agent definition through the signed
@@ -21,15 +24,18 @@
  *
  * ── WHAT EACH AGENT BECOMES ─────────────────────────────────────────────────
  *
- *   discoveredId  `code:<root label>/<path>#<name the definition is bound to>`
+ *   discoveredId  `code:<root label>/<path>#<name the definition is bound to>`;
+ *                 for a model call on a provider's SDK, the function it is
+ *                 written in, since `response = …` names nothing
  *   tools         one per tool it binds: an MCP server's URL, or the `code://`
  *                 locator of the tool's definition, with no pin and an
  *                 undeclared read-only hint (so: a write, as the contract says)
  *   credentials   by REFERENCE: `env://NAME`, or `code://…#L<line>` where a
  *                 value is written into the code — never the value
  *   owner         null; code names no accountable person
- *   verdicts      none for LangChain and LangGraph, whose code holds no
- *                 evidence for a harness criterion. For an Agent SDK agent,
+ *   verdicts      none for LangChain, LangGraph and a provider's SDK, whose
+ *                 code holds no evidence for a harness criterion. For an
+ *                 Agent SDK agent,
  *                 the NOT MET verdicts its options support, by the
  *                 contract's mapping (`agentSdkOptionVerdicts`): code can
  *                 show a control is missing, never that one works
@@ -64,7 +70,7 @@ import {
     type SourceRead,
 } from '../source';
 import type { CodeFs, CodeRoot, FileProblem } from './code/files';
-import { MAX_MARKER_SCAN_BYTES, readCodeFiles } from './code/files';
+import { MAX_MARKER_SCAN_BYTES, markersFor, readCodeFiles } from './code/files';
 import { JavaScriptReadError, readJavaScript } from './code/javascript';
 import { PythonReadError, readPython } from './code/python';
 import { agentSdkOptionVerdicts } from '@rodnapamet/scanent-contract/harness-findings';
@@ -73,6 +79,12 @@ import { codeLocator, recognizeAgents, type DetectedAgent } from './code/recogni
 
 export interface LangChainCodeSourceOptions {
     readonly roots: readonly CodeRoot[];
+    /**
+     * Agents built directly on a model provider's SDK. On unless it is
+     * `false`; off, neither their files are parsed nor their calls read, and
+     * the source reads exactly what it read before it knew them.
+     */
+    readonly providerSdks?: boolean;
     /** A TEST SEAM. The scanner never passes one, so production reads the real filesystem. */
     readonly fs?: CodeFs;
 }
@@ -141,14 +153,15 @@ export interface CodeScan {
 export async function scanLangChainCode(
     roots: readonly CodeRoot[],
     fs: CodeFs,
-    opts: { readonly deadline: number; readonly now: () => number },
+    opts: { readonly deadline: number; readonly now: () => number; readonly providerSdks?: boolean },
 ): Promise<CodeScan> {
     const agents: DetectedAgent[] = [];
     const parseProblems: FileProblem[] = [];
-    const { rows, problems } = await readCodeFiles(roots, fs, opts, (file) => {
+    const providerSdks = opts.providerSdks !== false;
+    const { rows, problems } = await readCodeFiles(roots, fs, { deadline: opts.deadline, now: opts.now, markers: markersFor(providerSdks) }, (file) => {
         try {
             const facts = /\.py$/i.test(file.path) ? readPython(file.text) : readJavaScript(file.path, file.text);
-            const found = recognizeAgents(facts, file);
+            const found = recognizeAgents(facts, file, { providerSdks });
             agents.push(...found.agents);
             for (const at of found.unresolved) parseProblems.push({ reason: 'UNPARSEABLE', at });
         } catch (err) {
@@ -180,7 +193,7 @@ export function observationOf(agent: DetectedAgent): Observation {
             ...(t.mcpEndpoint !== undefined ? { mcpEndpoint: t.mcpEndpoint } : {}),
         })),
         models: agent.models.map((m) => ({ endpoint: m.endpoint ?? codeLocator(m.at), model: m.model })),
-        // An Agent SDK agent's options, mapped by the planner; the other frameworks' code evidences nothing.
+        // An Agent SDK agent's options, mapped by the planner; the other frameworks', and a provider SDK's, code evidences nothing.
         verdicts: agent.sdkOptions === null ? [] : agentSdkOptionVerdicts(agent.sdkOptions),
     };
 }
@@ -194,6 +207,12 @@ const REASON_DETAIL: Readonly<Partial<Record<IncompleteReason, string>>> = {
     UNPARSEABLE: 'a file that names a framework could not be read as code, or an agent in it could not be resolved',
 };
 
+/** The two reasons that are about which files are parsed and what is read in them, while a provider's SDK is looked for too. */
+const REASON_DETAIL_WITH_PROVIDER_SDKS: Readonly<Partial<Record<IncompleteReason, string>>> = {
+    BYTE_CAP: 'a file that names a framework or a model provider\'s SDK is over the per-file limit, or the tree is over the file-count, total-size or depth limit',
+    UNPARSEABLE: 'a file that names a framework or a model provider\'s SDK could not be read as code, or an agent in it, or a model call that may be one, could not be resolved',
+};
+
 /**
  * The places this read did not cover, for the operator: the source's reason
  * first, then the others, each as the locator an agent in that file would
@@ -202,11 +221,12 @@ const REASON_DETAIL: Readonly<Partial<Record<IncompleteReason, string>>> = {
 export function notReadOf(
     problems: readonly FileProblem[],
     reason: IncompleteReason,
+    providerSdks = true,
 ): Pick<SourceRead, 'detail' | 'notRead' | 'notReadTotal'> {
     const placed = problems.filter((p): p is FileProblem & { at: NonNullable<FileProblem['at']> } => p.at !== null);
     const ordered = [...placed.filter((p) => p.reason === reason), ...placed.filter((p) => p.reason !== reason)];
     return {
-        detail: REASON_DETAIL[reason] ?? 'the tree was not read in full',
+        detail: (providerSdks ? REASON_DETAIL_WITH_PROVIDER_SDKS[reason] : undefined) ?? REASON_DETAIL[reason] ?? 'the tree was not read in full',
         notRead: ordered.slice(0, MAX_NOT_READ_LOCATIONS).map((p) => ({ where: codeLocator(p.at), reason: p.reason })),
         notReadTotal: problems.length,
     };
@@ -218,11 +238,11 @@ export function langchainCodeSource(options: LangChainCodeSourceOptions): Harnes
         kind: 'code',
         product: 'langchain',
         async read(ctx): Promise<SourceRead> {
-            const scan = await scanLangChainCode(options.roots, fs, { deadline: ctx.deadline, now: ctx.now });
+            const scan = await scanLangChainCode(options.roots, fs, { deadline: ctx.deadline, now: ctx.now, providerSdks: options.providerSdks });
             const observations = scan.agents.map(observationOf);
             const reason = REASON_ORDER.find((r) => scan.problems.some((p) => p.reason === r));
             if (reason === undefined) return sourceResult('code', scan.rows, observations, null);
-            return { kind: 'code', status: 'INCOMPLETE', reason, rows: scan.rows, observations, ...notReadOf(scan.problems, reason) };
+            return { kind: 'code', status: 'INCOMPLETE', reason, rows: scan.rows, observations, ...notReadOf(scan.problems, reason, options.providerSdks !== false) };
         },
         async preflight(): Promise<readonly ProbeStep[]> {
             const steps: ProbeStep[] = [];

@@ -40,8 +40,9 @@ What exists nearby, so that it is not mistaken for coverage:
 - Microsoft Entra **service principals** are read (`entra-sp`). That is
   identity, not Azure AI Foundry.
 - The `code` source recognises Bedrock and Vertex **model classes** in
-  LangChain code and reports the model endpoint an agent's code names. It
-  reads source files, not the cloud platform.
+  LangChain code, and a model call that is given tools on the Bedrock runtime
+  SDK or the Gemini SDK, and reports the model endpoint an agent's code names.
+  It reads source files, not the cloud platform.
 
 Each would be a new source, and where it is a new source kind, a new report
 contract id. The steps are in
@@ -56,7 +57,7 @@ Each kind is read from one product today:
 | `cicd` | GitHub Actions | Any other CI system |
 | `vault` | Azure Key Vault | Any other secret store |
 | `runtime` | LangSmith | Any other tracing or agent runtime (OpenShell: see above) |
-| `code` | LangChain, LangGraph and the Claude Agent SDK, in Python, JavaScript and TypeScript | Any other agent framework or language. An agent written with another framework, or directly on a model provider's SDK, is not found. The first pilot's estate builds its agents that way: they were found through its register, not in its code |
+| `code` | LangChain, LangGraph and the Claude Agent SDK, and agents built directly on the Anthropic, OpenAI and Azure OpenAI, Google Gemini or AWS Bedrock SDK, in Python, JavaScript and TypeScript | Any other agent framework, any other provider's SDK, any other language. An agent written with one of those is not found. On a provider's SDK an agent is a model call that is given tools: one that is given none is not reported, and one built in a way the reader cannot follow (a request assembled in another file) is reported with what it could read, or named as a place it could not |
 
 ## Levels the scanner cannot evidence
 

@@ -66,9 +66,16 @@ What it does not show:
   nothing; both could miss the same thing.
 - It was the maker's estate, read by the maker. It says nothing about a
   client's directory, its size, its proxy or its approval process.
-- An agent built directly on a model provider's SDK is not recognised by the
-  `code` source. That estate's own agents are built that way: they were found
-  through its register, not in its code.
+- An agent built directly on a model provider's SDK was not recognised by the
+  `code` source when that scan was made. That estate's own agents are built
+  that way: they were found through its register, not in its code. The `code`
+  source has since been taught to read a model call that is given tools on
+  the Anthropic, OpenAI, Gemini and Bedrock SDKs. That recognition is tested
+  against fixtures written from the SDKs' own type definitions and source,
+  and against one later copy of that estate's repository (7,555 source
+  files), where it found the one call the estate's agents run through and
+  could not resolve the request that call is given, which another file
+  builds. It has not been run against a client's code.
 - Okta, Azure Key Vault, LangSmith and MCP servers were not part of it. Each
   is still tested only against an imitation of the provider's API, written
   from the provider's documentation.

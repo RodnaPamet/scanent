@@ -241,7 +241,7 @@ Source kind `code`. No network request at all.
 - Files read: those ending `.py`, `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts`, `.tsx`.
 - Directories not entered: `node_modules`, `.git`, `.hg`, `.svn`, `__pycache__`, `.venv`, `venv`, `site-packages`, `.tox`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache`, `.next`, `dist`, `build`, `coverage`.
 - Symbolic links followed: never. Code executed: never. Files are parsed as text.
-- Bounds: 1 MiB per file that is parsed, 20,000 files, 128 MiB in total. A larger file, up to 16 MiB, is read only to look for a framework's name and is never parsed; one that names a framework is reported as not read.
+- Bounds: 1 MiB per file that is parsed, 20,000 files, 128 MiB in total. A larger file, up to 16 MiB, is read only to look for the name of a framework or of a model provider's SDK and is never parsed; one that names one is reported as not read.
 
 **Grant asked for.** Read access to the listed directories for the user the scanner runs as.
 

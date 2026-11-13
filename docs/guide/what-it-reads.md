@@ -235,8 +235,17 @@ changes, so does the code), not the description.
 
 **Looks at.** Python, JavaScript and TypeScript files in the folders you list.
 It recognises agents built with LangChain, LangGraph and the Claude Agent SDK.
-For each agent it reports its tools, the AI model service it calls, and the
-**names** of the keys it uses.
+It also recognises an agent written directly against Anthropic, OpenAI or
+Azure OpenAI, Google Gemini or AWS Bedrock: a call to the AI model that hands
+it tools. A call that hands the model no tools is not an agent, and is not
+reported. For each agent it reports its tools, the AI model service it calls,
+and the **names** of the keys it uses.
+
+When part of an agent is set up somewhere the scanner cannot follow, such as
+a tool list that another file builds, the agent is still reported, and the
+report names the file and the line it could not follow. The same is done for
+a call to an AI model whose settings it cannot see at all: it cannot tell
+whether that call is an agent, so it names the place for a person to look at.
 
 **Never does.** It never runs the code. It never follows a shortcut (a
 symbolic link) to another place. It makes no network request for this kind of

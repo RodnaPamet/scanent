@@ -93,7 +93,7 @@ export function buildSources(
     for (const s of config.sources) {
         if (s.kind === 'code') {
             // Reads files under its roots and holds no credential.
-            sources.push(langchainCodeSource({ roots: s.roots }));
+            sources.push(langchainCodeSource({ roots: s.roots, providerSdks: s.providerSdks }));
             continue;
         }
         if (s.kind === 'inflect-register') {

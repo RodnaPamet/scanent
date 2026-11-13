@@ -88,7 +88,7 @@ against fakes of the product's API.
 | `gcp-sa` | Google Cloud IAM service accounts and their keys | Implemented |
 | `cicd` | GitHub Actions workflows and repository secrets (names only) | Implemented |
 | `runtime` | LangSmith tracing projects and deployments | Implemented |
-| `code` | LangChain, LangGraph and Claude Agent SDK agent definitions in Python, JavaScript and TypeScript | Implemented |
+| `code` | LangChain, LangGraph and Claude Agent SDK agent definitions, and agents built directly on the Anthropic, OpenAI and Azure OpenAI, Google Gemini or AWS Bedrock SDK (a model call that is given tools), in Python, JavaScript and TypeScript | Implemented |
 | `mcp` | MCP servers' tool listings | Implemented |
 | `inflect-register` | An Inflect tenant's agent register | Implemented; needs an Inflect tenant |
 | `runtime` | NVIDIA OpenShell gateway | **Not available.** A reader exists in the source tree, but no configuration selects it |

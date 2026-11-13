@@ -5,10 +5,11 @@
  * one tree read it identically. Each bound is a stated maximum, and reaching one
  * is reported — never absorbed:
  *
- *   • a file over `MAX_FILE_BYTES` that names a framework, more than
+ *   • a file over `MAX_FILE_BYTES` that names a framework (or a model
+ *     provider's SDK: `markersFor`), more than
  *     `MAX_FILES` candidates, or more than `MAX_TOTAL_BYTES` read → BYTE_CAP.
  *     A file over `MAX_FILE_BYTES` and up to `MAX_MARKER_SCAN_BYTES` is still
- *     read, and only searched for a framework's name: a file that names none
+ *     read, and only searched for such a name: a file that names none
  *     cannot define an agent (the rule every smaller file is held to), so a
  *     minified bundle somebody vendored does not leave the tree unread. A
  *     file over `MAX_MARKER_SCAN_BYTES` is not opened → BYTE_CAP;
@@ -60,10 +61,23 @@ export const SKIPPED_DIRECTORIES: readonly string[] = [
 /**
  * The text a file must contain to be parsed at all: a framework's module name,
  * which every import of it spells out. `claude-agent-sdk` and
- * `claude_agent_sdk` are the Claude Agent SDK's, in TypeScript and Python
- *.
+ * `claude_agent_sdk` are the Claude Agent SDK's, in TypeScript and Python.
  */
 export const FRAMEWORK_MARKERS: readonly string[] = ['langchain', 'langgraph', 'claude-agent-sdk', 'claude_agent_sdk'];
+
+/**
+ * The same, for agents built directly on a model provider's SDK
+ * (`provider-sdk.ts`): text every import of Anthropic's, OpenAI's, Google's
+ * Gemini or AWS Bedrock's package contains. `boto3` and `botocore` are here
+ * because a Python file may be handed a Bedrock client and never spell
+ * `bedrock` itself. Looked for only while that recognition is on.
+ */
+export const PROVIDER_SDK_MARKERS: readonly string[] = ['anthropic', 'openai', 'genai', 'generativeai', 'generative-ai', 'bedrock', 'boto3', 'botocore'];
+
+/** The text a file must contain to be parsed: a framework's name, and a provider SDK's unless that is turned off. */
+export function markersFor(providerSdks: boolean): readonly string[] {
+    return providerSdks ? [...FRAMEWORK_MARKERS, ...PROVIDER_SDK_MARKERS] : FRAMEWORK_MARKERS;
+}
 
 export interface ReadableFile {
     readonly label: string;
@@ -95,16 +109,18 @@ function startsWithWideByteOrderMark(buf: Buffer): boolean {
 const join = (a: string, b: string) => (a.endsWith('/') ? `${a}${b}` : `${a}/${b}`);
 
 /**
- * Walk the roots, yielding each source file that mentions LangChain or
- * LangGraph, and recording why anything was not read. `onFile` is called once
- * per file read; `rows` counts every source file examined.
+ * Walk the roots, yielding each source file that names a framework or a
+ * provider's SDK (`opts.markers`; every one, unless the caller narrows it),
+ * and recording why anything was not read. `onFile` is called once per file
+ * read; `rows` counts every source file examined.
  */
 export async function readCodeFiles(
     roots: readonly CodeRoot[],
     fs: CodeFs,
-    opts: { readonly deadline: number; readonly now: () => number },
+    opts: { readonly deadline: number; readonly now: () => number; readonly markers?: readonly string[] },
     onFile: (file: ReadableFile) => void,
 ): Promise<{ rows: number; problems: FileProblem[] }> {
+    const markers = opts.markers ?? markersFor(true);
     const problems: FileProblem[] = [];
     let rows = 0;
     let bytes = 0;
@@ -193,7 +209,7 @@ export async function readCodeFiles(
             // a name spelt in UTF-16 is not found by this search or by the one below.
             if (buf.length > MAX_FILE_BYTES) {
                 if (startsWithWideByteOrderMark(buf)) problem('UNPARSEABLE', at);
-                else if (FRAMEWORK_MARKERS.some((m) => buf.includes(m))) problem('BYTE_CAP', at);
+                else if (markers.some((m) => buf.includes(m))) problem('BYTE_CAP', at);
                 continue;
             }
             // A UTF-16 or UTF-32 file decodes as UTF-8 into text that names no
@@ -205,8 +221,8 @@ export async function readCodeFiles(
                 continue;
             }
             const text = buf.toString('utf8');
-            // Only a file that names a framework's module can define one of its agents.
-            if (FRAMEWORK_MARKERS.some((m) => text.includes(m))) onFile({ label: root.label, path: childRel, text });
+            // Only a file that names a framework's module, or a provider SDK's, can define one of its agents.
+            if (markers.some((m) => text.includes(m))) onFile({ label: root.label, path: childRel, text });
         }
     };
 

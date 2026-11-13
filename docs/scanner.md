@@ -31,7 +31,7 @@ be read is reported `INCOMPLETE` with the contract's reason, never left out.
 | `runtime` | LangSmith | Tracing projects that called a tool in a bounded window, and deployments when the estate opts in, with each one's tools and their call counts. Aggregates only: no run is ever fetched | `GET /api/v1/sessions`; with `readDeployments`, `GET /v2/deployments` (`/api-host/v2/deployments` self-hosted) |
 | `cicd` | GitHub Actions | Each workflow file on each configured repository's default branch that holds a secret, whose run token may write, or that reaches secrets dynamically; its secrets and run token by reference. The repository's Actions secrets by name, and each one no workflow references, as unbound | `GET /repos/{owner}/{repo}`, `GET /repos/{owner}/{repo}/contents/.github/workflows`, `GET …/contents/.github/workflows/{file}`, `GET /repos/{owner}/{repo}/actions/secrets` on `api.github.com` |
 | `gcp-sa` | Google Cloud IAM | Each enabled service account in each configured project, by its numeric id, with its enabled user-managed keys by reference. Never its e-mail address, display name or description; never the scanner's own account | `POST` the JWT-bearer token exchange to `oauth2.googleapis.com`, then `GET /v1/projects/{project}/serviceAccounts` and `GET /v1/projects/{project}/serviceAccounts/{account}/keys?keyTypes=USER_MANAGED` on `iam.googleapis.com` |
-| `code` | LangChain and LangGraph, the Claude Agent SDK | Agent definitions in the Python, JavaScript and TypeScript files under the configured roots: each agent's tools, the model endpoints it calls and the credentials those reference, by reference; for an Agent SDK agent, the options that fail a ladder criterion | None. Local reads only (`lstat`, `readdir`, `readFile`) |
+| `code` | LangChain and LangGraph, the Claude Agent SDK; the Anthropic, OpenAI and Azure OpenAI, Google Gemini and AWS Bedrock SDKs | Agent definitions in the Python, JavaScript and TypeScript files under the configured roots: each agent's tools, the model endpoints it calls and the credentials those reference, by reference; for an Agent SDK agent, the options that fail a ladder criterion. On a provider's own SDK an agent is a model call that is given tools | None. Local reads only (`lstat`, `readdir`, `readFile`) |
 
 ### Entra
 
@@ -367,7 +367,84 @@ any project the configuration does not list.
 
 Every name is resolved through the file's own imports: only what is imported
 from a `langchain`, `langgraph` or Claude Agent SDK module counts, and a file
-that names none of those modules is not parsed at all.
+that names none of those modules, and no provider's SDK (below), is not parsed
+at all.
+
+#### Agents built directly on a model provider's SDK
+
+Many agents use no framework: they are a loop around one call that gives the
+model tools. `packages/scanner/src/sources/code/provider-sdk.ts` reads that
+call. **An agent is a model call that is given tools.** A model call that is
+given none is a completion, and is not reported. One call is one agent.
+
+A call counts when the file imports the provider's package (for its types
+alone is enough: the client is very often a parameter, built in another
+module) and the call has one of that package's method shapes:
+
+| Provider | Packages | Method shapes | Tools are read from |
+|---|---|---|---|
+| Anthropic | `@anthropic-ai/sdk`, `@anthropic-ai/bedrock-sdk`, `@anthropic-ai/vertex-sdk`, `@anthropic-ai/foundry-sdk`; Python `anthropic` | `messages.create`, `.stream`, `.parse`, the same under `beta`, and the tool loop `beta.messages.toolRunner` (Python `tool_runner`) | `tools`, `mcp_servers` |
+| OpenAI and Azure OpenAI | `openai` | `chat.completions.create`, `.stream`, `.parse`, the tool loop `chat.completions.runTools`; `responses.create`, `.stream`, `.parse`; `beta.assistants.create`, `.update` | `tools`, and the older `functions` |
+| Google Gemini | `@google/genai`; Python `google.genai` | `models.generateContent`, `.generateContentStream` (Python `generate_content`, `generate_content_stream`), `chats.create`, `live.connect` | `config.tools` |
+| Google Gemini, the older packages | `@google/generative-ai`; Python `google.generativeai` | `getGenerativeModel`, `generateContent`, `generateContentStream`, `startChat`; Python `GenerativeModel(…)`, `generate_content`, `generate_content_async` | `tools` |
+| AWS Bedrock | `@aws-sdk/client-bedrock-runtime`; Python `boto3` | `new ConverseCommand(…)`, `new ConverseStreamCommand(…)`, `converse`, `converseStream` (Python `converse_stream`) | `toolConfig.tools` |
+
+What each agent reports:
+
+- its **tools**: a tool the code defines by its name; one of the provider's own
+  tools (web search, code execution, computer use) by its type, such as
+  `web_search_20250305` or `code_interpreter`; an MCP server the call is given
+  as `<server>:*` at its URL's origin;
+- its **model**, when the call names it with a literal, and the **endpoint**:
+  the base URL the client is given (origin only), the provider's default when
+  the client is built in the file with none, a Bedrock or Vertex region's
+  endpoint when the region is written, and otherwise not known;
+- its **credentials**, by reference: the variable a key is read from, the place
+  a key is written, or the provider's default variable when the client is
+  built in the file with no key;
+- its **name**: the function the call is written in (`support_agent`,
+  `Desk.run`), because `response = client.messages.create(…)` would name every
+  agent `response`. At the top level of a file it is the name the call is
+  bound to, and two calls in one function are told apart by their lines.
+
+No verdict is raised: only the Claude Agent SDK's options are mapped onto the
+ladder.
+
+A client that is not built in the file (a parameter, an import) may point
+anywhere and hold any key, so its endpoint is reported as not known and no
+credential is claimed for it.
+
+Whether a call is given tools is decided the same way everywhere, and never
+by guessing:
+
+| The call's tools | Outcome |
+|---|---|
+| Written out, and not empty | An agent, with those tools |
+| Given, but not something the reader can follow (a name from another module, a function's result, a conditional) | An agent with its tools not known. The place is `UNPARSEABLE` |
+| Written as an empty list, or as `None`, `null` or `undefined` | Not an agent. Nothing is recorded |
+| The options are read in full, and hold no tools | Not an agent. Nothing is recorded |
+| The options cannot be read at all (`**kwargs`, a spread, a name bound nowhere in the file) | A tool loop (`toolRunner`, `tool_runner`, `runTools`) is an agent with its tools not known. Any other method is not called an agent, because most model calls are completions. Either way the place is `UNPARSEABLE`, so a person can look |
+
+The same method shape in a file that does not import the provider's package
+is ordinary code: it is not an agent and it is not a place that failed to
+resolve.
+
+This recognition is on by default. To turn it off, set `"providerSdks": false`
+on the `code` source:
+
+```json
+{ "kind": "code", "product": "langchain", "providerSdks": false,
+  "roots": [{ "label": "support-bot", "path": "/estate/repos/support-bot" }] }
+```
+
+Off, a file that names only a provider's SDK is not parsed, and the source
+reports what it reported before it recognised them.
+
+Not recognised: a request sent without the provider's SDK (plain HTTP, or
+Bedrock's `InvokeModel` with a hand-built body); any other provider's SDK; a
+Vertex AI SDK other than the Gemini packages above; a client wrapped by
+another library is still found by its method shape, but its endpoint is not
+known.
 
 An Agent SDK agent's options also become verdicts, as the owner mapped them
 (2026-10-29; `AGENT_SDK_OPTION_CRITERIA` in
@@ -390,7 +467,9 @@ rule in `eslint.config.mjs` refuses `child_process`, `vm`, `worker_threads`,
 `Function` in those files. A file that does not parse, or a definition built from something the
 reader cannot see — a tool list returned by a function, a model passed in as a
 parameter, `**kwargs` — makes the source `INCOMPLETE` `UNPARSEABLE`, and the
-agent is still reported with what resolved.
+agent is still reported with what resolved. So does a model call on a
+provider's SDK whose options the reader cannot see at all, which may or may
+not be an agent.
 
 Each agent's model endpoints go into `/2`'s optional `models[]`: the endpoint's
 origin, the `env://` reference it is read from, or, when neither is knowable, the
@@ -451,10 +530,10 @@ What the sources never do:
 - **Run what they read.** The `code` source parses text. It follows no symbolic
   link, parses no file over 1 MiB, caps the whole read at 20,000 files and
   128 MiB, and stops at the scan's deadline, reporting each as its reason. A
-  file over 1 MiB and up to 16 MiB is read only to look for a framework's name:
-  one that names none cannot define an agent, which is the rule every smaller
-  file is held to, so a vendored bundle does not leave the tree unread; one
-  that names a framework is `BYTE_CAP`. A file over 16 MiB is not opened. A file is
+  file over 1 MiB and up to 16 MiB is read only to look for the name of a
+  framework or of a model provider's SDK: one that names none cannot define an
+  agent, which is the rule every smaller file is held to, so a vendored bundle
+  does not leave the tree unread; one that names one is `BYTE_CAP`. A file over 16 MiB is not opened. A file is
   opened without following a link and without blocking, and what was opened
   must be a regular file, so a file swapped for a link or a pipe after it was
   looked at is a location not read, never one followed. A file that does not
@@ -1265,7 +1344,7 @@ a bound that is reached is reported, or the run is refused.
 | Credentials, tools, models of one agent | 100, 500, 50 | The same, for the source that lost one |
 | Unbound credentials in a report | 10,000 | The same |
 | The signed report | 5 MiB | The run is refused; nothing is written, printed or posted |
-| A code file that is parsed, the files of a scan, their bytes | 1 MiB, 20,000, 128 MiB | The `code` source is `INCOMPLETE` `BYTE_CAP`. A file over 1 MiB that names no framework is read, not parsed, and is not a reason |
+| A code file that is parsed, the files of a scan, their bytes | 1 MiB, 20,000, 128 MiB | The `code` source is `INCOMPLETE` `BYTE_CAP`. A file over 1 MiB that names no framework and no model provider's SDK is read, not parsed, and is not a reason |
 | A code file that is opened at all | 16 MiB | The `code` source is `INCOMPLETE` `BYTE_CAP` |
 | The work of reading one Python file | 24 parser steps for each token of the file, plus 10,000 | That file is not read, and the `code` source is `INCOMPLETE` `UNPARSEABLE`. An ordinary file costs about one step a token; the limit stops a file written to be read over and over |
 | An input of `scanent diff` | 64 MiB | The diff is refused (exit 2) |

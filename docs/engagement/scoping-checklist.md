@@ -28,7 +28,7 @@ scanner reads only the systems that are configured.
 | GitHub Actions | Automation workflows, and the names of the secrets they use. Never the values | |
 | LangSmith | Tracing projects, which show which agents run and which tools they call | |
 | MCP servers | The list of tools each server offers to agents. No tool is ever called | |
-| Source code | Agent definitions written with LangChain, LangGraph or the Claude Agent SDK, in Python, JavaScript or TypeScript. The code is read as text and never run | |
+| Source code | Agent definitions written with LangChain, LangGraph or the Claude Agent SDK, and agents written directly on the Anthropic, OpenAI or Azure OpenAI, Google Gemini or AWS Bedrock SDK, in Python, JavaScript or TypeScript. The code is read as text and never run | |
 | An Inflect tenant | The client's own register of agents, if they have one | |
 
 For each ticked system, write down:

@@ -10,7 +10,9 @@
  *      loaded.
  *   4. Bindings: a variable, a dotted assignment, a class property.
  *   5. Calls: every call once, outermost first, including those inside the
- *      function bodies of an argument.
+ *      function bodies of an argument and inside a function that IS a value
+ *      (`const run = async () => { … }`), each with the function it is written
+ *      in; and every module the file names, whether or not it binds a name.
  *   6. A class that extends a LangChain tool class is a tool declaration.
  */
 import { JavaScriptReadError, readJavaScript } from '../src/sources/code/javascript';
@@ -354,6 +356,92 @@ export default defineAgent({ name: "x" });
     it('text in a string, a template or a comment is never a call', () => {
         const facts = readJavaScript('x.js', 'const a = "make()";\nconst b = `make()`;\n// make()\n/* make() */\nconst c = real();\n');
         expect(calls(facts)).toEqual([['real()', 'c']]);
+    });
+
+    it('reads the statements of a function that IS a value: an arrow bound to a name, a property, an object\'s method, a class expression', () => {
+        const facts = readJavaScript(
+            'x.ts',
+            `const main = async () => {
+    const agent = build();
+    return agent;
+};
+handlers.start = function () { boot(); };
+export const api = {
+    run: async () => { step(); },
+    async stop() { halt(); },
+    get state() { return read(); },
+};
+const Service = class { go() { return move(); } };
+const direct = () => answer();
+`,
+        );
+        expect(calls(facts)).toEqual([
+            ['build()', 'agent'],
+            ['boot()', null],
+            ['step()', null],
+            ['halt()', null],
+            ['read()', null],
+            ['move()', null],
+            ['answer()', null],
+        ]);
+        expect(bound(facts, 'agent')).toEqual(['build()']);
+    });
+
+    it('says which function each call is written in: the innermost one that has a name', () => {
+        const facts = readJavaScript(
+            'x.ts',
+            `top();
+export async function main() {
+    first();
+    const inner = async () => { second(); };
+    items.forEach((item) => { third(item); });
+}
+export class Desk {
+    client = make();
+    constructor() { fourth(); }
+    async run() { return fifth(); }
+    stop = async () => { sixth(); };
+    get state() { return seventh(); }
+}
+export const api = { handle: async () => { eighth(); }, async close() { ninth(); } };
+export default async () => { tenth(); };
+function outer() { function nested() { eleventh(); } }
+`,
+        );
+        expect(facts.calls.map(({ call, within }) => [show(call), within])).toEqual([
+            ['top()', null],
+            ['first()', 'main'],
+            ['second()', 'inner'],
+            ['items.forEach(<func>)', 'main'],
+            // A function with no name of its own is part of the one around it.
+            ['third(item)', 'main'],
+            ['make()', null],
+            ['fourth()', 'Desk.constructor'],
+            ['fifth()', 'Desk.run'],
+            ['sixth()', 'Desk.stop'],
+            ['seventh()', 'Desk.state'],
+            ['eighth()', 'handle'],
+            ['ninth()', 'close'],
+            ['tenth()', null],
+            ['eleventh()', 'nested'],
+        ]);
+    });
+
+    it('names every module the file imports, whether or not the import binds a name', () => {
+        const facts = readJavaScript(
+            'x.ts',
+            `import type Anthropic from "@anthropic-ai/sdk";
+import "openai/shims/node";
+import { type Tool } from "@google/genai";
+export { z } from "zod";
+const aws = require("@aws-sdk/client-bedrock-runtime");
+const text = "from 'not-a-module'";
+`,
+        );
+        expect([...facts.modules].sort()).toEqual(['@anthropic-ai/sdk', '@aws-sdk/client-bedrock-runtime', '@google/genai', 'openai/shims/node', 'zod']);
+        // A module imported for its types alone still binds the name a client is typed by.
+        expect(facts.imports.get('Anthropic')).toEqual({ module: '@anthropic-ai/sdk', path: ['default'] });
+        expect(facts.functions.size).toBe(0);
     });
 });
 

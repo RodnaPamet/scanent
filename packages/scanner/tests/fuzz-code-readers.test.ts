@@ -36,11 +36,16 @@ import {
     NOT_LANGCHAIN,
     UNPARSEABLE,
 } from './helpers/agent-harness-code-fixtures';
+import { NOT_PROVIDER_SDK, PROVIDER_SDKS } from './helpers/provider-sdk-code-fixtures';
 import { forAll, FUZZ_ITERATIONS, type Rng, TEST_TIMEOUT_MS } from './helpers/prng';
 
 jest.setTimeout(TEST_TIMEOUT_MS);
 
-const ALL = { ...LANGCHAIN_PYTHON, ...LANGCHAIN_JS, ...LANGGRAPH, ...UNPARSEABLE, ...NOT_LANGCHAIN, ...AGENT_SDK_TS, ...AGENT_SDK_PY, ...AGENT_SDK_UNRESOLVED, ...NOT_AGENT_SDK };
+const ALL = {
+    ...LANGCHAIN_PYTHON, ...LANGCHAIN_JS, ...LANGGRAPH, ...UNPARSEABLE, ...NOT_LANGCHAIN, ...AGENT_SDK_TS, ...AGENT_SDK_PY, ...AGENT_SDK_UNRESOLVED, ...NOT_AGENT_SDK,
+    // Agents built directly on a model provider's SDK, and the same method shapes in files that do not import one.
+    ...PROVIDER_SDKS, ...NOT_PROVIDER_SDK,
+};
 const PYTHON = Object.entries(ALL).filter(([name]) => name.endsWith('.py')).map(([, text]) => text);
 const SCRIPT = Object.entries(ALL).filter(([name]) => !name.endsWith('.py') && /\.(m?[jt]sx?|c[jt]s)$/.test(name));
 
@@ -52,11 +57,24 @@ const PY_FRAGMENTS = [
     'class T(BaseTool):\n    name = "t"\n', '"""', "'''", 'f"{', '}"', 'rb"\\', '\\\n', '    ', '\t', '@tool\n', 'lambda x: x', '[x for x in y if z]', '{**a, "k": v}',
     'x = (', ')', 'if a else b', 'await ', '0x1f', '1_000', '1e', '...', ':=', '->', '**=', 'match x:\n    case 1:\n        pass\n', '#', '\r\n', '\r', '\f', '\\N{DASH}',
     'os.environ["KEY"]', 'os.getenv("K")', 'tools=tools, llm=ChatOpenAI(model="m", api_key="k")\n',
+    // A provider's SDK: its imports, its method shapes, and the pieces of a call's options.
+    'import anthropic\n', 'from openai import OpenAI\n', 'from google import genai\n', 'import google.generativeai as genai\n', 'import boto3\n',
+    'client = anthropic.Anthropic(', 'client.messages.create(', 'client.beta.messages.tool_runner(', 'client.chat.completions.create(', 'client.responses.create(',
+    'client.models.generate_content(', 'client.converse(', 'boto3.client("bedrock-runtime", ', 'tools=[', '{"name": "t", ', '{"type": "mcp", "server_url": "https://h/p?k=v", ',
+    'mcp_servers=[', 'toolConfig={"tools": [', 'config={"tools": [', '{"toolSpec": {', '**kwargs)', 'tools=tools + more, ', 'tools.append(', '@beta_tool\n', 'def f(): return client.messages.create(',
+    'model="m", ', 'api_key=os.environ["K"], ', 'base_url="https://h/v1", ', ')\n', ']', '}',
 ];
 const JS_FRAGMENTS = [
     'import { AgentExecutor } from "langchain/agents";\n', 'const { ChatOpenAI } = require("@langchain/openai");\n', 'export const a = new AgentExecutor({ agent, tools: [',
     '] });\n', 'query({ prompt: "p", options: { allowedTools: ["Read"] } })', '`${', '}`', '/*', '*/', '//', '<T>', 'as any', '!', '?.', '??=', '=>', 'class X extends Tool { name = "x" }',
     'process.env.KEY', 'await ', 'async function* g() { yield* h(); }', '#priv', '@dec', '</div>', '<div a={', '}/>', '/re/gu', '0b1', '1n', '...spread', 'satisfies T',
+    // A provider's SDK: its imports, its method shapes, and the pieces of a call's options.
+    'import Anthropic from "@anthropic-ai/sdk";\n', 'import type OpenAI from "openai";\n', 'import { GoogleGenAI } from "@google/genai";\n',
+    'import { GoogleGenerativeAI } from "@google/generative-ai";\n', 'import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";\n',
+    'const client = new Anthropic({ apiKey: process.env.K });\n', 'client.messages.create({', 'client.beta.messages.toolRunner(', 'client.chat.completions.runTools({', 'client.responses.create({',
+    'ai.models.generateContent({', 'genAI.getGenerativeModel({', 'client.send(new ConverseCommand({', 'client.converse({', 'tools: [', '{ name: "t" }, ', '{ type: "function", function: { name: "f" } }, ',
+    '{ type: "mcp", server_label: "s", server_url: "https://h/p?k=v" }, ', 'mcp_servers: [', 'toolConfig: { tools: [', 'config: { tools: [', '{ toolSpec: {', '...tools, ', 'tools.push(', 'model: "m", ',
+    'const run = async () => {', 'class A { run = async () => {', '}', ']', ')', '});\n',
 ];
 
 function generated(r: Rng, seeds: readonly string[], fragments: readonly string[]): string {

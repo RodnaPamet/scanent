@@ -101,6 +101,100 @@ for x in first(): second(x)
     });
 });
 
+describe('Python: the function a call is written in, the functions a file defines, the modules it imports', () => {
+    const within = (facts: FileFacts) => facts.calls.map(({ call, within: fn }) => [call.fn.k === 'ref' ? call.fn.name : '?', fn]);
+
+    it('a call is in the innermost `def` whose block it is indented under; a method is `Class.method`', () => {
+        const facts = readPython(`top()
+
+def main():
+    first()
+    if ready():
+        second()
+
+    def helper():
+        third()
+    fourth()
+
+class Desk:
+    client = make()
+
+    def run(self):
+        return fifth()
+
+    async def stop(self):
+        async with sixth() as s:
+            for x in seventh():
+                eighth(x)
+
+def one_line(): ninth()
+last()
+`);
+        expect(within(facts)).toEqual([
+            ['top', null],
+            ['first', 'main'],
+            ['ready', 'main'],
+            ['second', 'main'],
+            ['third', 'helper'],
+            ['fourth', 'main'],
+            ['make', null],
+            ['fifth', 'Desk.run'],
+            ['sixth', 'Desk.stop'],
+            ['seventh', 'Desk.stop'],
+            ['eighth', 'Desk.stop'],
+            ['ninth', 'one_line'],
+            ['last', null],
+        ]);
+    });
+
+    it('indentation inside a string or a bracket is not a block\'s, and a tab reaches the next multiple of eight', () => {
+        const facts = readPython(`def main():
+    text = '''
+not indented, and not a statement
+'''
+    value = build(
+a, b)
+\tafter()
+done()
+`);
+        expect(within(facts)).toEqual([['build', 'main'], ['after', 'main'], ['done', null]]);
+    });
+
+    it('keeps each function by name, with the decorators written above it', () => {
+        const facts = readPython(`from anthropic import beta_tool
+
+@beta_tool
+def get_weather(city): return city
+
+@cache
+@beta_tool(name="rain")
+async def get_rain(city):
+    return city
+
+def plain(): pass
+`);
+        expect([...facts.functions.keys()]).toEqual(['get_weather', 'get_rain', 'plain']);
+        expect(facts.functions.get('get_weather')).toMatchObject({ line: 4, decorators: [{ k: 'ref', name: 'beta_tool' }] });
+        expect(facts.functions.get('get_rain')!.decorators.map((d) => d.k)).toEqual(['ref', 'call']);
+        expect(facts.functions.get('plain')!.decorators).toEqual([]);
+        // An Anthropic tool is not a LangChain one.
+        expect(facts.toolDeclarations.size).toBe(0);
+    });
+
+    it('names every module the file imports, whole: one imported under its package\'s name, and one imported from it', () => {
+        const facts = readPython(`import google.generativeai
+import os, boto3 as aws
+from google import genai
+from anthropic.types import ToolParam
+`);
+        expect([...facts.modules].sort()).toEqual([
+            'anthropic.types', 'anthropic.types.ToolParam', 'boto3', 'google', 'google.genai', 'google.generativeai', 'os',
+        ]);
+        // What a name is bound to is what it was: \`google\` alone says nothing of which package.
+        expect(facts.imports.get('google')).toEqual({ module: 'google', path: [] });
+    });
+});
+
 describe('Python: a file the tokenizer cannot read is refused whole', () => {
     it.each([
         ['an unterminated string', 'x = "never closed\n'],

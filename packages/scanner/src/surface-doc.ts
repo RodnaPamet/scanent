@@ -234,7 +234,7 @@ export function renderNetworkAndPermissionsMarkdown(): string {
             `- Files read: those ending ${files.extensions.map((e) => `\`${e}\``).join(', ')}.`,
             `- Directories not entered: ${files.skips.map((d) => `\`${d}\``).join(', ')}.`,
             `- Symbolic links followed: ${files.followsSymlinks ? 'yes' : 'never'}. Code executed: ${files.executes ? 'yes' : 'never'}. Files are parsed as text.`,
-            `- Bounds: ${mib(MAX_FILE_BYTES)} per file that is parsed, ${MAX_FILES.toLocaleString('en-US')} files, ${mib(MAX_TOTAL_BYTES)} in total. A larger file, up to ${mib(MAX_MARKER_SCAN_BYTES)}, is read only to look for a framework's name and is never parsed; one that names a framework is reported as not read.`,
+            `- Bounds: ${mib(MAX_FILE_BYTES)} per file that is parsed, ${MAX_FILES.toLocaleString('en-US')} files, ${mib(MAX_TOTAL_BYTES)} in total. A larger file, up to ${mib(MAX_MARKER_SCAN_BYTES)}, is read only to look for the name of a framework or of a model provider's SDK and is never parsed; one that names one is reported as not read.`,
             '',
         );
     }
