@@ -80,6 +80,13 @@ The results say this per criterion ("No reader in scanent reports this
 criterion"), so a missing reader is not mistaken for a failed check. Whether
 to add sources that evidence H4 and H5 is an open product decision (issue 15).
 
+## Other scanners
+
+scanent scans agents only. An integrations scanner, a vulnerability scanner
+and a static adversarial reviewer of agent code are proposed in
+[Several scanners in one scanent](design/scanners.md), which lists the
+decisions they need. None is built.
+
 ## Packaging and distribution
 
 - **One release.** The image is public (owner decision, 2026-11-12, issue 19).
