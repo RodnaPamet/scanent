@@ -35,6 +35,7 @@ import { LocalResultsSchema } from '../src/results/schema';
 import { scoreReportLocally } from '../src/results/score';
 import type { LocalResults } from '../src/results/types';
 import { fullRow, input, inventoryOf, withSource } from './helpers/fixtures';
+import { withoutScriptElements } from './helpers/html';
 
 const ROW = 'agt_paying_row';
 const SECOND_PAYER = 'code:acme/shop-bot/refunds.ts#agent';
@@ -199,7 +200,7 @@ describe('3. the page, the spreadsheet and the comparison', () => {
         const page = renderSummaryHtml(older);
         expect(page).not.toContain('payments-h');
         // Neither the static page nor the data its script reads offers a payment count: the script's own words are not the page's.
-        expect(page.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '')).not.toContain('Can pay');
+        expect(withoutScriptElements(page)).not.toContain('Can pay');
         expect(summaryPageData(older).estate.paying).toBeNull();
     });
 

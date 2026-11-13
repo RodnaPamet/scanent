@@ -106,6 +106,22 @@ describe('2. what the directory holds is untrusted', () => {
         for (const name of fs.readdirSync(run)) expect(fs.readFileSync(path.join(run, name), 'latin1')).not.toContain(canary);
     });
 
+    it('a results file that is a link is not followed: the run it names is UNREADABLE, and the target is never read', async () => {
+        const first = await scanExample(T1);
+        writeRun({ dir }, first);
+        const file = path.join(dir, 'runs', first.results.scan.id, 'results.json');
+        // A valid results file elsewhere, linked in place of the run's own: reading it would compare with a run this directory never wrote.
+        const elsewhere = path.join(dir, 'elsewhere.json');
+        fs.renameSync(file, elsewhere);
+        fs.symlinkSync(elsewhere, file);
+        expect(previousRunOf(dir, (await later()).results)).toEqual({ kind: 'NOT_COMPARED', scanId: first.results.scan.id, reason: 'UNREADABLE' });
+        // And a pointer that is a link is no pointer of this directory's.
+        const pointer = path.join(dir, 'latest.json');
+        fs.renameSync(pointer, path.join(dir, 'pointer-elsewhere.json'));
+        fs.symlinkSync(path.join(dir, 'pointer-elsewhere.json'), pointer);
+        expect(previousRunOf(dir, (await later()).results)).toEqual({ kind: 'NOT_COMPARED', scanId: null, reason: 'UNREADABLE' });
+    });
+
     it('a read that fails is a refusal the page states, never a run that is not written', async () => {
         const run = await later();
         const throwing = () => {

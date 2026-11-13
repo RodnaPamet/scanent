@@ -105,17 +105,96 @@ export function pdfTextOf(pdf: Uint8Array): { readonly lines: string; readonly j
         } catch {
             content = raw.toString('latin1');
         }
-        for (const op of content.matchAll(/(\[(?:[^\]\\]|\\.)*\]|\((?:[^()\\]|\\.)*\)|<[0-9a-fA-F\s]*>)\s*(TJ|Tj|'|")/g)) {
-            let text = '';
-            for (const part of op[1].matchAll(/<([0-9a-fA-F\s]*)>|\(((?:[^()\\]|\\.)*)\)/g)) {
-                if (part[1] !== undefined) text += Buffer.from(part[1].replace(/\s+/g, ''), 'hex').toString('latin1');
-                else text += part[2].replace(/\\([nrtbf()\\]|[0-7]{1,3})/g, (_m, c: string) => (/^[0-7]+$/.test(c) ? String.fromCharCode(parseInt(c, 8)) : ({ n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' } as Record<string, string>)[c] ?? c));
-            }
-            pieces.push(text);
-        }
+        pieces.push(...textShownBy(content));
         at = end + 'endstream'.length;
     }
     return { lines: pieces.join('\n'), joined: pieces.join('') };
+}
+
+const PDF_ESCAPES: Readonly<Record<string, string>> = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f' };
+
+/**
+ * The strings shown by the text operators of one content stream, one per
+ * operator. A single pass over the stream with no regular expression, so its
+ * time is linear in the stream whatever the stream holds: literal strings
+ * (escapes, octal codes and balanced parentheses), hex strings, and arrays of
+ * them, each kept only when the next token is `Tj`, `TJ`, `'` or `"`.
+ */
+function textShownBy(content: string): string[] {
+    const shown: string[] = [];
+    let operands: string[] = [];
+    let i = 0;
+    const literal = (): string => {
+        // `content[i]` is '('.
+        let depth = 1;
+        let out = '';
+        i += 1;
+        while (i < content.length && depth > 0) {
+            const c = content[i];
+            if (c === '\\') {
+                const next = content[i + 1] ?? '';
+                if (next >= '0' && next <= '7') {
+                    let digits = '';
+                    let j = i + 1;
+                    while (j < content.length && digits.length < 3 && content[j] >= '0' && content[j] <= '7') digits += content[j++];
+                    out += String.fromCharCode(parseInt(digits, 8));
+                    i = j;
+                    continue;
+                }
+                out += PDF_ESCAPES[next] ?? next;
+                i += 2;
+                continue;
+            }
+            if (c === '(') depth += 1;
+            if (c === ')') depth -= 1;
+            if (depth > 0) out += c;
+            i += 1;
+        }
+        return out;
+    };
+    const hex = (): string => {
+        // `content[i]` is '<' and the next is not.
+        const close = content.indexOf('>', i + 1);
+        const end = close < 0 ? content.length : close;
+        let digits = '';
+        for (let j = i + 1; j < end; j += 1) if (!/\s/.test(content[j])) digits += content[j];
+        i = end + 1;
+        return Buffer.from(digits, 'hex').toString('latin1');
+    };
+    while (i < content.length) {
+        const c = content[i];
+        if (c === '(') {
+            operands.push(literal());
+        } else if (c === '<' && content[i + 1] !== '<') {
+            operands.push(hex());
+        } else if (c === '[') {
+            i += 1;
+            let joined = '';
+            while (i < content.length && content[i] !== ']') {
+                if (content[i] === '(') joined += literal();
+                else if (content[i] === '<' && content[i + 1] !== '<') joined += hex();
+                else i += 1;
+            }
+            i += 1;
+            operands.push(joined);
+        } else if (/\s/.test(c)) {
+            i += 1;
+        } else {
+            let token = '';
+            while (i < content.length && !/[\s()<>[\]]/.test(content[i])) token += content[i++];
+            if (token === '') {
+                i += 1;
+                continue;
+            }
+            if (token === 'Tj' || token === 'TJ' || token === "'" || token === '"') {
+                if (operands.length > 0) shown.push(operands[operands.length - 1]);
+                operands = [];
+            } else if (!/^[-+.0-9]+$/.test(token) && !token.startsWith('/')) {
+                operands = [];
+            }
+        }
+    }
+    return shown;
 }
 
 /** The JSON a `summary.html` carries for its script, parsed. */

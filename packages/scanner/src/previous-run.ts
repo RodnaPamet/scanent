@@ -16,7 +16,7 @@
  * never stops the run: the comparison is a section of the page, not a
  * condition of writing it.
  */
-import { existsSync, lstatSync, readFileSync } from 'fs';
+import { closeSync, constants, existsSync, fstatSync, openSync, readSync } from 'fs';
 import { join } from 'path';
 
 import { DiffRefused, diffResults } from '@scanent/report/diff/diff';
@@ -35,11 +35,37 @@ export interface PreviousRunDeps {
     readonly readFile?: (path: string, max: number) => string | null;
 }
 
+/**
+ * Read a regular file of at most `max` bytes, or null. Opened once, without
+ * following a link, and judged and read through that one descriptor: checking
+ * the path and then reading it by name would let it be swapped in between.
+ * The read stops one byte past the cap, so a file that grows is still bounded.
+ */
 function readRegularFile(path: string, max: number): string | null {
-    if (!existsSync(path)) return null;
-    const stat = lstatSync(path);
-    if (!stat.isFile() || stat.size > max) return null;
-    return readFileSync(path, 'utf8');
+    let fd: number;
+    try {
+        fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    } catch (err) {
+        // Absent, or a link (ELOOP): neither is a file this run wrote.
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT' || code === 'ELOOP') return null;
+        throw err;
+    }
+    try {
+        const stat = fstatSync(fd);
+        if (!stat.isFile() || stat.size > max) return null;
+        const buffer = Buffer.alloc(stat.size + 1);
+        let length = 0;
+        while (length < buffer.byteLength) {
+            const read = readSync(fd, buffer, length, buffer.byteLength - length, null);
+            if (read === 0) break;
+            length += read;
+        }
+        if (length > stat.size) return null;
+        return buffer.subarray(0, length).toString('utf8');
+    } finally {
+        closeSync(fd);
+    }
 }
 
 /**

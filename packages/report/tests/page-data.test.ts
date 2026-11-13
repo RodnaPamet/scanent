@@ -27,6 +27,7 @@ import { standingOf } from '../src/render/words';
 import { scoreReportLocally } from '../src/results/score';
 import type { LocalResults } from '../src/results/types';
 import { ALPHA, BRAVO, fullRow, input, inventoryOf, standaloneBody, withSource } from './helpers/fixtures';
+import { withoutScriptElements } from './helpers/html';
 import { CHARLIE, emptyResults, identityResults, inventoryResults, laterBody, notJudgedResults, plainResults } from './helpers/results';
 
 const FIXTURES: readonly (readonly [string, () => LocalResults])[] = [
@@ -38,7 +39,7 @@ const FIXTURES: readonly (readonly [string, () => LocalResults])[] = [
     ['an unrelated incomplete source', () => scoreReportLocally(input(withSource(standaloneBody(), 'mcp', 'TIME_BOX')))],
 ];
 
-const staticOf = (page: string): string => page.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '');
+const staticOf = (page: string): string => withoutScriptElements(page);
 
 describe('1. the table model, rebuilt from a results file', () => {
     it.each(FIXTURES)('%s: every row says what the scorer stored', (_label, make) => {

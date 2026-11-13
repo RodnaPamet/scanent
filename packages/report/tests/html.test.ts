@@ -29,6 +29,7 @@ import { PAGE_SCRIPT } from '../src/render/page-script';
 import { scoreReportLocally } from '../src/results/score';
 import type { LocalResults } from '../src/results/types';
 import { fullRow, input, inventoryOf, standaloneBody, withSource } from './helpers/fixtures';
+import { withoutScriptElements } from './helpers/html';
 import { ALPHA, BRAVO, CHARLIE, emptyResults, hostile, identityResults, inventoryResults, notJudgedResults, plainResults, withIdentityBody } from './helpers/results';
 
 interface Tag {
@@ -108,7 +109,7 @@ const ALLOWED_ATTRS = new Set([
 ]);
 
 /** The page with its two script elements removed: what a reader with no script sees, and what is checked for words. */
-const staticOf = (page: string): string => page.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '');
+const staticOf = (page: string): string => withoutScriptElements(page);
 
 const PAYLOADS = [
     '<script>alert(1)</script>',
