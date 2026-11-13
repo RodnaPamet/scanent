@@ -18,6 +18,14 @@
  * 1.33 MiB (2,500 rows), shadow agents 62 KiB, orphan credentials 58 KiB, the
  * inventory 27 KiB, everything else under 10 KiB.
  *
+ * WITH THE INTERACTIVE VIEW (2026-11-13), the page also carries its data, for
+ * EVERY agent and EVERY finding, so its filters see the whole run: 5,000
+ * agents measured 12.1 MiB, of which the static sections above are 5.4 MiB,
+ * the agents' rows 2.5 MiB (about 530 bytes each: the model's cells as one
+ * digit per criterion) and the findings 3.8 MiB (each with its code,
+ * severity, subject and title, and the first 2,500 with their description).
+ * The view itself pages the matrix, so what is drawn does not grow with it.
+ *
  * What is held here:
  *
  *   1. The page stays under a stated size however large the run.
@@ -35,15 +43,18 @@ import { parseCsv } from './helpers/results';
 import { scaleAgentId, scaleBody, scaleResults } from './helpers/scale';
 import { CSV_BOM, renderAgentsCsv, renderFindingsCsv } from '../src/render/csv';
 import { RUN_FILE_NAMES } from '../src/render/files';
+import { compareHarnessMatrixRows } from '@rodnapamet/scanent-contract/harness-matrix-model';
+
 import { FINDINGS_MAX_ROWS, MATRIX_MAX_AGENTS, renderSummaryHtml, SECTION_MAX_ROWS } from '../src/render/html';
+import { FINDING_DESCRIPTIONS_MAX, summaryPageData } from '../src/render/page-data';
 import { renderResultsJson } from '../src/render/results-json';
 import { LocalResultsSchema } from '../src/results/schema';
 import { scoreReportLocally } from '../src/results/score';
 import type { LocalResults } from '../src/results/types';
 import { input } from './helpers/fixtures';
 
-/** The page may not pass this at any size of run. Measured 5.38 MiB at 5,000 agents; the headroom is for longer ids. */
-const MAX_PAGE_BYTES = 6 * 1024 * 1024;
+/** The page may not pass this at any size of run. Measured 12.1 MiB at 5,000 agents; the headroom is for longer ids. */
+const MAX_PAGE_BYTES = 14 * 1024 * 1024;
 
 type Section = 'completeness' | 'coverage' | 'summary' | 'matrix' | 'shadow' | 'orphans' | 'findings' | 'inventory' | 'provenance';
 
@@ -83,6 +94,18 @@ describe('summary.html at 5,000 agents', () => {
 
     it('1. the page is under its stated size', () => {
         expect(Buffer.byteLength(page, 'utf8')).toBeLessThan(MAX_PAGE_BYTES);
+    });
+
+    it('1b. the interactive view is given every agent and every finding, in the table model\'s order, whatever the static caps', () => {
+        const data = summaryPageData(results);
+        expect(data.agents).toHaveLength(N);
+        expect(data.findings).toHaveLength(results.findings.length);
+        expect(data.findings.filter((f) => f.description !== null)).toHaveLength(FINDING_DESCRIPTIONS_MAX);
+        const ranks = data.agents.map((a) => ({ discoveredId: a.id, level: a.level, barStatus: a.barStatus }));
+        expect([...ranks].sort(compareHarnessMatrixRows)).toEqual(ranks);
+        // The static matrix shows the first rows of that same order.
+        const matrix = sectionOf(page, 'matrix');
+        for (const a of data.agents.slice(0, 5)) expect(matrix).toContain(a.id);
     });
 
     it('2. every capped list says how many it shows, how many there are, and where the rest is', () => {

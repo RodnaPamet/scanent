@@ -241,7 +241,7 @@ describe('the last run', () => {
         for (const a of lastRun?.agents ?? []) expect(a.id).toMatch(/^agent-[0-9a-f]{8}$/);
         expect(lastRun?.counts?.findings).toBeGreaterThan(0);
         expect(Object.values(lastRun?.counts?.findingsByCode ?? {}).reduce((a, b) => a + b, 0)).toBe(lastRun?.counts?.findings);
-        expect(lastRun?.files.map((f) => f.name).sort()).toEqual(['agents.csv', 'findings.csv', 'report.signed.json', 'results.json', 'summary.html']);
+        expect(lastRun?.files.map((f) => f.name).sort()).toEqual(['agents.csv', 'findings.csv', 'report.pdf', 'report.signed.json', 'results.json', 'summary.html']);
         for (const f of lastRun?.files ?? []) expect(f.bytes).toBeGreaterThan(0);
         // A run records neither on disk, and the bundle says so instead of leaving a gap.
         expect(lastRun?.notRecorded).toEqual(['exitCode', 'durations']);

@@ -121,7 +121,7 @@ resources:
     cpu: 100m
     memory: 256Mi
   limits:
-    memory: 1Gi
+    memory: 1536Mi
 podAnnotations: {}
 nodeSelector: {}
 tolerations: []

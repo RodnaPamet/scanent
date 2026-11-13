@@ -139,9 +139,11 @@ describe('docs/guide/read-the-report.md: the ladder', () => {
     });
 
     it('names each section of the page by the heading the page gives it, and quotes the page\'s own sentences', () => {
-        const html = fs.readFileSync(path.join(REPO, 'packages/report/src/render/html.ts'), 'utf8');
+        const page = fs.readFileSync(path.join(REPO, 'packages/report/src/render/html.ts'), 'utf8');
+        // The page's sentences that stand for a code are kept in one table the page and the PDF share.
+        const html = `${page}\n${fs.readFileSync(path.join(REPO, 'packages/report/src/render/words.ts'), 'utf8')}`;
         const headings = [...new Set([...html.matchAll(/<h2 id="[a-z]+-h">([^<]+)<\/h2>/g)].map((m) => m[1]))];
-        expect(headings.length).toBe(11);
+        expect(headings.length).toBe(13);
         for (const heading of headings) expect(text).toContain(`### ${heading}\n`);
         // Sentences the guide puts in quotation marks are the page's own.
         for (const quoted of [

@@ -1,7 +1,7 @@
 /**
  * The file output: one run, one directory, whole or not at all.
  *
- *   1. The six files, their modes, the manifest and the pointer.
+ *   1. The seven files, their modes, the manifest and the pointer.
  *   2. A write that fails part-way leaves no run, no temporary directory and
  *      the previous pointer.
  *   3. Nothing that exists is replaced; a second run does not disturb the
@@ -24,7 +24,7 @@ import { PUBLIC_HEX, scanExample, tree } from './helpers/output-fixtures';
 
 const T1 = Date.parse('2026-11-03T03:30:00.000Z');
 const DAY = 24 * 3_600_000;
-const SIX = [...Object.values(RUN_FILE_NAMES)].sort();
+const SEVEN = [...Object.values(RUN_FILE_NAMES)].sort();
 
 let dir: string;
 let umask: number;
@@ -41,14 +41,14 @@ const modeOf = (p: string): number => fs.statSync(p).mode & 0o777;
 const sha = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
 
 describe('1. what one run writes', () => {
-    it('six files in runs/<scanId>, with the manifest\'s hashes, and a pointer to the run', async () => {
+    it('seven files in runs/<scanId>, the PDF among them as bytes, with the manifest\'s hashes, and a pointer to the run', async () => {
         const { raw, results } = await scanExample(T1);
         const written = writeRun({ dir }, { raw, results }, { now: () => T1 });
         const id = results.scan.id;
         expect(written).toEqual({ scanId: id, dir: `runs/${id}`, files: expect.any(Array), removedRuns: [] });
-        expect([...written.files].sort()).toEqual(SIX);
+        expect([...written.files].sort()).toEqual(SEVEN);
         const run = path.join(dir, 'runs', id);
-        expect(fs.readdirSync(run).sort()).toEqual(SIX);
+        expect(fs.readdirSync(run).sort()).toEqual(SEVEN);
         expect(fs.readdirSync(dir).sort()).toEqual(['latest.json', 'runs']);
         expect(fs.readdirSync(path.join(dir, 'runs'))).toEqual([id]);
 
@@ -61,13 +61,18 @@ describe('1. what one run writes', () => {
         expect(parsed).toEqual(results);
         expect(parsed.report.sha256).toBe(sha(report));
 
+        // The PDF is written as the bytes it was rendered to.
+        const pdf = fs.readFileSync(path.join(run, RUN_FILE_NAMES.pdf));
+        expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+        expect(pdf.subarray(-6).toString('latin1')).toMatch(/%%EOF\n?$/);
+
         const manifest = JSON.parse(fs.readFileSync(path.join(run, RUN_FILE_NAMES.manifest), 'utf8')) as {
             manifest: string;
             scanId: string;
             files: { name: string; bytes: number; sha256: string }[];
         };
         expect(manifest).toMatchObject({ manifest: 'scanent-run/1', scanId: id });
-        expect(manifest.files.map((f) => f.name).sort()).toEqual(SIX.filter((n) => n !== RUN_FILE_NAMES.manifest));
+        expect(manifest.files.map((f) => f.name).sort()).toEqual(SEVEN.filter((n) => n !== RUN_FILE_NAMES.manifest));
         for (const f of manifest.files) {
             const bytes = fs.readFileSync(path.join(run, f.name));
             expect(f.bytes).toBe(bytes.length);
@@ -89,7 +94,7 @@ describe('1. what one run writes', () => {
         const run = path.join(dir, 'runs', results.scan.id);
         expect(modeOf(path.join(dir, 'runs'))).toBe(RUN_DIR_MODE);
         expect(modeOf(run)).toBe(RUN_DIR_MODE);
-        for (const name of SIX) expect(modeOf(path.join(run, name))).toBe(RUN_FILE_MODE);
+        for (const name of SEVEN) expect(modeOf(path.join(run, name))).toBe(RUN_FILE_MODE);
         expect(modeOf(path.join(dir, 'latest.json'))).toBe(RUN_FILE_MODE);
         expect([RUN_DIR_MODE, RUN_FILE_MODE]).toEqual([0o750, 0o640]);
     });
@@ -113,14 +118,14 @@ describe('1. what one run writes', () => {
 });
 
 describe('2. a write that fails leaves nothing', () => {
-    it.each([1, 2, 3, 4, 5, 6])('failing on file %i of the run leaves no run, no temporary directory and the previous pointer', async (n) => {
+    it.each([1, 2, 3, 4, 5, 6, 7])('failing on file %i of the run leaves no run, no temporary directory and the previous pointer', async (n) => {
         const first = await scanExample(T1);
         writeRun({ dir }, first);
         const before = tree(dir);
 
         const second = await scanExample(T1 + DAY);
         let count = 0;
-        const failing = (p: string, content: string) => {
+        const failing = (p: string, content: string | Uint8Array) => {
             count += 1;
             if (count === n) throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
             fs.writeFileSync(p, content, { flag: 'wx' });
@@ -137,9 +142,10 @@ describe('2. a write that fails leaves nothing', () => {
         const pointer = fs.readFileSync(path.join(dir, 'latest.json'), 'utf8');
         const second = await scanExample(T1 + DAY);
         let count = 0;
-        const failing = (p: string, content: string) => {
+        const failing = (p: string, content: string | Uint8Array) => {
             count += 1;
-            if (count === 7) throw new Error('pointer refused');
+            // Six files and the manifest, then the pointer.
+            if (count === 8) throw new Error('pointer refused');
             fs.writeFileSync(p, content, { flag: 'wx' });
         };
         // The run is whole and stays; the failure is its own error and names the run, so it is not read as "nothing written".
@@ -172,7 +178,7 @@ describe('2. a write that fails leaves nothing', () => {
         expect(message).toMatch(/^results written to runs\/[a-z0-9-]+T\d{6}Z-[0-9a-f]{8}, but latest\.json was not updated \([A-Z]+\); it does not name this run$/);
         expect(message).not.toContain(dir);
         expect(fs.readdirSync(path.join(dir, 'runs'))).toEqual([results.scan.id]);
-        expect(fs.readdirSync(path.join(dir, 'runs', results.scan.id)).sort()).toEqual(SIX);
+        expect(fs.readdirSync(path.join(dir, 'runs', results.scan.id)).sort()).toEqual(SEVEN);
         expect(fs.readdirSync(dir).sort()).toEqual(['latest.json', 'runs']);
         expect(fs.statSync(path.join(dir, 'latest.json')).isDirectory()).toBe(true);
     });

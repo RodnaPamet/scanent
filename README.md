@@ -99,7 +99,7 @@ against fakes of the product's API.
 |---|---|
 | `packages/contract` (`@rodnapamet/scanent-contract`) | The report contract: strict schemas, the harness ladder, the findings planner, canonical JSON and signature verification. The one package a release publishes, to GitHub Packages; [docs/contract.md](docs/contract.md#use-the-reference-implementation) says how a consumer installs it. Not published yet |
 | `packages/scanner` (`@scanent/scanner`) | The scanner and its command line |
-| `packages/report` (`@scanent/report`) | Local results: scores a signed scan against the ladder with no tenant, from the report and an optional operator inventory; renders `results.json`, the two CSV files and `summary.html`; compares two runs. Pure functions |
+| `packages/report` (`@scanent/report`) | Local results: scores a signed scan against the ladder with no tenant, from the report and an optional operator inventory; renders `results.json`, the two CSV files and `summary.html`, and the data `report.pdf` is drawn from; compares two runs. Pure functions |
 
 ## Quick start, from source
 
@@ -235,16 +235,20 @@ exists is ever overwritten except the `latest.json` pointer:
   latest.json                  which run is the newest
   runs/<scanId>/
     summary.html               open this one
+    report.pdf                 the same results, as a document
     agents.csv                 one row per agent, one column per criterion
     findings.csv               one row per finding
     results.json               everything above, as data (schema scanent-results/1)
     report.signed.json         the signed report, byte for byte what would be posted
-    manifest.json              the names, sizes and SHA-256 of the other five
+    manifest.json              the names, sizes and SHA-256 of the other six
 ```
 
-`summary.html` is one self-contained file: no script, no image, no font and no
-request to anywhere, so it can be opened from disk, attached to a ticket or
-printed. What it says, in the order it says it:
+`summary.html` is one self-contained file: its data, its one script and its
+style are inside it, and it makes no request to anywhere, so it can be opened
+from disk, attached to a ticket or printed. With JavaScript on it can be
+filtered, sorted and searched, and each agent opened; with JavaScript off it is
+the same results as a plain page. `report.pdf` is the same results as a
+document. What it says, in the order it says it:
 
 - **Completeness first.** Which sources were read in full. An agent whose
   sources were not is shown as "Not judged", with the reason, and is given no

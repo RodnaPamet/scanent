@@ -71,7 +71,7 @@ function resultsOf(run: string): LocalResults {
 }
 
 describe('scan --out', () => {
-    it('--out <dir> --dry-run prints the signed report, posts nothing and writes the six files', async () => {
+    it('--out <dir> --dry-run prints the signed report, posts nothing and writes the seven files', async () => {
         expect(await main(['scan', '--config', writeConfig(configJson()), '--out', outDir, '--dry-run'], LOCAL_ENV)).toBe(0);
         expect(fetched).not.toHaveBeenCalled();
 

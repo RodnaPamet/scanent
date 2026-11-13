@@ -22,7 +22,7 @@
 #   5. `scan` without `--dry-run`, with nowhere to post to, exits non-zero:
 #      a scan that could not be delivered is never reported as a success;
 #   6. `scan --dry-run --out /out`, with the root filesystem still read-only
-#      and one writable mount, writes one directory per run holding the six
+#      and one writable mount, writes one directory per run holding the seven
 #      files, and a second run leaves the first run's files as they were;
 #   7. run as the invoking user (`--user`, with `--userns=keep-id` under Podman)
 #      into an output directory that user owns with mode 0700, a scan writes
@@ -248,12 +248,17 @@ first="$(inspect "$LIST_RUNS")"
 [ "$(printf '%s\n' "$first" | wc -l)" -eq 1 ] || fail "one run should have written one directory, found: $first"
 [[ "$first" =~ ^smoke-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || fail "the run directory is not named by a scan id: $first"
 files="$(hashes_of "$first" | sed 's/^[0-9a-f]*  //' | sort | tr '\n' ' ')"
-[ "$files" = "agents.csv findings.csv manifest.json report.signed.json results.json summary.html " ] \
-    || fail "the run holds '$files', not the six files"
+[ "$files" = "agents.csv findings.csv manifest.json report.pdf report.signed.json results.json summary.html " ] \
+    || fail "the run holds '$files', not the seven files"
 inspect 'process.exit(require("node:fs").statSync("/out/latest.json").isFile() ? 0 : 1)' || fail "no latest.json pointer was written"
 before="$(hashes_of "$first")"
-[ "$(printf '%s\n' "$before" | grep -cE '^[0-9a-f]{64}  ')" -eq 6 ] || fail "the first run's files could not be hashed"
-echo "ok   six files in runs/$first"
+[ "$(printf '%s\n' "$before" | grep -cE '^[0-9a-f]{64}  ')" -eq 7 ] || fail "the first run's files could not be hashed"
+# The PDF was written in the image's own process, by its pure-JavaScript library: a PDF, and not empty.
+inspect "
+const pdf = require('node:fs').readFileSync('/out/runs/$first/report.pdf');
+process.exit(pdf.length > 1000 && pdf.subarray(0, 5).toString('latin1') === '%PDF-' && pdf.subarray(-8).toString('latin1').includes('%%EOF') ? 0 : 1)" \
+    || fail "report.pdf is not a PDF"
+echo "ok   seven files in runs/$first, report.pdf a PDF"
 scan_out
 [ "$(inspect "$LIST_RUNS" | wc -l)" -eq 2 ] || fail "a second run should add a second directory"
 after="$(hashes_of "$first")"
@@ -279,13 +284,14 @@ run "${AS_ME[@]}" -e SCANNER_SIGNING_KEY "${MOUNTS[@]}" -v "$WORK/mine:/out" "$I
 mine="$(ls "$WORK/mine/runs")"
 [ "$(printf '%s\n' "$mine" | wc -l)" -eq 1 ] || fail "one run should have written one directory, found: $mine"
 grep -q '<html' "$WORK/mine/runs/$mine/summary.html" || fail "summary.html is not readable by the invoking user"
+[ "$(head -c 5 "$WORK/mine/runs/$mine/report.pdf")" = "%PDF-" ] || fail "report.pdf is not readable by the invoking user, or is not a PDF"
 [ "$(stat -c '%a %u' "$WORK/mine/runs/$mine")" = "750 $(id -u)" ] \
     || fail "the run directory is $(stat -c '%a, owned by uid %u' "$WORK/mine/runs/$mine"), not 750 owned by uid $(id -u)"
 for f in "$WORK/mine/runs/$mine"/*; do
     [ "$(stat -c '%a %u' "$f")" = "640 $(id -u)" ] || fail "$(basename "$f") is $(stat -c '%a, owned by uid %u' "$f"), not 640 owned by uid $(id -u)"
 done
 [ "$(stat -c '%a' "$WORK/mine")" = "700" ] || fail "the output directory's mode changed"
-echo "ok   uid $(id -u) reads its own run: directory 750, six files 640"
+echo "ok   uid $(id -u) reads its own run: directory 750, seven files 640"
 
 echo "== 8. the signing key from a mounted file"
 mkdir "$WORK/secrets"

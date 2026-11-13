@@ -22,6 +22,18 @@
  *   bounded    0.18 s   0.46 s           77 MiB        0.38 MiB   3.4 MiB        4.4 MiB
  *   full       0.84 s   1.94 s           366 MiB       3.79 MiB   33.7 MiB       5.3 MiB
  *
+ * AND WITH `report.pdf` AND THE PAGE'S INTERACTIVE VIEW, 2026-11-13, the same way:
+ *
+ *   shape      scan     score + render   heap growth   summary.html   report.pdf
+ *   bounded    0.20 s   2.2 s            264 MiB       5.1 MiB        0.34 MiB
+ *   full       0.88 s   7.2 s            870 MiB       11.8 MiB       0.34 MiB
+ *
+ * The render is now mostly the PDF's text layout (about 1.2 s at either size:
+ * the PDF lists at most 500 agents) and the page's data for every agent. The
+ * heap growth is measured before any collection, so it counts what the
+ * renderers allocated and dropped: after a collection the full shape holds
+ * 144 MiB more than before the scan.
+ *
  * The full shape made 1,645 requests, and the scan alone grew the heap by
  * 54 MiB: the rest is the local results, which hold every criterion of every
  * agent. Peak resident memory of the test process was 758 MiB, of which about
@@ -79,8 +91,8 @@ const FIXTURE_AGENTS = 3;
 // The report's cap exactly: 4,997 synthetic agents and the fixture's three.
 const FULL: SyntheticShape = { seed: 20261112, agents: MAX_AGENTS - FIXTURE_AGENTS, credentials: 10_000, targets: 50 };
 // About ten times the measured time and three times the measured heap: a shared runner is slow, and unevenly so.
-const BOUNDED_CEILINGS: Ceilings = { scanMs: 5_000, renderMs: 8_000, heapBytes: 300 * 1024 * 1024, reportBytes: 1024 * 1024 };
-const FULL_CEILINGS: Ceilings = { scanMs: 20_000, renderMs: 30_000, heapBytes: 1024 * 1024 * 1024, reportBytes: MAX_REPORT_BYTES };
+const BOUNDED_CEILINGS: Ceilings = { scanMs: 5_000, renderMs: 8_000, heapBytes: 450 * 1024 * 1024, reportBytes: 1024 * 1024 };
+const FULL_CEILINGS: Ceilings = { scanMs: 20_000, renderMs: 30_000, heapBytes: 1280 * 1024 * 1024, reportBytes: MAX_REPORT_BYTES };
 
 let base: string;
 beforeAll(() => {
@@ -159,11 +171,15 @@ function scaleSuite(shape: SyntheticShape, ceilings: Ceilings): void {
         expect(LocalResultsSchema.safeParse(JSON.parse(JSON.stringify(results))).success).toBe(true);
         expect(results.estate.agentCount).toBe(scan.body.agents.length);
         expect(results.estate.notJudgedCount).toBe(0);
-        const byName = Object.fromEntries(files.map((f) => [f.name, f.content]));
+        const byName = Object.fromEntries(files.flatMap((f) => (typeof f.content === 'string' ? [[f.name, f.content]] : [])));
         expect((JSON.parse(byName['results.json']) as LocalResults).agents).toHaveLength(scan.body.agents.length);
         expect(byName['agents.csv'].split('\r\n').length - 2).toBe(scan.body.agents.length);
         expect(byName['findings.csv'].split('\r\n').length - 2).toBe(results.findings.length);
-        expect(Buffer.byteLength(byName['summary.html'], 'utf8')).toBeLessThan(6 * 1024 * 1024);
+        // The page carries every agent for its interactive view: about half a kilobyte each beside the capped static page.
+        expect(Buffer.byteLength(byName['summary.html'], 'utf8')).toBeLessThan(14 * 1024 * 1024);
+        const pdf = files.find((f) => f.name === 'report.pdf')?.content as Uint8Array;
+        expect(Buffer.from(pdf.subarray(0, 5)).toString('latin1')).toBe('%PDF-');
+        expect(pdf.byteLength).toBeLessThan(4 * 1024 * 1024);
     });
 
     it('time and memory stay under their ceilings', () => {

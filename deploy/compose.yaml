@@ -34,7 +34,7 @@ services:
     restart: unless-stopped
     init: false
     pids_limit: 256
-    mem_limit: 1g
+    mem_limit: 1536m
     # NAMES and values of the credentials the configuration names. A value is
     # taken as written: no quotes.
     env_file:

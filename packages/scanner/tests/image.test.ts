@@ -175,7 +175,8 @@ describe('deploy/Dockerfile', () => {
         for (const source of copied.filter((s) => /^\/src\/packages\/[^/]+\/node_modules$/.test(s))) {
             expect(prune).toMatch(new RegExp(`mkdir -p [^&]*${source.slice('/src/'.length)}( |$)`));
         }
-        expect(prune).toContain("for (const m of ['@rodnapamet/scanent-contract/harness-contract', 'js-yaml', 'typescript', 'zod']) require(m)");
+        // Every run-time dependency the scanner declares resolves from where it runs, pdfkit (report.pdf) among them.
+        expect(prune).toContain("for (const m of ['@rodnapamet/scanent-contract/harness-contract', 'js-yaml', 'pdfkit', 'typescript', 'zod']) require(m)");
         // The scanner runs the report package's compiled code, and that package its own dependencies.
         expect(prune).toContain("test -f node_modules/@scanent/report/dist/results/score.js");
         expect(prune).toContain("require('@scanent/report/results/score')");

@@ -1,18 +1,19 @@
 # Read the report
 
-Each scan writes one folder with six files:
+Each scan writes one folder with seven files:
 
 | File | What it is for |
 |---|---|
-| `summary.html` | The report to read. Open it in a browser. It is one file, loads nothing from the internet, and prints |
+| `summary.html` | The report to read. Open it in a browser. It is one file, loads nothing from the internet, and prints. With JavaScript on, its top half lets you filter, sort and open each agent; with JavaScript off, it is the same results as a plain page |
+| `report.pdf` | The same report as a document, to file, print or send. Its text can be selected and searched |
 | `agents.csv` | One line for each agent, for a spreadsheet |
 | `findings.csv` | One line for each finding, for a spreadsheet |
 | `results.json` | Everything above, as data for another program |
 | `report.signed.json` | The signed record of what the scanner read. The other files are worked out from it |
-| `manifest.json` | The size and a checksum of each of the other five files, to check that a copy of the folder is whole. A checksum is a short code worked out from a file; if the file changes, so does the code |
+| `manifest.json` | The size and a checksum of each of the other six files, to check that a copy of the folder is whole. A checksum is a short code worked out from a file; if the file changes, so does the code |
 
-This page explains `summary.html` from top to bottom, then the two
-spreadsheets, then how to compare two scans.
+This page explains `summary.html` from top to bottom, then `report.pdf`, then
+the two spreadsheets, then how to compare two scans.
 
 ## The one rule behind everything
 
@@ -134,6 +135,20 @@ they can call, and which individual checks were seen to fail.
 
 ## The page, from top to bottom
 
+The page has two layers.
+
+- **The plain page** is every section below, in this order. It is what you see
+  with JavaScript turned off, and what prints.
+- **The interactive view** sits after the first two sections, once the page's
+  own script has run. It shows the same results with controls, and it hides the
+  plain sections it repeats (the summary, the main table, the shadow agents,
+  the identities, the findings and the comparison) so they are not shown
+  twice. Everything it shows comes from the same results; it works nothing
+  out for itself. [The interactive view](#the-interactive-view) describes it.
+
+Neither layer loads anything. The page carries its own data and its own
+script, and tells the browser to run that script and nothing else.
+
 ### The top of the page
 
 The name you gave the scan, its id, and the time of the scan. Then one line:
@@ -221,7 +236,7 @@ The first columns:
 | Registration | "Not registered", "Declared by the operator" (it is in your inventory) or "In the Inflect register" |
 | Reach | "Read only", "Write or external", or "Unknown" |
 | Level | The level, or "Not judged" |
-| Bar | The level expected of this agent, and "At bar" or "Below bar" |
+| Bar | The level expected of this agent, and "At bar", "Below bar", or "Held to no bar". An unregistered identity is held to no bar: its row shows the bar its reach would carry and "Held to no bar", and it is never counted as below one |
 
 Then one small cell for each check:
 
@@ -298,6 +313,24 @@ Keys and secrets that the scan saw attached to no agent. A second list, "Seen
 unbound, not concluded", holds those the scan could not be sure about, because
 a system that might have named their user was not read in full.
 
+### Since the previous run
+
+Shown in a run written to a folder (`--out`). Before the scanner writes a run,
+it reads the run the folder last pointed to (`latest.json`) and compares the
+two, by the same rules as `scanent diff`. The section starts with one of that
+comparison's three sentences (see [Comparing two runs](#comparing-two-runs)),
+names the earlier run, and lists level changes, new agents, agents gone,
+agents not seen, changes in completeness, and findings opened or closed. Each
+list shows at most 200 lines and says how many it holds.
+
+Two other answers are possible:
+
+- "This output directory held no earlier run, so there is nothing to compare
+  with." The first run in a folder says this.
+- "Not compared with …", and why: the earlier run is from another scanner, was
+  scored on another version of the ladder, is not earlier, or its results file
+  could not be read. A file that could not be read is never half-read.
+
 ### Findings
 
 Every finding, most severe first. Click a title to open its explanation.
@@ -312,6 +345,15 @@ Shown only when you gave an inventory. How many lines it has, how many
 matched an agent the scan found, and which did not. A line that matched
 nothing is "declared, not found by this scan". That is not a statement that
 the agent is gone: the scan may not read the place where it lives.
+
+### What this page does not say
+
+The last section of the page, and of `report.pdf`. Seven sentences that say
+what the results cannot tell you: that a system not read in full closes
+nothing, that a check nobody answered counts as not met, that a declaration is
+never shown as an observation, that an unregistered identity is held to no
+bar, that an empty scan is a finding, that "no payment client seen" is not
+"cannot pay", and that the signed report is the record.
 
 ### Provenance
 
@@ -333,6 +375,66 @@ Two lines here are easy to misread:
   read an Inflect register itself. "Taken from the report as stated; not
   verified by this run" appears only when the page was made later from
   somebody else's report.
+
+## The interactive view
+
+With JavaScript on, the page shows the following after "What this scan could
+not evidence". Every count is over the whole scan, never over what a filter
+shows.
+
+- **Overview.** First, which systems were not read in full, if any. Then the
+  number of agents below their bar, beside a ladder of how many judged agents
+  are on each level, and a row of tiles: agents found, not judged, below their
+  bar, shadow agents, unregistered identities, orphan credentials, can pay,
+  sources incomplete and findings. Selecting a tile or a level filters the
+  table below to those agents.
+- **Three charts.** Judged agents per level, with a dashed line after the
+  highest level this scan could have shown: a level to its right could not
+  have been stated by this scan, so an empty bar there says nothing. Findings
+  by severity. And each system that was read, incomplete ones first, with how
+  many agents and records came from it.
+- **Since the previous run**, when there was one, as above.
+- **Agents and criteria.** The same table as the plain page, with every agent,
+  in pages of 25 to 250 rows. You can search by id, name, owner, purpose or
+  system, filter by level, by where an agent stands against its bar, by
+  registration, by the system it was found through, by finding, by payment,
+  and by the state of one check, and sort. Selecting an agent opens a panel
+  with everything about it: where it was found, who owns it (as declared and
+  as observed), its level and bar, why it was not judged if it was not, every
+  check with its evidence, and its findings. Selecting a cell opens that one
+  check: its state, whether it was observed or declared, and the evidence. In
+  the table, the arrow keys move between cells.
+- **Shadow agents and unregistered identities**, each a list you can page
+  through, each name opening the same panel.
+- **Findings**, filtered by severity, by code, or by words in the title.
+
+An evidence reference is shown as text. It is a link only when it is an
+address starting with `https://`; one that carries a user name or password is
+never a link, and that part is shown as `***`.
+
+On a scan of thousands of agents the page is larger: it carries every agent
+and every finding for these controls (about 12 MB for 5,000 agents). The
+findings past the 2,500 most severe are listed with their titles; their
+descriptions are in `findings.csv`.
+
+## report.pdf
+
+The same results as a document, in this order: a cover with the scan's id and
+time, the scanner's version and the checksum of its manifest, and the estate
+in numbers; completeness per source and what the scan could not evidence;
+findings by severity, then each finding; one line for each agent with its
+registration, reach, level and bar; the table of agents and checks, by the
+same letters as the page, on landscape pages; a section for each agent with
+every check under its state; the shadow agents, unregistered identities,
+orphan credentials and agents that can pay; the comparison with the previous
+run; and what the document does not say.
+
+On a large scan the document lists the first 500 agents, gives a section of
+their own to the first 100, and describes the first 300 findings in full, in
+the same order as the page, and says where the rest are. Its text is real text
+in the standard PDF fonts. A character those fonts cannot show (most
+non-Latin scripts) is written as a code such as `\u{540d}`; the page and the
+spreadsheets show it as it was.
 
 ## Words the results use
 

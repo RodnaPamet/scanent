@@ -4,7 +4,7 @@
  *   <dir>/latest.json                 a pointer to the newest run
  *   <dir>/runs/<scanId>/              report.signed.json, results.json,
  *                                     agents.csv, findings.csv, summary.html,
- *                                     manifest.json
+ *                                     report.pdf, manifest.json
  *
  * A run is written under a temporary name and renamed into place, so a reader
  * never opens half a run and a failed write leaves nothing behind. Nothing
@@ -14,9 +14,11 @@
  * a full volume fails loudly.
  *
  * NOTHING SECRET IS WRITTEN. Before the first byte, the results are walked
- * for a secret-shaped member and each rendered file is checked as one text.
- * A hit refuses the whole run and names the member or the file, never the
- * value (`OutputRefusedLocally`).
+ * for a secret-shaped member, and so is the data the page carries (which also
+ * holds the comparison with the previous run); each rendered text file is
+ * checked as one text, and the PDF by every string written into it. A hit
+ * refuses the whole run and names the member or the file, never the value
+ * (`OutputRefusedLocally`).
  *
  * This is the only module of the scanner that writes a file.
  */
@@ -29,8 +31,11 @@ import { firstSecretShapedMember } from '@rodnapamet/scanent-contract/harness-fi
 import { renderAgentsCsv, renderFindingsCsv } from '@scanent/report/render/csv';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
 import { renderSummaryHtml } from '@scanent/report/render/html';
+import { summaryPageData, type PreviousRun, type SummaryContext } from '@scanent/report/render/page-data';
 import { renderResultsJson, stableJson } from '@scanent/report/render/results-json';
 import type { LocalResults } from '@scanent/report/results/types';
+
+import { renderReportPdf, type RenderedPdf } from './report-pdf';
 
 /** A scan id as `scan.ts` builds it: `<estate>-<UTC stamp>-<8 hex>`. The only name a run directory takes. */
 export const SCAN_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}-(\d{8}T\d{6}Z)-[0-9a-f]{8}$/;
@@ -62,15 +67,20 @@ export class PointerNotUpdated extends Error {
 
 export interface RunFile {
     readonly name: string;
-    readonly content: string;
+    /** Text, written as UTF-8, or bytes (the PDF), written as they are. */
+    readonly content: string | Uint8Array;
 }
 
-/** How each derived file is rendered. A TEST SEAM: production uses the report package's renderers. */
+/**
+ * How each derived file is rendered. A TEST SEAM: production uses the report
+ * package's renderers and this package's PDF. `pdf` absent is the real one.
+ */
 export interface RunRenderers {
     readonly results: (results: LocalResults) => string;
     readonly agents: (results: LocalResults) => string;
     readonly findings: (results: LocalResults) => string;
-    readonly summary: (results: LocalResults) => string;
+    readonly summary: (results: LocalResults, context?: SummaryContext) => string;
+    readonly pdf?: (results: LocalResults, context?: SummaryContext) => RenderedPdf;
 }
 
 const RENDERERS: RunRenderers = {
@@ -78,7 +88,13 @@ const RENDERERS: RunRenderers = {
     agents: renderAgentsCsv,
     findings: renderFindingsCsv,
     summary: renderSummaryHtml,
+    pdf: renderReportPdf,
 };
+
+/** The size of a file's content in bytes. */
+export function contentBytes(content: string | Uint8Array): number {
+    return typeof content === 'string' ? Buffer.byteLength(content, 'utf8') : content.byteLength;
+}
 
 /**
  * Refuse a text or a value that holds a secret's shape. `where` is what the
@@ -97,33 +113,46 @@ export function assertNoSecretShape(value: unknown, where: string): void {
  * A file's text as the shape check reads it. A CSV's cells are separate
  * values, and two of them side by side can look like one secret (a URL with a
  * port, then a cell holding an `@`), so the separator between two cells is
- * read as a space. Everything inside a cell is checked as written.
+ * read as a space; so is the separator between two strings of the page's
+ * JSON data block. Everything inside a cell or a string is checked as written,
+ * and every string of the data block is also checked on its own, as data.
  */
-function textAsRead(file: RunFile): string {
-    return file.name.endsWith('.csv') ? file.content.replace(/","/g, '" "') : file.content;
+function textAsRead(file: { readonly name: string; readonly content: string }): string {
+    if (file.name.endsWith('.csv')) return file.content.replace(/","/g, '" "');
+    // The page's data block is JSON: two strings beside each other (`"…","…"`, `"…":"…"`) are two values, read apart as a CSV's cells are.
+    if (file.name.endsWith('.html')) return file.content.replace(/"[,:]"/g, '" "');
+    return file.content;
 }
 
 /**
- * The five files of one run, rendered and checked. The signed report is the
+ * The six files of one run, rendered and checked. The signed report is the
  * bytes `signReport` produced, which it already refused to sign with a
- * secret-shaped member; the four derived files are checked here, first as
- * data and then each as the text that would be written.
+ * secret-shaped member; the five derived files are checked here, first as
+ * data (the results, then the data the page carries), and then each as what
+ * would be written: a text file as its text, the PDF as every string written
+ * into it.
+ *
+ * `context` is what the run knew of the run before it; absent, the page has
+ * no comparison section.
  */
-export function renderRunFiles(raw: string, results: LocalResults, renderers: RunRenderers = RENDERERS): RunFile[] {
+export function renderRunFiles(raw: string, results: LocalResults, renderers: RunRenderers = RENDERERS, context: SummaryContext = {}): RunFile[] {
     assertNoSecretShape(results, RUN_FILE_NAMES.results);
-    const derived: RunFile[] = [
+    assertNoSecretShape(summaryPageData(results, context), RUN_FILE_NAMES.summary);
+    const texts = [
         { name: RUN_FILE_NAMES.results, content: renderers.results(results) },
         { name: RUN_FILE_NAMES.agents, content: renderers.agents(results) },
         { name: RUN_FILE_NAMES.findings, content: renderers.findings(results) },
-        { name: RUN_FILE_NAMES.summary, content: renderers.summary(results) },
+        { name: RUN_FILE_NAMES.summary, content: renderers.summary(results, context) },
     ];
-    for (const file of derived) assertNoSecretShape(textAsRead(file), file.name);
-    return [{ name: RUN_FILE_NAMES.report, content: raw }, ...derived];
+    for (const file of texts) assertNoSecretShape(textAsRead(file), file.name);
+    const pdf = (renderers.pdf ?? renderReportPdf)(results, context);
+    assertNoSecretShape(pdf.text, RUN_FILE_NAMES.pdf);
+    return [{ name: RUN_FILE_NAMES.report, content: raw }, ...texts, { name: RUN_FILE_NAMES.pdf, content: pdf.bytes }];
 }
 
 export interface FileOutputDeps {
     /** Write one new file. A TEST SEAM: production creates it exclusively, writes, and syncs. */
-    readonly writeFile?: (path: string, content: string) => void;
+    readonly writeFile?: (path: string, content: string | Uint8Array) => void;
     /** Make one directory, its parent existing. A TEST SEAM: production calls `mkdirSync`, never recursively. */
     readonly mkdir?: (path: string, mode: number) => void;
     readonly now?: () => number;
@@ -131,11 +160,12 @@ export interface FileOutputDeps {
 }
 
 /** Write one new file, creating it: a file that exists is refused (`EEXIST`) and left as it was. */
-export function writeNewFile(path: string, content: string): void {
+export function writeNewFile(path: string, content: string | Uint8Array): void {
     // `wx`: a file that exists is an error, never something to replace.
     const fd = openSync(path, 'wx', RUN_FILE_MODE);
     try {
-        writeSync(fd, content, null, 'utf8');
+        if (typeof content === 'string') writeSync(fd, content, null, 'utf8');
+        else writeSync(fd, content);
         fsyncSync(fd);
     } finally {
         closeSync(fd);
@@ -241,7 +271,12 @@ export interface WrittenRun {
  */
 export function writeRun(
     output: { readonly dir: string; readonly retainRuns?: number },
-    run: { readonly raw: string; readonly results: LocalResults },
+    run: {
+        readonly raw: string;
+        readonly results: LocalResults;
+        /** The run the directory named as the latest before this one, compared or not; null when there was none. */
+        readonly previous?: PreviousRun | null;
+    },
     deps: FileOutputDeps = {},
 ): WrittenRun {
     const scanId = run.results.scan.id;
@@ -250,7 +285,7 @@ export function writeRun(
     const write = deps.writeFile ?? writeNewFile;
 
     // Everything is rendered and checked before the first byte is written.
-    const files = renderRunFiles(run.raw, run.results, deps.renderers);
+    const files = renderRunFiles(run.raw, run.results, deps.renderers, run.previous === undefined ? {} : { previous: run.previous });
     const manifest: RunFile = {
         name: RUN_FILE_NAMES.manifest,
         content: stableJson({
@@ -258,8 +293,8 @@ export function writeRun(
             scanId,
             files: files.map((f) => ({
                 name: f.name,
-                bytes: Buffer.byteLength(f.content, 'utf8'),
-                sha256: createHash('sha256').update(f.content, 'utf8').digest('hex'),
+                bytes: contentBytes(f.content),
+                sha256: (typeof f.content === 'string' ? createHash('sha256').update(f.content, 'utf8') : createHash('sha256').update(f.content)).digest('hex'),
             })),
         }),
     };
