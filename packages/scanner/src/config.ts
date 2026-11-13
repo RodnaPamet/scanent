@@ -11,11 +11,13 @@
  *   • NO WRITE CREDENTIAL HAS A FIELD. The network sources take one READ
  *     credential each — an Okta SSWS token for a read-only administrator, an
  *     Entra client that holds `Key Vault Reader`, an Entra client that holds
- *     `Application.Read.All`, a LangSmith workspace Viewer key, an MCP server's
+ *     `Application.Read.All` (and, for the integrations scanner,
+ *     `Directory.Read.All`), a LangSmith workspace Viewer key, an MCP server's
  *     read token (`readTokenEnv`, one per server, optional), a GitHub
  *     fine-grained token holding Contents: read and Secrets: read, a Google
  *     service-account key for an account holding
- *     `roles/iam.serviceAccountViewer` — the `code`
+ *     `roles/iam.serviceAccountViewer`, a GitHub fine-grained token holding the
+ *     organisation permissions Administration: read and Webhooks: read — the `code`
  *     source takes none, and the only other credential is the
  *     Inflect API key that posts the report, which needs the
  *     `admin:harness_ingest` scope and nothing else (contract, Transport).
@@ -132,6 +134,39 @@ const EntraIntegrationsSourceConfigSchema = z
         readSignInActivity: z.boolean().default(false),
         /** An application with no sign-in within this many days is unused. The owner's default is 90. */
         unusedDays: z.number().int().min(MIN_UNUSED_DAYS).max(MAX_UNUSED_DAYS).default(DEFAULT_UNUSED_DAYS),
+    })
+    .strict();
+
+/**
+ * The integrations scanner's Okta reader: what the org has granted to the
+ * applications in it. Its own kind beside `okta-app`, which may name the same
+ * org and the same token variable: both read with a Read-only Administrator's
+ * SSWS token. Okta records no last use of an application outside its System
+ * Log, so there is no sign-in setting here: "unused" is not concluded for Okta.
+ */
+const OktaIntegrationsSourceConfigSchema = z
+    .object({
+        kind: z.literal('okta-integrations'),
+        orgUrl: originOnHosts(OKTA_HOST_SUFFIXES, 'orgUrl'),
+        apiTokenEnv: envName,
+    })
+    .strict();
+
+/** A GitHub organisation's login, as GitHub allows one. */
+export const GITHUB_ORGANIZATION_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
+
+/**
+ * The integrations scanner's GitHub reader: the apps installed on one
+ * organisation and its webhooks, read from `api.github.com`. Its own kind
+ * beside `cicd`, with its own token: these are the organisation's endpoints,
+ * and they take an owner's fine-grained token holding the organisation
+ * permissions Administration: read and Webhooks: read.
+ */
+const GitHubIntegrationsSourceConfigSchema = z
+    .object({
+        kind: z.literal('github-integrations'),
+        organization: z.string().regex(GITHUB_ORGANIZATION_LOGIN, 'an organisation login'),
+        tokenEnv: envName,
     })
     .strict();
 
@@ -347,6 +382,8 @@ export const SourceConfigSchema = z.discriminatedUnion('kind', [
     GitHubActionsSourceConfigSchema,
     GcpServiceAccountSourceConfigSchema,
     EntraIntegrationsSourceConfigSchema,
+    OktaIntegrationsSourceConfigSchema,
+    GitHubIntegrationsSourceConfigSchema,
 ]);
 
 const OutputConfigSchema = z.discriminatedUnion('kind', [
@@ -563,6 +600,10 @@ export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code'
             return source.keyEnv;
         case 'entra-integrations':
             return source.clientSecretEnv;
+        case 'okta-integrations':
+            return source.apiTokenEnv;
+        case 'github-integrations':
+            return source.tokenEnv;
     }
 }
 

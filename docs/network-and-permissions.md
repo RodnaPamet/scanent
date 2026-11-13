@@ -9,12 +9,12 @@ signed report, so it lists what the code can do and nothing else.
 Scanner `inflect-agent-harness-scanner`, version 0.14.0. One image holds 2 scanners, and this page lists the requests of all of them:
 
 - The agent scanner: report contract `inflect-agent-harness/4`, written as `report.signed.json`; source kinds `entra-sp`, `okta-app`, `vault`, `mcp`, `runtime`, `cicd`, `inflect-register`, `code`, `gcp-sa`.
-- The integrations scanner: report contract `scanent-integrations/1`, written as `report.integrations.signed.json`; source kinds `entra-integrations`.
+- The integrations scanner: report contract `scanent-integrations/1`, written as `report.integrations.signed.json`; source kinds `entra-integrations`, `okta-integrations`, `github-integrations`.
 
 A run reads only the sources its configuration names, and writes one signed report for each scanner
 whose sources it names, all with the same key and the same scan id.
 
-Manifest hash: `sha256:f8179691abcc6bc98b293eaa12abbe5b6ee98f14e4d6a067cfaec6537d6a5317`
+Manifest hash: `sha256:afd44988937137c9dfccf6505c0d8801c4518ced0f7cff7fe7b55920159c3f06`
 
 The hash is SHA-256 over the canonical JSON of the declared surface, every scanner's requests in one.
 A scanner that can reach anything this page does not list has a different hash, and every report it
@@ -46,6 +46,8 @@ To list the hosts one configuration reaches, run `scanent hosts --config <file>`
 | agents | `code` | none | none | Read access to the listed directories for the user the scanner runs as |
 | agents | `inflect-register` | the tenant you configure | the same tenant | An API key bound to the scanner agent with the admin:harness_ingest scope, plus mcp:read when the register is read |
 | integrations | `entra-integrations` | `graph.microsoft.com` (fixed) | `login.microsoftonline.com` | Microsoft Graph application permissions Application.Read.All and Directory.Read.All, with admin consent; AuditLog.Read.All as well only when readSignInActivity is set |
+| integrations | `okta-integrations` | the Okta org you configure, which must be on `*.okta.com` or `*.oktapreview.com` | none | An SSWS API token created by a user holding the Read-only Administrator role only. It may be the token the okta-app source uses |
+| integrations | `github-integrations` | `api.github.com` (fixed) | none | A fine-grained personal access token whose resource owner is the organisation, with the organisation permissions Administration: Read-only and Webhooks: Read-only, created by an organisation owner |
 
 ## The agent scanner
 
@@ -294,6 +296,56 @@ Before reading, one token exchange: `POST https://login.microsoftonline.com/{dir
 - `DELETE /v1.0/servicePrincipals/{id}/appRoleAssignments/{assignment}`: removes an application permission.
 - `GET /v1.0/users/{id}`: the person who consented is not read; a grant made for named people is a count.
 - `GET /v1.0/auditLogs/signIns`: sign-in records of people are not read; only each application's own last sign-in is.
+
+### Okta (applications and the Okta API scopes granted to them)
+
+Source kind `okta-integrations`. Reads from: the Okta org you configure, which must be on `*.okta.com` or `*.oktapreview.com`.
+
+| Method | Path | What is kept |
+|---|---|---|
+| GET | `/api/v1/apps` | Every application of the org: id, the definition's name key (to leave out Okta's own Admin Console, End-User Dashboard and Browser Plugin, which are counted and not reported), label (kept only when printable and not secret-shaped), status and sign-on mode. No credentials, settings or profile are kept |
+| GET | `/api/v1/apps/{app}/grants` | One application's consent grants: the Okta API scope of each, and whether it is active. Who consented (`userId`), the client id and the issuer are dropped |
+
+**Grant asked for.** An SSWS API token created by a user holding the Read-only Administrator role only. It may be the token the okta-app source uses.
+
+**Must not be granted.**
+
+- Super Administrator
+- Org Administrator
+- App Administrator
+- API Access Management Administrator
+
+**Never requested.** The API offers these, and the scanner cannot make them:
+
+- `GET /api/v1/apps/{app}/credentials/secrets`: returns client secrets.
+- `DELETE /api/v1/apps/{app}/grants/{grant}`: revokes a grant.
+- `GET /api/v1/logs`: the System Log is not read; it is where Okta keeps an application's use, which is why "unused" is not concluded for Okta.
+- `GET /api/v1/users/{user}`: the person who consented is not read.
+
+### GitHub (an organisation's app installations and webhooks)
+
+Source kind `github-integrations`. Reads from: `api.github.com` (fixed).
+
+| Method | Path | What is kept |
+|---|---|---|
+| GET | `/orgs/{org}/installations` | The organisation's GitHub App installations: installation and app ids, the app's slug, its permissions and their levels, its repository selection, its events and whether it is suspended |
+| GET | `/orgs/{org}/hooks` | The organisation's webhooks: id, events, whether active, the creation date, and the target's HOST. The URL is reduced to its host where it is read; its path, its query and the hook's secret are never kept, logged or reported |
+
+**Grant asked for.** A fine-grained personal access token whose resource owner is the organisation, with the organisation permissions Administration: Read-only and Webhooks: Read-only, created by an organisation owner.
+
+**Must not be granted.**
+
+- Any Read and write permission
+- Any repository permission
+- Members, or any organisation permission other than the two above
+- A classic token: listing webhooks takes admin:org_hook, which can also change them
+
+**Never requested.** The API offers these, and the scanner cannot make them:
+
+- `GET /orgs/{org}/hooks/{hook}/config`: returns a webhook's configuration, its URL included.
+- `GET /orgs/{org}/hooks/{hook}/deliveries`: returns what was sent to a webhook.
+- `DELETE /orgs/{org}/installations/{installation}`: uninstalls an app.
+- `GET /orgs/{org}/audit-log`: the audit log is not read; it is where an installation's use is, which is why "unused" is not concluded for GitHub.
 
 ## Token exchanges
 

@@ -50,8 +50,8 @@ const only = (kind: (typeof KINDS)[number], fields: string[]): string[] => ['acm
 const CASES: [(typeof KINDS)[number], string[], InitAnswers['sources'][number]][] = [
     ['entra-sp', [GUID, GUID, 'n'], { kind: 'entra-sp', directoryId: GUID, clientId: GUID }],
     ['vault', ['https://acme-agents.vault.azure.net, https://acme-two.vault.azure.net', 'contoso.onmicrosoft.com', GUID], { kind: 'vault', vaultUrls: ['https://acme-agents.vault.azure.net', 'https://acme-two.vault.azure.net'], directoryTenantId: 'contoso.onmicrosoft.com', clientId: GUID }],
-    ['okta-app', ['https://acme.okta.com'], { kind: 'okta-app', orgUrl: 'https://acme.okta.com' }],
-    ['cicd', ['acme/payments-api,acme/web'], { kind: 'cicd', repositories: ['acme/payments-api', 'acme/web'] }],
+    ['okta-app', ['https://acme.okta.com', 'n'], { kind: 'okta-app', orgUrl: 'https://acme.okta.com' }],
+    ['cicd', ['acme/payments-api,acme/web', 'n'], { kind: 'cicd', repositories: ['acme/payments-api', 'acme/web'] }],
     ['gcp-sa', ['acme-prod-204'], { kind: 'gcp-sa', projects: ['acme-prod-204'] }],
     ['runtime', ['eu', GUID], { kind: 'runtime', endpoint: { cloud: 'eu' }, workspaceId: GUID }],
     ['mcp', ['crm', 'https://mcp.acme.example/crm/mcp', 'y', 'open', 'https://mcp.acme.example/open/mcp', 'n', ''], { kind: 'mcp', servers: [{ label: 'crm', url: 'https://mcp.acme.example/crm/mcp', readToken: true }, { label: 'open', url: 'https://mcp.acme.example/open/mcp' }] }],
@@ -116,6 +116,18 @@ describe('the prompts give the answers a file would', () => {
         expect(planInit(answers).config.sources.map((x) => x.kind)).toEqual(['entra-sp', 'entra-integrations']);
     });
 
+    it('the integrations scanner is offered with Okta, on the same org and token, and with GitHub Actions, for an organisation', async () => {
+        const okta = await collectAnswers(script(only('okta-app', ['https://acme.okta.com', 'y'])).io);
+        expect(okta.sources).toEqual([{ kind: 'okta-app', orgUrl: 'https://acme.okta.com' }, { kind: 'okta-integrations', orgUrl: 'https://acme.okta.com' }]);
+        // One token, named once in the template, saying what both sources need.
+        const shared = planInit(okta).credentialNames.filter((c) => c.name === 'OKTA_API_TOKEN');
+        expect(shared).toHaveLength(1);
+        expect(shared[0].for).toContain('Okta integrations');
+        const github = await collectAnswers(script(only('cicd', ['acme/web', 'y', 'acme'])).io);
+        expect(github.sources).toEqual([{ kind: 'cicd', repositories: ['acme/web'] }, { kind: 'github-integrations', organization: 'acme' }]);
+        expect(planInit(github).config.sources).toContainEqual({ kind: 'github-integrations', organization: 'acme', tokenEnv: 'GITHUB_INTEGRATIONS_TOKEN' });
+    });
+
     it('a self-hosted LangSmith is taken by its origin, and a blank workspace is left out', async () => {
         const answers = await collectAnswers(script(only('runtime', ['https://langsmith.acme.example', ''])).io);
         expect(answers.sources).toEqual([{ kind: 'runtime', endpoint: { selfHosted: 'https://langsmith.acme.example' } }]);
@@ -145,8 +157,8 @@ describe('a secret-shaped answer', () => {
         ['the Entra directory id', ['acme-prod', 'y'], [GUID, GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['the Entra client id', ['acme-prod', 'y', GUID], [GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['the vault URLs', ['acme-prod', 'n', 'y'], ['https://acme-agents.vault.azure.net', 'contoso.onmicrosoft.com', GUID, 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
-        ['the Okta org URL', ['acme-prod', 'n', 'n', 'y'], ['https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
-        ['the repositories', ['acme-prod', 'n', 'n', 'n', 'y'], ['acme/web', 'n', 'n', 'n', 'n', '', '', '', 'n']],
+        ['the Okta org URL', ['acme-prod', 'n', 'n', 'y'], ['https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
+        ['the repositories', ['acme-prod', 'n', 'n', 'n', 'y'], ['acme/web', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['the Google projects', ['acme-prod', 'n', 'n', 'n', 'n', 'y'], ['acme-prod-204', 'n', 'n', 'n', '', '', '', 'n']],
         ['the LangSmith endpoint', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'y'], ['us', '', 'n', 'n', '', '', '', 'n']],
         ['the LangSmith workspace', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'y', 'us'], ['', 'n', 'n', '', '', '', 'n']],
@@ -304,18 +316,18 @@ describe('a secret-shaped answer', () => {
 
 describe('an answer that breaks its field\'s rule', () => {
     it.each([
-        ['an estate that is not a slug', [], 'Not A Slug', ['acme-prod', 'n', 'n', 'y', 'https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
-        ['an Okta URL on another domain', ['acme-prod', 'n', 'n', 'y'], 'https://okta.evil.example', ['https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
+        ['an estate that is not a slug', [], 'Not A Slug', ['acme-prod', 'n', 'n', 'y', 'https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
+        ['an Okta URL on another domain', ['acme-prod', 'n', 'n', 'y'], 'https://okta.evil.example', ['https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['a directory id that is not a GUID', ['acme-prod', 'y'], 'contoso', [GUID, GUID, 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['a vault URL off Azure', ['acme-prod', 'n', 'y'], 'https://vault.evil.example', ['https://a.vault.azure.net', 'contoso.onmicrosoft.com', GUID, 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
-        ['a repository without an owner', ['acme-prod', 'n', 'n', 'n', 'y'], 'just-a-name', ['acme/web', 'n', 'n', 'n', 'n', '', '', '', 'n']],
+        ['a repository without an owner', ['acme-prod', 'n', 'n', 'n', 'y'], 'just-a-name', ['acme/web', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
         ['a LangSmith host on a private address', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'y'], 'https://10.0.0.5', ['eu', '', 'n', 'n', '', '', '', 'n']],
         ['an MCP URL that is not https', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'crm'], 'http://mcp.acme.example/mcp', ['https://mcp.acme.example/mcp', 'n', '', 'n', '', '', '', 'n']],
         ['a code path that is relative', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app'], 'relative/dir', ['/estate/app', '', '', '', '', 'n']],
         ['a schedule that is not a number of hours', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', ''], 'daily', ['12', '', 'n']],
         ['an inventory that is not .json or .csv', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', ''], '/etc/inventory.xlsx', ['', 'n']],
-        ['a yes/no that is neither', ['acme-prod'], 'maybe', ['n', 'n', 'y', 'https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
-        ['a blank where a value is required', ['acme-prod', 'n', 'n', 'y'], '', ['https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
+        ['a yes/no that is neither', ['acme-prod'], 'maybe', ['n', 'n', 'y', 'https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
+        ['a blank where a value is required', ['acme-prod', 'n', 'n', 'y'], '', ['https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n']],
     ])('%s repeats the question with the rule, never the value', async (_label, before, wrong, after) => {
         const s = script([...before, wrong, ...after]);
         const answers = await collectAnswers(s.io);
@@ -333,17 +345,38 @@ describe('an answer that breaks its field\'s rule', () => {
     });
 
     it('no source chosen ends the wizard: there is nothing to scan', async () => {
-        await expect(collectAnswers(script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n']).io)).rejects.toThrow('no source was chosen');
+        await expect(collectAnswers(script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n']).io)).rejects.toThrow('no source was chosen');
     });
 
     it('no agent source: the integrations scanner is offered on its own, and posting is not asked about', async () => {
         const directory = '11111111-2222-4333-8444-555555555555';
         const client = '66666666-7777-4888-8999-aaaaaaaaaaaa';
-        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', directory, client, 'y', '', '', '']);
+        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', directory, client, 'y', 'n', 'n', '', '', '']);
         const answers = await collectAnswers(s.io);
         expect(answers.sources).toEqual([{ kind: 'entra-integrations', directoryId: directory, clientId: client, readSignInActivity: true }]);
         expect(answers.inflect).toBeNull();
         expect(planInit(answers).config.outputs?.map((o) => o.kind)).toEqual(['file']);
+    });
+
+    it('no agent source: Okta and GitHub are offered on their own too, each with its own credential', async () => {
+        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'https://acme.okta.com', 'y', 'Acme-Corp', '', '', '']);
+        const answers = await collectAnswers(s.io);
+        expect(answers.sources).toEqual([
+            { kind: 'okta-integrations', orgUrl: 'https://acme.okta.com' },
+            { kind: 'github-integrations', organization: 'Acme-Corp' },
+        ]);
+        expect(s.said).toContain('The credential is not asked for here: it goes in OKTA_API_TOKEN.');
+        expect(s.said).toContain('The credential is not asked for here: it goes in GITHUB_INTEGRATIONS_TOKEN.');
+        const plan = planInit(answers);
+        expect(plan.config.sources.map((x) => x.kind)).toEqual(['okta-integrations', 'github-integrations']);
+        expect(plan.credentialNames.map((c) => c.name)).toEqual(['SCANNER_SIGNING_KEY', 'OKTA_API_TOKEN', 'GITHUB_INTEGRATIONS_TOKEN']);
+    });
+
+    it('an organisation that is not a GitHub login is asked for again', async () => {
+        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'acme/web', 'acme', '', '', '']);
+        const answers = await collectAnswers(s.io);
+        expect(answers.sources).toEqual([{ kind: 'github-integrations', organization: 'acme' }]);
+        expect(s.said.join('\n')).not.toContain('acme/web');
     });
 });
 
@@ -353,7 +386,7 @@ describe('scanent init at the prompts', () => {
         jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
         jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
         try {
-            const s = script(only('okta-app', ['https://acme.okta.com']));
+            const s = script(only('okta-app', ['https://acme.okta.com', 'n']));
             expect(await main(['init', '--dir', join(dir, 'scanent')], {}, { prompt: s.io })).toBe(0);
             const written = JSON.parse(readFileSync(join(dir, 'scanent', 'config.json'), 'utf8'));
             expect(written).toMatchObject({ estate: 'acme-prod', sources: [{ kind: 'okta-app', orgUrl: 'https://acme.okta.com', apiTokenEnv: 'OKTA_API_TOKEN' }] });
@@ -372,7 +405,7 @@ describe('the terminal', () => {
         output.on('data', (chunk) => shown.push(String(chunk)));
         const terminal = terminalPrompt(input, output);
         // Everything at once, as a paste or a pipe delivers it.
-        input.write(['acme-prod', 'n', 'n', 'y', 'https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n'].join('\n') + '\n');
+        input.write(['acme-prod', 'n', 'n', 'y', 'https://acme.okta.com', 'n', 'n', 'n', 'n', 'n', 'n', '', '', '', 'n'].join('\n') + '\n');
         const answers = await collectAnswers(terminal.io);
         terminal.close();
         expect(answers).toMatchObject({ estate: 'acme-prod', sources: [{ kind: 'okta-app', orgUrl: 'https://acme.okta.com' }], inflect: null });

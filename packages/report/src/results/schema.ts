@@ -29,13 +29,28 @@ import {
     CONSENT_TYPES,
     ENTRA_APPLICATION_ID,
     ENTRA_OBJECT_ID,
+    EVENT_NAME,
+    GITHUB_INSTALLATION_ID,
+    GITHUB_PERMISSION_LEVELS,
+    GITHUB_WEBHOOK_ID,
     INTEGRATIONS_CONTRACT_IDS,
     INTEGRATIONS_SOURCE_KINDS,
+    isApplicationId,
     ISO_DATE,
+    OKTA_APP_STATUSES,
+    OKTA_APPLICATION_ID,
     OWNER_KINDS,
+    REPOSITORY_SELECTIONS,
     SIGN_IN_READ_STATES,
+    WEBHOOK_HOST,
 } from '@rodnapamet/scanent-contract/integrations-contract-rules';
-import { INTEGRATION_FINDING_CODES, INTEGRATION_NOT_CONCLUDED_WHY, MAX_UNUSED_DAYS, MIN_UNUSED_DAYS } from '@rodnapamet/scanent-contract/integrations-findings';
+import {
+    INTEGRATION_FINDING_CODES,
+    INTEGRATION_NOT_CONCLUDED_WHY,
+    MAX_UNUSED_DAYS,
+    MIN_UNUSED_DAYS,
+    PERMISSION_VIAS,
+} from '@rodnapamet/scanent-contract/integrations-findings';
 import { PERMISSION_CLASSES } from '@rodnapamet/scanent-contract/integrations-scopes';
 
 import {
@@ -161,15 +176,24 @@ const guid = z.string().regex(ENTRA_OBJECT_ID);
 const permissionName = z.string().min(1).max(128);
 const severity = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 const integrationsSourceKind = z.enum(INTEGRATIONS_SOURCE_KINDS);
-const applicationId = z.string().regex(ENTRA_APPLICATION_ID);
-const ApplicationPermissionSchema = z.object({ via: z.enum(['DELEGATED', 'APPLICATION']), resourceAppId: guid.nullable(), name: permissionName.nullable() }).strict();
+const applicationId = z.string().refine(isApplicationId, 'an application id of one of the products');
+const ApplicationPermissionSchema = z.object({ via: z.enum(PERMISSION_VIAS), resourceAppId: guid.nullable(), name: permissionName.nullable() }).strict();
 
-const ApplicationSchema = z
+/** What every product's row has: the planner's conclusions about it. */
+const conclusions = {
+    privilege: z.enum(['HIGH', 'NOT_HIGH', 'NOT_CONCLUDED']),
+    classes: z.array(z.enum(PERMISSION_CLASSES)).max(PERMISSION_CLASSES.length),
+    highPermissions: z.array(ApplicationPermissionSchema),
+    unknownPermissions: z.array(ApplicationPermissionSchema),
+    usage: z.enum(['USED', 'UNUSED', 'NOT_CONCLUDED']),
+    displayName: z.string().min(1).max(256).nullable(),
+};
+
+const EntraApplicationSchema = z
     .object({
-        id: applicationId,
-        sourceKind: integrationsSourceKind,
+        id: z.string().regex(ENTRA_APPLICATION_ID),
+        sourceKind: z.literal('entra-integrations'),
         appId: guid.nullable(),
-        displayName: z.string().min(1).max(256).nullable(),
         origin: z.enum(APPLICATION_ORIGINS),
         publisherVerified: z.boolean().nullable(),
         owners: z.array(z.object({ kind: z.enum(OWNER_KINDS), id: guid }).strict()).max(20).nullable(),
@@ -192,30 +216,75 @@ const ApplicationSchema = z
         applicationPermissions: z
             .object({ read: z.boolean(), permissions: z.array(z.object({ resourceAppId: guid.nullable(), roleId: guid, name: permissionName.nullable() }).strict()) })
             .strict(),
-        privilege: z.enum(['HIGH', 'NOT_HIGH', 'NOT_CONCLUDED']),
-        classes: z.array(z.enum(PERMISSION_CLASSES)).max(PERMISSION_CLASSES.length),
-        highPermissions: z.array(ApplicationPermissionSchema),
-        unknownPermissions: z.array(ApplicationPermissionSchema),
         signIn: z.object({ read: z.boolean(), lastSeen: z.string().regex(ISO_DATE).nullable(), daysSince: count.nullable() }).strict(),
-        usage: z.enum(['USED', 'UNUSED', 'NOT_CONCLUDED']),
         credentials: count,
+        ...conclusions,
     })
-    .strict()
-    .superRefine((a, ctx) => {
-        // What the file concludes must be what it lists.
-        if ((a.privilege === 'HIGH') !== (a.highPermissions.length > 0) || (a.privilege === 'HIGH') !== (a.classes.length > 0)) {
-            ctx.addIssue({ code: 'custom', message: 'a high-privilege application lists what makes it so, and only one does', path: ['privilege'] });
-        }
-        if (a.privilege === 'NOT_HIGH' && (!a.delegatedGrants.read || !a.applicationPermissions.read || a.unknownPermissions.length > 0)) {
-            ctx.addIssue({ code: 'custom', message: 'not high is concluded only from grants read in full and all known', path: ['privilege'] });
-        }
-        if (a.usage !== 'NOT_CONCLUDED' && !a.signIn.read) {
-            ctx.addIssue({ code: 'custom', message: 'use is concluded only where sign-in activity was read', path: ['usage'] });
-        }
-        if (!a.signIn.read && (a.signIn.lastSeen !== null || a.signIn.daysSince !== null)) {
-            ctx.addIssue({ code: 'custom', message: 'a sign-in that was not read has no date', path: ['signIn'] });
-        }
-    });
+    .strict();
+
+const OktaApplicationSchema = z
+    .object({
+        id: z.string().regex(OKTA_APPLICATION_ID),
+        sourceKind: z.literal('okta-integrations'),
+        appId: z.string().min(1).max(64),
+        status: z.enum(OKTA_APP_STATUSES).nullable(),
+        signOnMode: z.string().min(1).max(64).nullable(),
+        scopeGrants: z.object({ read: z.boolean(), scopes: z.array(permissionName), unreadableScopes: count }).strict(),
+        ...conclusions,
+    })
+    .strict();
+
+const GitHubInstallationSchema = z
+    .object({
+        id: z.string().regex(GITHUB_INSTALLATION_ID),
+        sourceKind: z.literal('github-integrations'),
+        appId: z.string().regex(/^[1-9][0-9]{0,19}$/).nullable(),
+        repositorySelection: z.enum(REPOSITORY_SELECTIONS).nullable(),
+        suspended: z.boolean().nullable(),
+        events: z.array(z.string().regex(EVENT_NAME)),
+        permissions: z
+            .object({ read: z.boolean(), grants: z.array(z.object({ name: permissionName, level: z.enum(GITHUB_PERMISSION_LEVELS) }).strict()), unreadable: count })
+            .strict(),
+        ...conclusions,
+    })
+    .strict();
+
+/** Whether a row's grants were read in full, in its product's terms. */
+const readInFull = (a: z.infer<typeof ApplicationUnion>): boolean =>
+    a.sourceKind === 'okta-integrations' ? a.scopeGrants.read : a.sourceKind === 'github-integrations' ? a.permissions.read : a.delegatedGrants.read && a.applicationPermissions.read;
+
+const ApplicationUnion = z.discriminatedUnion('sourceKind', [EntraApplicationSchema, OktaApplicationSchema, GitHubInstallationSchema]);
+
+const ApplicationSchema = ApplicationUnion.superRefine((a, ctx) => {
+    // What the file concludes must be what it lists.
+    if ((a.privilege === 'HIGH') !== (a.highPermissions.length > 0) || (a.privilege === 'HIGH') !== (a.classes.length > 0)) {
+        ctx.addIssue({ code: 'custom', message: 'a high-privilege application lists what makes it so, and only one does', path: ['privilege'] });
+    }
+    if (a.privilege === 'NOT_HIGH' && (!readInFull(a) || a.unknownPermissions.length > 0)) {
+        ctx.addIssue({ code: 'custom', message: 'not high is concluded only from grants read in full and all known', path: ['privilege'] });
+    }
+    if (a.sourceKind !== 'entra-integrations') {
+        if (a.usage !== 'NOT_CONCLUDED') ctx.addIssue({ code: 'custom', message: 'use is never concluded for a product that records none', path: ['usage'] });
+        return;
+    }
+    if (a.usage !== 'NOT_CONCLUDED' && !a.signIn.read) {
+        ctx.addIssue({ code: 'custom', message: 'use is concluded only where sign-in activity was read', path: ['usage'] });
+    }
+    if (!a.signIn.read && (a.signIn.lastSeen !== null || a.signIn.daysSince !== null)) {
+        ctx.addIssue({ code: 'custom', message: 'a sign-in that was not read has no date', path: ['signIn'] });
+    }
+});
+
+const WebhookSchema = z
+    .object({
+        id: z.string().regex(GITHUB_WEBHOOK_ID),
+        sourceKind: z.literal('github-integrations'),
+        host: z.string().regex(WEBHOOK_HOST).nullable(),
+        events: z.array(z.string().regex(EVENT_NAME)),
+        active: z.boolean().nullable(),
+        created: z.string().regex(ISO_DATE).nullable(),
+    })
+    .strict();
 
 const IntegrationFindingSchema = z
     .object({
@@ -244,6 +313,7 @@ export const LocalIntegrationsResultsSchema: z.ZodType<LocalIntegrationsResults>
                     applications: count,
                     signInActivity: z.object({ status: z.enum(SIGN_IN_READ_STATES), reason: id.nullable(), rows: count.nullable() }).strict(),
                     detail: z.string().min(1).max(800).optional(),
+                    excluded: z.object({ count, what: z.string().min(1).max(400) }).strict().optional(),
                 })
                 .strict(),
         ).min(1),
@@ -252,7 +322,8 @@ export const LocalIntegrationsResultsSchema: z.ZodType<LocalIntegrationsResults>
         notConcluded: z.array(
             z.object({ code: z.enum(INTEGRATION_FINDING_CODES), applicationId: applicationId.nullable(), sourceKind: integrationsSourceKind, why: z.enum(INTEGRATION_NOT_CONCLUDED_WHY) }).strict(),
         ),
-        unknownPermissions: z.array(z.object({ resourceAppId: guid.nullable(), name: z.string().min(1).max(256) }).strict()),
+        unknownPermissions: z.array(z.object({ via: z.enum(PERMISSION_VIAS), resourceAppId: guid.nullable(), name: z.string().min(1).max(256) }).strict()),
+        webhooks: z.object({ read: z.boolean(), hooks: z.array(WebhookSchema) }).strict().nullable(),
         counts: z.object({ applications: count, highPrivilege: count, unverifiedPublisher: count, noOwner: count, unused: count }).strict(),
     })
     .strict()

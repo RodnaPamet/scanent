@@ -21,9 +21,15 @@
  *   • EVERY SCANNED STRING IS ESCAPED (the `html` template) and the data
  *     block is written by `scriptJson`; no scanned value becomes a link.
  */
+import {
+    INTEGRATIONS_PRODUCT_TITLE,
+    INTEGRATIONS_SOURCE_KINDS,
+    productOfApplicationId,
+    type IntegrationsSourceKind,
+} from '@rodnapamet/scanent-contract/integrations-contract-rules';
 import { CLASS_WORDS } from '@rodnapamet/scanent-contract/integrations-findings';
 
-import type { LocalApplicationResult, LocalIntegrationFinding, LocalIntegrationsResults } from '../results/types';
+import type { LocalApplicationPermission, LocalApplicationResult, LocalIntegrationFinding, LocalIntegrationsResults, LocalWebhookResult } from '../results/types';
 import { html, htmlText, type SafeHtml } from './escape';
 import { INTEGRATION_RUN_FILE_NAMES } from './files';
 import { printable, type IntegrationsPreviousRun } from './page-data';
@@ -62,7 +68,27 @@ export const NOT_CONCLUDED_TEXT: Readonly<Record<string, string>> = {
     SIGN_IN_NOT_READ: 'sign-in activity was not read: the source is configured without it',
     SIGN_IN_READ_INCOMPLETE: 'sign-in activity was not read in full, and this application was not in what was read',
     SOURCE_INCOMPLETE: 'the source was not read in full, so an empty answer concludes nothing',
+    OWNER_NOT_EXPOSED: "the product's API records no owner of an application",
+    PUBLISHER_NOT_EXPOSED: "the product's API records no publisher verification",
+    SIGN_IN_NOT_EXPOSED: "the product's API records no last use of an application, short of reading its logs",
 };
+
+/** A source kind's product, in words; the kind itself for one the contract does not list. */
+export function productOfKind(kind: string): string {
+    return (INTEGRATIONS_SOURCE_KINDS as readonly string[]).includes(kind) ? INTEGRATIONS_PRODUCT_TITLE[kind as IntegrationsSourceKind] : kind;
+}
+
+/** An application id with its product, for a line that names one: `Okta: okta:…`. */
+export function idWithProduct(id: string): string {
+    return `${productOfApplicationId(id)}: ${id}`;
+}
+
+/** Where an unknown permission is, in words: the Entra API, or the product. */
+export function permissionPlace(p: Pick<LocalApplicationPermission, 'via' | 'resourceAppId'>): string {
+    if (p.via === 'OKTA_SCOPE') return 'Okta';
+    if (p.via === 'GITHUB_PERMISSION') return 'GitHub';
+    return p.resourceAppId ?? 'an API the read did not find';
+}
 
 export const INTEGRATION_FINDING_TEXT: Readonly<Record<string, string>> = {
     INTEGRATION_HIGH_PRIVILEGE_GRANT: 'High-privilege grant',
@@ -73,24 +99,39 @@ export const INTEGRATION_FINDING_TEXT: Readonly<Record<string, string>> = {
 };
 
 const SIGN_IN_STATE_TEXT: Readonly<Record<string, string>> = {
-    NOT_READ: 'Not read (not configured)',
+    NOT_READ: 'Not read',
     COMPLETE: 'Read in full',
     INCOMPLETE: 'Not read in full',
 };
 
 // ── One application in words ──
 
+/** A question the product's API does not answer, in words. */
+const notExposed = (a: LocalApplicationResult): string => `Not exposed by ${INTEGRATIONS_PRODUCT_TITLE[a.sourceKind]}`;
+
 function publisherText(a: LocalApplicationResult): string {
-    if (a.origin === 'THIS_DIRECTORY') return 'This directory';
-    return a.publisherVerified === null ? 'Not known' : a.publisherVerified ? 'Verified' : 'Not verified';
+    if (a.sourceKind !== 'entra-integrations') return notExposed(a);
+    if (a.origin === 'THIS_DIRECTORY') return `This directory. ${fixed(ORIGIN_TEXT, a.origin, 'Not stated')}`;
+    return `${a.publisherVerified === null ? 'Not known' : a.publisherVerified ? 'Verified' : 'Not verified'}. ${fixed(ORIGIN_TEXT, a.origin, 'Not stated')}`;
 }
 
 function ownersText(a: LocalApplicationResult): string {
+    if (a.sourceKind !== 'entra-integrations') return notExposed(a);
     if (a.owners === null) return 'Not read';
     return a.owners.length === 0 ? 'None' : plural(a.owners.length, 'owner', 'owners');
 }
 
 function grantsText(a: LocalApplicationResult): string {
+    if (a.sourceKind === 'okta-integrations') {
+        const n = a.scopeGrants.scopes.length + a.scopeGrants.unreadableScopes;
+        return `${n === 0 ? 'no Okta scope' : plural(n, 'Okta scope', 'Okta scopes')}${a.scopeGrants.read ? '' : '; not all read'}`;
+    }
+    if (a.sourceKind === 'github-integrations') {
+        const n = a.permissions.grants.length + a.permissions.unreadable;
+        const writes = a.permissions.grants.filter((g) => g.level !== 'read').length;
+        const repos = a.repositorySelection === 'all' ? ', every repository' : a.repositorySelection === 'selected' ? ', selected repositories' : '';
+        return `${plural(n, 'permission', 'permissions')}${writes > 0 ? `, ${writes} that write` : ''}${repos}${a.suspended === true ? '; suspended' : ''}${a.permissions.read ? '' : '; not all read'}`;
+    }
     const scopes = a.delegatedGrants.grants.reduce((n, g) => n + g.scopes.length + g.unreadableScopes, 0);
     const forAll = a.delegatedGrants.grants.some((g) => g.consentType === 'AllPrincipals');
     const people = a.delegatedGrants.grants.reduce((n, g) => n + (g.principalCount ?? 0), 0);
@@ -101,6 +142,7 @@ function grantsText(a: LocalApplicationResult): string {
 }
 
 function signInText(a: LocalApplicationResult): string {
+    if (a.sourceKind !== 'entra-integrations') return notExposed(a);
     if (!a.signIn.read) return 'Not read';
     return a.signIn.lastSeen === null ? 'No sign-in recorded' : `${a.signIn.lastSeen} (${plural(a.signIn.daysSince ?? 0, 'day', 'days')} before the scan)`;
 }
@@ -129,12 +171,13 @@ export interface IntegrationsPageData {
     readonly codes: readonly { readonly code: string; readonly text: string }[];
 }
 
-export const INTEGRATIONS_COLUMNS = ['Application', 'Publisher', 'Owners', 'Grants', 'Privilege', 'Last sign-in', 'Findings'] as const;
+export const INTEGRATIONS_COLUMNS = ['Application', 'Product', 'Publisher', 'Owners', 'Grants', 'Privilege', 'Last sign-in', 'Findings'] as const;
 
 export function integrationCells(a: LocalApplicationResult, findings: readonly LocalIntegrationFinding[]): string[] {
     return [
         a.displayName === null ? a.id : `${a.displayName} (${a.id})`,
-        `${publisherText(a)}. ${fixed(ORIGIN_TEXT, a.origin, 'Not stated')}`,
+        INTEGRATIONS_PRODUCT_TITLE[a.sourceKind],
+        publisherText(a),
         ownersText(a),
         grantsText(a),
         privilegeText(a),
@@ -162,7 +205,7 @@ export function integrationsPageData(i: LocalIntegrationsResults): IntegrationsP
             cells,
             codes: findings.map((f) => f.code),
             rank: worst(findings),
-            hay: cells.slice(0, 2).join(' ').toLowerCase(),
+            hay: cells.slice(0, 3).join(' ').toLowerCase(),
         };
     });
     return {
@@ -178,21 +221,28 @@ export function integrationsPageData(i: LocalIntegrationsResults): IntegrationsP
 function sourcesTable(i: LocalIntegrationsResults): SafeHtml {
     return html`<div class="scroll"><table>
 <caption>Each integrations source, and whether it was read in full</caption>
-<thead><tr><th scope="col">Source</th><th scope="col">Status</th><th scope="col">Reason</th><th scope="col" class="num">Rows read</th><th scope="col" class="num">Applications</th><th scope="col">Sign-in activity</th></tr></thead>
+<thead><tr><th scope="col">Source</th><th scope="col">Product</th><th scope="col">Status</th><th scope="col">Reason</th><th scope="col" class="num">Rows read</th><th scope="col" class="num">Applications</th><th scope="col">Sign-in activity</th></tr></thead>
 <tbody>
 ${i.sources.map(
         (s) => html`<tr class="${s.status === 'COMPLETE' ? 'row-ok' : 'row-bad'}">
 <th scope="row"><code>${s.kind}</code></th>
+<td>${productOfKind(s.kind)}</td>
 <td>${s.status === 'COMPLETE' ? html`<span class="tag ok">Complete</span>` : html`<span class="tag bad">Incomplete</span>`}</td>
 <td>${s.reason === null ? '' : html`<code>${s.reason}</code>`}</td>
 <td class="num">${s.rows}</td>
 <td class="num">${s.applications}</td>
-<td>${fixed(SIGN_IN_STATE_TEXT, s.signInActivity.status, s.signInActivity.status)}${s.signInActivity.reason === null ? '' : html` <code>${s.signInActivity.reason}</code>`}</td>
+<td>${s.kind === 'entra-integrations' ? fixed(SIGN_IN_STATE_TEXT, s.signInActivity.status, s.signInActivity.status) : `Not exposed by ${productOfKind(s.kind)}`}${s.signInActivity.reason === null ? '' : html` <code>${s.signInActivity.reason}</code>`}</td>
 </tr>`,
     )}
 </tbody>
 </table></div>
-${i.sources.filter((s) => s.detail !== undefined).map((s) => html`<p class="callout bad"><strong><code>${s.kind}</code> was not read in full</strong>: ${s.detail ?? ''}.</p>`)}`;
+${i.sources.filter((s) => s.detail !== undefined).map((s) => html`<p class="callout bad"><strong><code>${s.kind}</code> was not read in full</strong>: ${s.detail ?? ''}.</p>`)}
+${i.sources.map((s) => (s.excluded === undefined ? html`` : html`<p class="note">${exclusionText(s.kind, s.excluded)}</p>`))}`;
+}
+
+/** What a source left out on purpose, in words: the product's own applications, and how many. */
+export function exclusionText(kind: string, excluded: { readonly count: number; readonly what: string }): string {
+    return `${productOfKind(kind)}: ${plural(excluded.count, 'application', 'applications')} read and left out as ${excluded.what}. They are the platform, not integrations.`;
 }
 
 function applicationsTable(i: LocalIntegrationsResults): SafeHtml {
@@ -224,7 +274,7 @@ ${shown.map(
         (f) => html`<tr>
 <td><span class="tag ${fixed(SEVERITY_CLASS, f.severity, 'sev-low')}">${f.severity}</span></td>
 <td><code>${f.code}</code></td>
-<td>${f.applicationId === null ? 'A source' : html`<code class="id">${f.applicationId}</code>`}</td>
+<td>${f.applicationId === null ? `A source (${productOfKind(f.sourceRef.slice(f.sourceRef.lastIndexOf(':') + 1))})` : html`${productOfApplicationId(f.applicationId)}: <code class="id">${f.applicationId}</code>`}</td>
 <td><details><summary>${f.title}</summary><p>${f.description}</p><p class="ref">Reference <code class="id">${f.sourceRef}</code></p></details></td>
 </tr>`,
     )}
@@ -232,26 +282,60 @@ ${shown.map(
 </table></div>`;
 }
 
-function notConcluded(i: LocalIntegrationsResults): SafeHtml {
-    if (i.notConcluded.length === 0) return html``;
-    const grouped = new Map<string, { code: string; why: string; n: number; scoped: boolean }>();
+/** What could not be concluded, grouped by product, then by question and reason. */
+export function notConcludedByProduct(i: LocalIntegrationsResults): { readonly product: string; readonly lines: readonly { readonly code: string; readonly why: string; readonly n: number; readonly scoped: boolean }[] }[] {
+    const products = new Map<string, Map<string, { code: string; why: string; n: number; scoped: boolean }>>();
     for (const n of i.notConcluded) {
+        const product = productOfKind(n.sourceKind);
+        const grouped = products.get(product) ?? new Map<string, { code: string; why: string; n: number; scoped: boolean }>();
         const key = `${n.code}\u0000${n.why}\u0000${n.applicationId === null ? 'source' : 'app'}`;
         const g = grouped.get(key) ?? { code: n.code, why: n.why, n: 0, scoped: n.applicationId !== null };
         g.n += 1;
         grouped.set(key, g);
+        products.set(product, grouped);
     }
+    return [...products.entries()].map(([product, lines]) => ({ product, lines: [...lines.values()] }));
+}
+
+function notConcluded(i: LocalIntegrationsResults): SafeHtml {
+    if (i.notConcluded.length === 0) return html``;
     return html`<h3>Not concluded</h3>
-<p>Each of these is a question the scan could not answer either way. None of them is a clean result.</p>
-<ul>${[...grouped.values()].map((g) => html`<li><code>${g.code}</code>${g.scoped ? html` for ${plural(g.n, 'application', 'applications')}` : ''}: ${fixed(NOT_CONCLUDED_TEXT, g.why, 'see the code')} <code>${g.why}</code>.</li>`)}</ul>`;
+<p>Each of these is a question the scan could not answer either way, by product. None of them is a clean result. "Every application" means the product's API cannot answer it for any application of that source.</p>
+${notConcludedByProduct(i).map(
+        (p) => html`<h4>${p.product}</h4>
+<ul>${p.lines.map((g) => html`<li><code>${g.code}</code> ${g.scoped ? html`for ${plural(g.n, 'application', 'applications')}` : 'for every application'}: ${fixed(NOT_CONCLUDED_TEXT, g.why, 'see the code')} <code>${g.why}</code>.</li>`)}</ul>`,
+    )}`;
+}
+
+/** Each webhook in words: its host, whether it is active, when it was created, and its events. */
+export function webhookLine(h: LocalWebhookResult): string {
+    const events = h.events.length === 0 ? 'no event' : h.events.length > 10 ? `${h.events.slice(0, 10).join(', ')} and ${h.events.length - 10} more` : h.events.join(', ');
+    return `${h.host ?? 'a host that could not be reported'}: ${h.active === null ? 'active state not given' : h.active ? 'active' : 'inactive'}, created ${h.created ?? 'on a date not given'}, events ${events}`;
+}
+
+function webhooks(i: LocalIntegrationsResults): SafeHtml {
+    const w = i.webhooks;
+    if (w === null) return html``;
+    const shown = w.hooks.slice(0, INTEGRATIONS_MAX_ROWS);
+    return html`<h3>GitHub organisation webhooks (${w.hooks.length})</h3>
+<p>Where the organisation sends its events, by host only: a webhook's URL can carry a secret in its path or query, so the scanner never keeps it. No finding is raised about a webhook in this version.</p>
+${w.read ? '' : html`<p class="callout bad">The webhooks were not listed in full: this is what was seen, not the whole list.</p>`}${w.hooks.length === 0
+        ? html`<p>${w.read ? 'The organisation has no webhook.' : 'None was seen.'}</p>`
+        : html`<div class="scroll"><table>
+<caption>Organisation webhooks, by target host</caption>
+<thead><tr><th scope="col">Host</th><th scope="col">Active</th><th scope="col">Created</th><th scope="col">Events</th></tr></thead>
+<tbody>
+${shown.map((h) => html`<tr><th scope="row"><code>${h.host ?? 'not reportable'}</code></th><td>${h.active === null ? 'Not given' : h.active ? 'Yes' : 'No'}</td><td>${h.created ?? 'Not given'}</td><td>${h.events.join(', ')}</td></tr>`)}
+</tbody>
+</table></div>${w.hooks.length > shown.length ? html`<p class="note">The first ${shown.length} of ${w.hooks.length}. The full list is in <code>results.json</code>.</p>` : ''}`}`;
 }
 
 function unknownPermissions(i: LocalIntegrationsResults): SafeHtml {
     if (i.unknownPermissions.length === 0) return html``;
     const shown = i.unknownPermissions.slice(0, INTEGRATIONS_MAX_ROWS);
     return html`<h3>Permissions the classification does not know (${i.unknownPermissions.length})</h3>
-<p>These are not called high and not called low: a person judges them. A permission on an API other than Microsoft Graph is always one.</p>
-${i.unknownPermissions.length > shown.length ? html`<p class="callout">The first ${shown.length} of ${i.unknownPermissions.length}. The full list is in <code>results.json</code>.</p>` : ''}<ul class="ids">${shown.map((u) => html`<li><code class="id">${u.name}</code> <span class="note">on ${u.resourceAppId ?? 'an API the read did not find'}</span></li>`)}</ul>`;
+<p>These are not called high and not called low: a person judges them. A permission on an API other than Microsoft Graph is always one, and so is an Okta scope or a GitHub permission read that the product's table does not list.</p>
+${i.unknownPermissions.length > shown.length ? html`<p class="callout">The first ${shown.length} of ${i.unknownPermissions.length}. The full list is in <code>results.json</code>.</p>` : ''}<ul class="ids">${shown.map((u) => html`<li><code class="id">${u.name}</code> <span class="note">on ${permissionPlace(u)}</span></li>`)}</ul>`;
 }
 
 /** Why an application not seen is not concluded gone, in words. */
@@ -285,9 +369,9 @@ export function integrationsDrift(previous: IntegrationsPreviousRun | null): Saf
     return html`<h3>Since the previous run</h3>
 <p>Compared with <code class="id">${d.old.scanId}</code>, as of ${d.old.asOf} UTC (${d.old.complete ? 'complete' : 'incomplete'}, ${plural(d.old.applicationCount, 'application', 'applications')}). <strong>${outcome}</strong></p>
 <p>${plural(d.summary.differences, 'difference', 'differences')}; ${plural(d.summary.notConcluded, 'comparison', 'comparisons')} not concluded. The full comparison is <code>scanent diff</code> on the two results files.</p>
-${list('New applications', d.applications.added, (id) => html`<code class="id">${id}</code>`, 'None.')}
-${list('Gone', d.applications.gone, (id) => html`<code class="id">${id}</code> (its source was read in full)`, 'None concluded gone.')}
-${list('Not seen, not concluded', d.applications.notSeen, (x) => html`<code class="id">${x.id}</code>: ${fixed(NOT_SEEN_TEXT, x.why, x.why)}`, 'None.')}
+${list('New applications', d.applications.added, (id) => html`${productOfApplicationId(id)}: <code class="id">${id}</code>`, 'None.')}
+${list('Gone', d.applications.gone, (id) => html`${productOfApplicationId(id)}: <code class="id">${id}</code> (its source was read in full)`, 'None concluded gone.')}
+${list('Not seen, not concluded', d.applications.notSeen, (x) => html`${productOfApplicationId(x.id)}: <code class="id">${x.id}</code>: ${fixed(NOT_SEEN_TEXT, x.why, x.why)}`, 'None.')}
 ${list('Findings', d.findings, (f) => html`<code>${f.code}</code> ${f.change === 'NOT_CONCLUDED' ? `no longer raised, not concluded (${f.why ?? 'UNKNOWN'})` : f.change.toLowerCase()} <code class="id">${f.sourceRef}</code>`, 'No finding opened or closed.')}`;
 }
 
@@ -301,7 +385,7 @@ export function integrationsSection(i: LocalIntegrationsResults, previous?: Inte
     const signInRead = i.sources.some((s) => s.signInActivity.status !== 'NOT_READ');
     return html`<section id="integrations" aria-labelledby="integrations-h">
 <h2 id="integrations-h">Integrations</h2>
-<p>What the directories this run read have granted to applications, and whether anybody owns those grants. A report of its own, <code>${i.report.file}</code> (contract <code>${i.contract}</code>, SHA-256 <code class="id">${i.report.sha256}</code>), ${alone ? 'signed with the scanner\'s key.' : 'signed with the same key as the agent report.'}</p>
+<p>What the directories and organisations this run read (${i.sources.map((s) => productOfKind(s.kind)).join(', ')}) have granted to applications, and whether anybody owns those grants. A report of its own, <code>${i.report.file}</code> (contract <code>${i.contract}</code>, SHA-256 <code class="id">${i.report.sha256}</code>), ${alone ? 'signed with the scanner\'s key.' : 'signed with the same key as the agent report.'}</p>
 ${i.complete
         ? html`<p class="status ok"><strong>Complete.</strong> Every integrations source was read in full.</p>`
         : html`<p class="status bad"><strong>Incomplete:</strong> not everything the integrations sources hold was read. A finding below is real; an absence is not a clean result.</p>`}
@@ -323,6 +407,7 @@ ${i.applications.length === 0
         : applicationsTable(i)}
 </div>
 ${unknownPermissions(i)}
+${webhooks(i)}
 ${previous === undefined ? '' : integrationsDrift(previous)}
 </section>`;
 }

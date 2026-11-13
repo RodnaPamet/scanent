@@ -26,8 +26,8 @@ import type { CriterionState, HarnessCriterionId, HarnessLevel } from '@rodnapam
 import type { HarnessPaymentCapability, HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 
 import type { CriterionReaders, HarnessMatrixCoverage, VerdictBasis } from '@rodnapamet/scanent-contract/harness-matrix-model';
-import type { ApplicationOrigin, ConsentType, OwnerKind, SignInReadState } from '@rodnapamet/scanent-contract/integrations-contract-rules';
-import type { IntegrationFindingCode, IntegrationNotConcludedWhy } from '@rodnapamet/scanent-contract/integrations-findings';
+import type { ApplicationOrigin, ConsentType, GitHubPermissionLevel, OwnerKind, SignInReadState } from '@rodnapamet/scanent-contract/integrations-contract-rules';
+import type { IntegrationFindingCode, IntegrationNotConcludedWhy, PermissionVia } from '@rodnapamet/scanent-contract/integrations-findings';
 import type { PermissionClass } from '@rodnapamet/scanent-contract/integrations-scopes';
 
 import type { ParsedInventory } from './inventory';
@@ -96,6 +96,8 @@ export interface SourceNote {
     /** The first places not read; `notReadTotal` counts them all. */
     readonly notRead: readonly NotReadPlace[];
     readonly notReadTotal: number;
+    /** An integrations source only: what it left out of its inventory on purpose, and how many. */
+    readonly excluded?: { readonly count: number; readonly what: string };
 }
 
 /** Where an agent's tools are evidenced: a definition in code, or an MCP server's listing. */
@@ -389,22 +391,44 @@ export interface LocalIntegrationsSource {
     readonly signInActivity: { readonly status: SignInReadState; readonly reason: string | null; readonly rows: number | null };
     /** Why a read stopped, in the scanner's fixed words; only for a source of this run that did not read everything. */
     readonly detail?: string;
+    /**
+     * The product's own applications the source read and left out of the
+     * inventory, as Microsoft's are in Entra and Okta's in Okta: how many, and
+     * which, in the scanner's fixed words. Absent when scored without the run.
+     */
+    readonly excluded?: { readonly count: number; readonly what: string };
 }
 
 /** One permission an application holds, as the planner classed it. */
 export interface LocalApplicationPermission {
-    readonly via: 'DELEGATED' | 'APPLICATION';
+    /** Entra's delegated or application permission, an Okta scope, or a GitHub installation permission. */
+    readonly via: PermissionVia;
+    /** The Entra API it is on; null for Okta and GitHub, and when the read did not find the API. */
     readonly resourceAppId: string | null;
-    /** The scope or app role's name; null when the read could not resolve the role. */
+    /** The scope or app role's name, a GitHub permission as `<name>:<level>`; null when the read could not resolve the role. */
     readonly name: string | null;
 }
 
-export interface LocalApplicationResult {
+/** What every product's application row has: its identity, and the planner's conclusions. */
+interface LocalApplicationCommon {
     readonly id: string;
-    readonly sourceKind: string;
+    /** The product's own id for it: an Entra application id, an Okta app id, a GitHub App id. */
     readonly appId: string | null;
-    /** As the directory holds it; null when it was absent or withheld. */
+    /** As the product holds it (a GitHub App's slug); null when it was absent or withheld. */
     readonly displayName: string | null;
+    /** HIGH: a high-privilege grant was seen. NOT_HIGH: every grant was read, every one known, none high. */
+    readonly privilege: 'HIGH' | 'NOT_HIGH' | 'NOT_CONCLUDED';
+    /** The classes its high-privilege grants reach, in the table's order. */
+    readonly classes: readonly PermissionClass[];
+    readonly highPermissions: readonly LocalApplicationPermission[];
+    /** Permissions the classification table does not know: never called high, never called low. */
+    readonly unknownPermissions: readonly LocalApplicationPermission[];
+    /** Always NOT_CONCLUDED for Okta and GitHub, whose APIs record no use. */
+    readonly usage: 'USED' | 'UNUSED' | 'NOT_CONCLUDED';
+}
+
+export interface LocalEntraApplicationResult extends LocalApplicationCommon {
+    readonly sourceKind: 'entra-integrations';
     readonly origin: ApplicationOrigin;
     /** Null: the read could not tell. */
     readonly publisherVerified: boolean | null;
@@ -424,16 +448,36 @@ export interface LocalApplicationResult {
         readonly read: boolean;
         readonly permissions: readonly { readonly resourceAppId: string | null; readonly roleId: string; readonly name: string | null }[];
     };
-    /** HIGH: a high-privilege grant was seen. NOT_HIGH: every grant was read, every one known, none high. */
-    readonly privilege: 'HIGH' | 'NOT_HIGH' | 'NOT_CONCLUDED';
-    /** The classes its high-privilege grants reach, in the table's order. */
-    readonly classes: readonly PermissionClass[];
-    readonly highPermissions: readonly LocalApplicationPermission[];
-    /** Permissions the classification table does not know: never called high, never called low. */
-    readonly unknownPermissions: readonly LocalApplicationPermission[];
     readonly signIn: { readonly read: boolean; readonly lastSeen: string | null; readonly daysSince: number | null };
-    readonly usage: 'USED' | 'UNUSED' | 'NOT_CONCLUDED';
     readonly credentials: number;
+}
+
+export interface LocalOktaApplicationResult extends LocalApplicationCommon {
+    readonly sourceKind: 'okta-integrations';
+    readonly status: 'ACTIVE' | 'INACTIVE' | null;
+    readonly signOnMode: string | null;
+    readonly scopeGrants: { readonly read: boolean; readonly scopes: readonly string[]; readonly unreadableScopes: number };
+}
+
+export interface LocalGitHubInstallationResult extends LocalApplicationCommon {
+    readonly sourceKind: 'github-integrations';
+    readonly repositorySelection: 'all' | 'selected' | null;
+    readonly suspended: boolean | null;
+    readonly events: readonly string[];
+    readonly permissions: { readonly read: boolean; readonly grants: readonly { readonly name: string; readonly level: GitHubPermissionLevel }[]; readonly unreadable: number };
+}
+
+/** One application, in its product's shape: `sourceKind` says which. */
+export type LocalApplicationResult = LocalEntraApplicationResult | LocalOktaApplicationResult | LocalGitHubInstallationResult;
+
+/** One organisation webhook: its target host, never its URL. No finding is raised about it. */
+export interface LocalWebhookResult {
+    readonly id: string;
+    readonly sourceKind: 'github-integrations';
+    readonly host: string | null;
+    readonly events: readonly string[];
+    readonly active: boolean | null;
+    readonly created: string | null;
 }
 
 export interface LocalIntegrationFinding {
@@ -471,8 +515,10 @@ export interface LocalIntegrationsResults {
         readonly sourceKind: string;
         readonly why: IntegrationNotConcludedWhy;
     }[];
-    /** Every permission name the classification table does not know, once per API. */
-    readonly unknownPermissions: readonly { readonly resourceAppId: string | null; readonly name: string }[];
+    /** Every permission name the classification tables do not know, once per product and API. */
+    readonly unknownPermissions: readonly { readonly via: PermissionVia; readonly resourceAppId: string | null; readonly name: string }[];
+    /** The GitHub organisation's webhooks, by host; null when no GitHub source was read. */
+    readonly webhooks: { readonly read: boolean; readonly hooks: readonly LocalWebhookResult[] } | null;
     readonly counts: {
         readonly applications: number;
         readonly highPrivilege: number;

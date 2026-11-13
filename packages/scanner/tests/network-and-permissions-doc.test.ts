@@ -91,6 +91,8 @@ describe('docs/network-and-permissions.md', () => {
             'gcp-sa': 'https://iam.googleapis.com',
             runtime: 'https://api.smith.langchain.com',
             'entra-integrations': 'https://graph.microsoft.com',
+            'okta-integrations': 'https://acme.okta.com',
+            'github-integrations': 'https://api.github.com',
         };
         let checked = 0;
         for (const [kind, entries] of Object.entries(NEVER_REQUESTED)) {

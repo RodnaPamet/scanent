@@ -23,7 +23,7 @@ export const INIT_ANSWERS_SCHEMA = 'scanent-init-answers/1';
  * integrations scanner's last. The register source comes only from
  * `inflect.readRegister`.
  */
-export const ANSWERABLE_KINDS = ['entra-sp', 'vault', 'okta-app', 'cicd', 'gcp-sa', 'runtime', 'mcp', 'code', 'entra-integrations'] as const;
+export const ANSWERABLE_KINDS = ['entra-sp', 'vault', 'okta-app', 'cicd', 'gcp-sa', 'runtime', 'mcp', 'code', 'entra-integrations', 'okta-integrations', 'github-integrations'] as const;
 export type AnswerableKind = (typeof ANSWERABLE_KINDS)[number];
 
 const envName = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/);

@@ -494,7 +494,20 @@ async function runSupportBundle(argv: readonly string[], file: string, env: Node
 
 const TLS_OFF = 'NODE_TLS_REJECT_UNAUTHORIZED=0 turns certificate verification off; scanent does not send credentials over an unverified connection. Remove it; add your CA with NODE_EXTRA_CA_CERTS.\n';
 
-const DOCTOR_KINDS: readonly ScannerSourceKind[] = ['entra-sp', 'okta-app', 'vault', 'mcp', 'runtime', 'cicd', 'code', 'inflect-register', 'gcp-sa', 'entra-integrations'];
+const DOCTOR_KINDS: readonly ScannerSourceKind[] = [
+    'entra-sp',
+    'okta-app',
+    'vault',
+    'mcp',
+    'runtime',
+    'cicd',
+    'code',
+    'inflect-register',
+    'gcp-sa',
+    'entra-integrations',
+    'okta-integrations',
+    'github-integrations',
+];
 
 export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: CliIo = {}): Promise<number> {
     const log = jsonLineLog();

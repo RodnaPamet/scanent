@@ -42,7 +42,20 @@ export interface AccessTable extends AccessEntry {
 }
 
 /** The order the wizard asks about sources in, and the order the tables print in. */
-export const GUIDE_ORDER: readonly ScannerSourceKind[] = ['entra-sp', 'vault', 'okta-app', 'cicd', 'gcp-sa', 'runtime', 'mcp', 'code', 'inflect-register', 'entra-integrations'];
+export const GUIDE_ORDER: readonly ScannerSourceKind[] = [
+    'entra-sp',
+    'vault',
+    'okta-app',
+    'cicd',
+    'gcp-sa',
+    'runtime',
+    'mcp',
+    'code',
+    'inflect-register',
+    'entra-integrations',
+    'okta-integrations',
+    'github-integrations',
+];
 
 export const ACCESS_GUIDE: Readonly<Record<ScannerSourceKind, AccessEntry>> = Object.freeze({
     'entra-sp': {
@@ -194,6 +207,54 @@ export const ACCESS_GUIDE: Readonly<Record<ScannerSourceKind, AccessEntry>> = Ob
         notNeeded: ['Any ReadWrite permission', 'Any delegated permission', 'Any directory role', 'AuditLog.Read.All, unless readSignInActivity is set'],
         credential: 'ENTRA_INTEGRATIONS_CLIENT_SECRET',
         hostsNote: 'login.microsoftonline.com, graph.microsoft.com',
+    },
+    'okta-integrations': {
+        kind: 'okta-integrations',
+        title: 'Okta (applications and the Okta API scopes granted to them)',
+        grant: 'An SSWS API token created by a user holding the Read-only Administrator role only. It may be the token the okta-app source uses',
+        where: [
+            'Okta admin console: Security, Administrators: assign Read-only Administrator to a dedicated user.',
+            'Signed in as that user: Security, API, Tokens, Create token.',
+        ],
+        reads: [
+            "Every application of the org except Okta's own (the Admin Console, the End-User Dashboard, the Browser Plugin): its id, label, status and sign-on mode (GET /api/v1/apps)",
+            'The Okta API scopes consented to each application, never who consented (GET /api/v1/apps/{appId}/grants)',
+        ],
+        limits: [
+            "Okta's application object records no owner, no publisher verification and no time of last use, so the three findings that need them are not concluded for Okta, and the results say so. Last use is only in the System Log, which this source does not read.",
+            'It reads consent grants of Okta API scopes. Scopes of a custom authorization server, and the people and groups assigned to an application, are not read.',
+        ],
+        notNeeded: ['Super Administrator', 'Org Administrator', 'App Administrator', 'API Access Management Administrator'],
+        credential: 'OKTA_API_TOKEN',
+        hostsNote: "the Okta org's host",
+    },
+    'github-integrations': {
+        kind: 'github-integrations',
+        title: 'GitHub (an organisation\'s app installations and webhooks)',
+        grant: "A fine-grained personal access token whose resource owner is the organisation, with the organisation permissions Administration: Read-only and Webhooks: Read-only, created by an organisation owner",
+        where: [
+            'Signed in as an owner of the organisation: Settings, Developer settings, Personal access tokens, Fine-grained tokens, Generate new token.',
+            'Resource owner: the organisation. Repository access: Public repositories (read-only); no repository is needed.',
+            'Organization permissions: Administration: Read-only, Webhooks: Read-only.',
+            'If the organisation requires approval of fine-grained tokens, approve it in the organisation\'s settings.',
+        ],
+        reads: [
+            "The organisation's GitHub App installations: each app's slug and id, its permissions, its repository selection, its events and whether it is suspended (GET /orgs/{org}/installations)",
+            "The organisation's webhooks: each one's target HOST, events, active state and creation date; never its URL or secret (GET /orgs/{org}/hooks)",
+        ],
+        limits: [
+            'GitHub answers both endpoints only for a token of an organisation owner.',
+            "The installation response names no owner of an installation, no publisher verification and no last use, so the three findings that need them are not concluded for GitHub, and the results say so.",
+            'OAuth apps authorised by members, and repository webhooks, are not read.',
+        ],
+        notNeeded: [
+            'Any Read and write permission',
+            'Any repository permission',
+            'Members, or any organisation permission other than the two above',
+            'A classic token: listing webhooks takes admin:org_hook, which can also change them',
+        ],
+        credential: 'GITHUB_INTEGRATIONS_TOKEN',
+        hostsNote: 'api.github.com',
     },
 });
 

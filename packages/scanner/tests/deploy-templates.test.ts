@@ -116,11 +116,12 @@ describe('deploy/examples', () => {
 
     it('covers every source a person can choose in the everything example, and no tenant in any', () => {
         const kinds = (name: string) => parseScannerConfig(JSON.parse(read(`${dir}/${name}.json`))).sources.map((s) => s.kind);
-        expect(kinds('everything').sort()).toEqual(['cicd', 'code', 'entra-integrations', 'entra-sp', 'gcp-sa', 'mcp', 'okta-app', 'runtime', 'vault']);
+        expect(kinds('everything').sort()).toEqual(['cicd', 'code', 'entra-integrations', 'entra-sp', 'gcp-sa', 'github-integrations', 'mcp', 'okta-app', 'okta-integrations', 'runtime', 'vault']);
         expect(kinds('code-only')).toEqual(['code']);
         // Both scanners on one directory with one application: one secret, named once in the template.
-        expect(kinds('integrations')).toEqual(['entra-sp', 'entra-integrations']);
-        expect(envTemplateNames(read(`${dir}/integrations.env`))).toEqual(['SCANNER_SIGNING_KEY', 'ENTRA_CLIENT_SECRET']);
+        // All three integrations readers, each beside the agent source of the same product; Entra and Okta share a credential with it.
+        expect(kinds('integrations')).toEqual(['entra-sp', 'entra-integrations', 'okta-app', 'okta-integrations', 'cicd', 'github-integrations']);
+        expect(envTemplateNames(read(`${dir}/integrations.env`))).toEqual(['SCANNER_SIGNING_KEY', 'ENTRA_CLIENT_SECRET', 'OKTA_API_TOKEN', 'GITHUB_READ_TOKEN', 'GITHUB_INTEGRATIONS_TOKEN']);
         // The integrations scanner on its own: no agent source, so the agent scanner does not run.
         expect(kinds('integrations-only')).toEqual(['entra-integrations']);
         expect(envTemplateNames(read(`${dir}/integrations-only.env`))).toEqual(['SCANNER_SIGNING_KEY', 'ENTRA_INTEGRATIONS_CLIENT_SECRET']);
@@ -391,7 +392,7 @@ describe('the chart, without rendering it', () => {
         const readme = read(`${CHART}/README.md`);
         const block = readme.slice(readme.indexOf('<!-- hosts:begin -->') + '<!-- hosts:begin -->'.length, readme.indexOf('<!-- hosts:end -->'));
         expect(block.trim().split('\n')).toEqual(expected);
-        expect(expected.length).toBe(2 + 9);
+        expect(expected.length).toBe(2 + 11);
     });
 
     it('says, in the README and the notes, what a NetworkPolicy does not give', () => {

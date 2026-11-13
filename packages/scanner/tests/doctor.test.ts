@@ -22,7 +22,7 @@ import { renderDoctorJson, renderDoctorText, summaryLine } from '../src/doctor/r
 import { runDoctor, type DoctorDeps } from '../src/doctor/run';
 import { assertWellFormed, doctorExitCode, isReady, type Check, type DoctorReport } from '../src/doctor/types';
 import { isDeclaredMcpMessage, isDeclaredRegisterExchange, isDeclaredRegisterMessage, isDeclaredRequest, scannerManifestHash } from '../src/scanner-surface';
-import { AZURE_CLIENT_ID, ENTRA_DIRECTORY_ID, INGEST, MCP_CRM, MCP_TICKETS, NEVER_REPORTED } from './helpers/agent-harness-source-fakes';
+import { AZURE_CLIENT_ID, ENTRA_DIRECTORY_ID, INGEST, MCP_CRM, MCP_TICKETS, NEVER_REPORTED, OKTA_ORG } from './helpers/agent-harness-source-fakes';
 import { CODE_ROOT, createDoctorWorld, fullEstateConfig, fullEstateEnv, GCP_PROJECT, GITHUB_REPO, WORLD_SECRETS, type DoctorWorld } from './helpers/doctor-world';
 
 const NOW = Date.parse('2026-10-19T03:00:00.000Z');
@@ -563,7 +563,9 @@ describe('7. grouped by scanner', () => {
     const withIntegrations = () => {
         const c = fullEstateConfig(join(dir, 'out'));
         const integrations = { kind: 'entra-integrations', directoryId: ENTRA_DIRECTORY_ID, clientId: AZURE_CLIENT_ID, clientSecretEnv: 'ENTRA_CLIENT_SECRET' };
-        writeFileSync(configPath, JSON.stringify({ ...c, sources: [...(c.sources as unknown[]), integrations] }), { mode: 0o600 });
+        // Okta's integrations reader, on the agent source's org and token.
+        const okta = { kind: 'okta-integrations', orgUrl: OKTA_ORG, apiTokenEnv: 'OKTA_API_TOKEN' };
+        writeFileSync(configPath, JSON.stringify({ ...c, sources: [...(c.sources as unknown[]), integrations, okta] }), { mode: 0o600 });
     };
 
     it('an agents-only estate: one group, every source scope and the ingest in it, and the local checks outside it', async () => {
@@ -578,14 +580,16 @@ describe('7. grouped by scanner', () => {
         withIntegrations();
         const report = await doctor(createDoctorWorld());
         expect(report.scanners.map((g) => g.scanner)).toEqual(['agents', 'integrations']);
-        expect(report.scanners[1].scopes).toEqual(['entra-integrations']);
+        expect(report.scanners[1].scopes).toEqual(['entra-integrations', 'okta-integrations']);
         expect(statuses(report, 'entra-integrations')).toMatchObject({ 'credential.present': 'PASS', reachable: 'PASS', authenticated: 'PASS' });
+        expect(statuses(report, 'okta-integrations')).toMatchObject({ 'credential.present': 'PASS', reachable: 'PASS', authenticated: 'PASS', 'read.permitted': 'PASS' });
         const text = renderDoctorText(report);
         const agents = text.indexOf('== The agent scanner ==');
         const integrations = text.indexOf('== The integrations scanner ==');
         expect(agents).toBeGreaterThan(text.indexOf('local\n'));
         expect(integrations).toBeGreaterThan(agents);
         expect(text.indexOf('\nentra-integrations\n')).toBeGreaterThan(integrations);
+        expect(text.indexOf('\nokta-integrations\n')).toBeGreaterThan(integrations);
         expect(text.indexOf('\nentra-sp\n')).toBeLessThan(integrations);
         expect(JSON.parse(renderDoctorJson(report)).scanners).toEqual(report.scanners);
     });

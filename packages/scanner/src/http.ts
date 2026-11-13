@@ -39,7 +39,9 @@
  *   • BYTE CAP. Per response and per source. A body is read through a stream
  *     that is CANCELLED at the cap, never read whole and measured afterwards.
  *     `Content-Length` is a free early refusal, not the check.
- *   • STATUS. 401/403 is AUTH_FAILED, 429 RATE_LIMITED, anything else that is
+ *   • STATUS. 401/403 is AUTH_FAILED, 429 RATE_LIMITED (and so is a 403 that
+ *     the product marks as its rate limit, by GitHub's documented headers:
+ *     `x-ratelimit-remaining: 0`, or a `retry-after`), anything else that is
  *     not 2xx UNREACHABLE, and a body that is not JSON PAGINATION_TORN. The
  *     one exception is asked for by name: a 404 on a request marked
  *     `absentOk` is an absence, never an empty listing.
@@ -339,7 +341,14 @@ function isCertificateFailure(err: unknown): boolean {
     return false;
 }
 
-function reasonForStatus(status: number): IncompleteReason {
+/**
+ * The contract's reason for a status. GitHub answers an exhausted rate limit
+ * with 403 as often as 429, and tells them apart from a refused credential by
+ * its headers (docs.github.com, "Rate limits for the REST API"): a 403 with
+ * `x-ratelimit-remaining: 0`, or with `retry-after`, is a rate limit.
+ */
+export function reasonForStatus(status: number, headers?: Headers): IncompleteReason {
+    if (status === 403 && headers !== undefined && (headers.get('x-ratelimit-remaining') === '0' || headers.get('retry-after') !== null)) return 'RATE_LIMITED';
     if (status === 401 || status === 403) return 'AUTH_FAILED';
     if (status === 429) return 'RATE_LIMITED';
     return 'UNREACHABLE';
@@ -482,7 +491,7 @@ export function createSourceWire(
                 }
                 if (!res.ok) {
                     await res.body?.cancel();
-                    throw new SourceReadError(reasonForStatus(res.status), `the source answered HTTP ${res.status}`, res.status);
+                    throw new SourceReadError(reasonForStatus(res.status, res.headers), `the source answered HTTP ${res.status}`, res.status);
                 }
                 return { body: parseJson(await readCapped(res, responseCap, charge)), headers: res.headers };
             } catch (err) {

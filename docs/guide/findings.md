@@ -352,11 +352,13 @@ scan. Deal with it, and note what you did.
 
 ## Integration findings
 
-These come from the **integrations scanner**, only when it is set up
+These come from the **integrations scanner**, only when it is set up. It reads
+Microsoft Entra ID, Okta and GitHub
 ([what-it-reads.md](what-it-reads.md#microsoft-entra-id-for-integrations)).
-They are about the applications your directory has granted access to, not
-about agents, and they are listed in a section of their own in the results
-page and in `integration-findings.csv`.
+They are about the applications your directory, Okta organisation or GitHub
+organisation has granted access to, not about agents, and they are listed in a
+section of their own in the results page and in `integration-findings.csv`.
+Every application and every finding there names the product it came from.
 
 Two rules decide when they can be raised:
 
@@ -367,27 +369,41 @@ Two rules decide when they can be raised:
   the results list the question as **not concluded**, with the reason, and
   never as clean.
 - **A permission the scanner does not know is not called high, and not
-  called low.** Which Microsoft Graph permissions are high-privilege is a
-  written list of about 130 names. Any permission not on it, and every
-  permission on another company's API, is listed in the results as "not known"
-  for a person to judge.
+  called low.** Which permissions are high-privilege is a written list for
+  each product: about 130 Microsoft Graph permissions, about 50 Okta scopes
+  and about 30 GitHub app permissions. Any permission not on its product's
+  list, and every permission on another company's API, is listed in the
+  results as "not known" for a person to judge. On GitHub, a permission that
+  can change something ("write" or "admin") is always high, whatever its name.
+- **What a product does not record is not concluded for it.** Okta and GitHub
+  record no owner of an application, say nothing about whether its publisher
+  was checked, and keep its last use only in their logs, which the scanner
+  does not read. So three of these findings are raised for Microsoft Entra ID
+  only; for Okta and GitHub the results list each as not concluded, with the
+  reason, and never as clean.
 
 <!-- guide:integration-findings -->
 | Code | Severity | Can a scan on its own raise it? |
 |---|---|---|
 | `INTEGRATION_HIGH_PRIVILEGE_GRANT` | HIGH | Yes |
-| `INTEGRATION_UNVERIFIED_PUBLISHER` | HIGH | Yes |
-| `INTEGRATION_NO_OWNER` | MEDIUM | Yes |
-| `INTEGRATION_UNUSED` | LOW | Yes, only when sign-in activity is read |
-| `INTEGRATION_EMPTY_INVENTORY` | HIGH | Yes |
+| `INTEGRATION_UNVERIFIED_PUBLISHER` | HIGH | Yes, for Microsoft Entra ID. Not concluded for Okta and GitHub |
+| `INTEGRATION_NO_OWNER` | MEDIUM | Yes, for Microsoft Entra ID. Not concluded for Okta and GitHub |
+| `INTEGRATION_UNUSED` | LOW | Yes, for Microsoft Entra ID when sign-in activity is read. Not concluded for Okta and GitHub |
+| `INTEGRATION_EMPTY_INVENTORY` | HIGH for Microsoft Entra ID and Okta; LOW for GitHub | Yes |
 <!-- /guide:integration-findings -->
 
 ## `INTEGRATION_HIGH_PRIVILEGE_GRANT`
 
 **What it means.** An application holds a permission that reaches your
-directory (its groups, applications, roles or policies), your mail, your files
-or SharePoint sites, your chats and Teams channel messages, or your calendars,
-or that can change something. Reading people's profiles (`User.Read.All`) or
+directory (its people's sign-in methods, groups, applications, roles or
+policies), your mail, your files or SharePoint sites, your chats and Teams
+channel messages, or your calendars, or that can change something. In Okta,
+a scope such as `okta.users.read`, `okta.groups.read` or any `.manage` scope.
+In GitHub, an app that can read your repositories' content (`contents`, pull
+requests, issues, discussions, Actions artifacts) or your members and
+administration settings, or that can change anything at all. Issues and
+discussions count as content because they are what people write in a
+repository, as its code and pull requests are. Reading people's profiles (`User.Read.All`) or
 the directory's sign-in and audit logs (`AuditLog.Read.All`) does not count:
 those are profiles and logs, not content. That line was decided on 13
 November 2026 and is written into the scanner's list. The finding lists the
@@ -404,7 +420,9 @@ permission names, for as long as the grant stands.
 1. Ask the application's owner, or the team that uses it, whether it still
    needs each permission listed.
 2. Remove the permissions it does not need: in the Entra admin centre,
-   Enterprise applications, the application, Permissions.
+   Enterprise applications, the application, Permissions; in Okta, the
+   application's Okta API Scopes tab; in GitHub, the organisation's settings,
+   GitHub Apps, the app, Configure.
 3. Keep the ones it needs, and record why. The scanner will keep reporting
    them: holding such a grant is the finding, not a mistake.
 
@@ -435,6 +453,12 @@ screen are all it takes.
 If the scan could not tell whether the publisher is verified, it does not
 raise this finding. It lists the question as not concluded.
 
+**Okta and GitHub.** Neither records a checked publisher in what the scanner
+reads: Okta does not mark which applications come from its own catalogue, and
+GitHub's list of installed apps says nothing of the kind. So this is never
+raised for them, and the results say for each that it was not concluded
+because the product does not record it.
+
 **When it closes.** When a later scan sees a verified publisher, or no
 high-privilege grant, for the application.
 
@@ -453,6 +477,10 @@ wrong.
 **What to do.** Assign an owner in the Entra admin centre (the application's
 Owners page). For an application your organisation registered, the owners of
 its registration count too.
+
+**Okta and GitHub.** Neither product records an owner of an application or an
+installation, so the scan cannot say an application has none, and the
+results say so instead. Keep your own record of who answers for each.
 
 **When it closes.** When a later scan sees an owner for the application.
 
@@ -475,6 +503,10 @@ granted. It is access with no purpose, kept open.
 **What to do.** Ask its owner whether it is still needed. If not, remove its
 permissions or delete it from Enterprise applications.
 
+**Okta and GitHub.** Both keep an application's use only in their logs (Okta's
+System Log, GitHub's audit log), which the scanner does not read. So "unused"
+is not concluded for them, and the results say why.
+
 **When it closes.** When a later scan, reading sign-in activity in full,
 sees a sign-in within the window.
 
@@ -482,17 +514,29 @@ sees a sign-in within the window.
 
 ## `INTEGRATION_EMPTY_INVENTORY`
 
-**What it means.** The integrations scan read your directory in full and
-found no application at all, other than Microsoft's own.
+**What it means.** An integrations source was read in full and found no
+application at all: in Microsoft Entra ID, none other than Microsoft's own;
+in Okta, no application in the organisation; in GitHub, no app installed on
+the organisation.
 
-**Why it matters.** It is almost never true. A directory in use holds
+**How severe.** HIGH for Microsoft Entra ID and Okta, where it is almost never
+true. LOW for GitHub: an organisation with no app installed (and no webhook)
+is possible, so the finding asks you to confirm the token can see the
+installations rather than calling the read wrong. That was decided on 13
+November 2026.
+
+**Why it matters.** For Entra and Okta it is almost never true. A directory in use holds
 applications. An empty answer is what a read of the wrong directory, or one
 made with permissions that see only part of it, looks like. The report shows
 it as a finding and never as a clean result.
 
 **What to do.** Check the directory id in the configuration, and that the
 application the scanner reads with holds both permissions and admin consent.
-Run the check step again ([run-it.md](run-it.md#5-check)).
+For Okta, check the organisation's address and the token's role. For GitHub,
+check the organisation's name and that the token was made by an owner of it;
+an organisation can truly have no app installed, and its settings (GitHub
+Apps) show whether it has. Run the check step again
+([run-it.md](run-it.md#5-check)).
 
 **When it closes.** When a later scan finds at least one application.
 

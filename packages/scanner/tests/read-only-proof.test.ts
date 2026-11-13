@@ -50,7 +50,7 @@ import {
     ESTATE_SOURCES,
     estateConfig,
     estateEnv,
-    INTEGRATIONS_ESTATE_SOURCE,
+    INTEGRATIONS_ESTATE_SOURCES,
     PUBLIC_RESOLVER,
     SELF_HOSTED_RUNTIME,
     type EstateSourceKind,
@@ -147,39 +147,50 @@ describe.each(ROWS)('$name', ({ name, kind, source }) => {
 });
 
 /**
- * The integrations scanner's Entra source. It runs beside an agent source in
- * this version, so its row is configured with the `code` source, which makes
- * no request: every request the row records is the integrations source's.
+ * The integrations scanner's sources, one row each. A row runs beside the
+ * `code` source, which makes no request: every request the row records is the
+ * integrations source's. Entra exchanges a token; Okta and GitHub send their
+ * token with each GET and exchange nothing.
  */
-describe('entra-integrations', () => {
-    const config = parseScannerConfig(estateConfig([ESTATE_SOURCES.code, INTEGRATIONS_ESTATE_SOURCE]));
+const INTEGRATION_ROWS = [
+    { kind: 'entra-integrations', classes: ['READ', 'TOKEN_EXCHANGE'], signInActivity: { status: 'COMPLETE', rows: 3 } },
+    { kind: 'okta-integrations', classes: ['READ'], signInActivity: { status: 'NOT_READ' } },
+    { kind: 'github-integrations', classes: ['READ'], signInActivity: { status: 'NOT_READ' } },
+] as const;
+
+describe.each(INTEGRATION_ROWS)('$kind', ({ kind, classes, signInActivity }) => {
+    const source = INTEGRATIONS_ESTATE_SOURCES[kind];
+    const config = parseScannerConfig(estateConfig([ESTATE_SOURCES.code, source]));
     const hosts = configuredHostsOf(config);
 
     it('the scan read: every request is declared, every one is a GET or the declared exchange, and its report verifies', async () => {
         const recorder = recordRequests(worldFor().fetchImpl);
         const scan = await scanRow(config, recorder.fetchImpl);
-        expect(scan.integrations?.body.sources).toEqual([{ kind: 'entra-integrations', status: 'COMPLETE', rows: expect.any(Number), signInActivity: { status: 'COMPLETE', rows: 3 } }]);
+        expect(scan.integrations?.body.sources).toEqual([{ kind, status: 'COMPLETE', rows: expect.any(Number), signInActivity }]);
+        expect(scan.integrations?.body.applications.length).toBeGreaterThan(0);
         expect(verifyAndParseIntegrationsReport(scan.integrations?.raw ?? '', [rawPublicKeyHex(loadSigningKey(SIGNING_PEM).publicKey)]).ok).toBe(true);
         expect(readOnlyProblems(recorder.requests, hosts)).toEqual([]);
         expect(recorder.requests.length).toBeGreaterThan(0);
-        expect([...new Set(recorder.requests.map((r) => classifyRequest(r, hosts)))].sort()).toEqual(['READ', 'TOKEN_EXCHANGE']);
-        for (const request of recorder.requests) seen.push({ row: 'entra-integrations', via: 'scan', request, cls: classifyRequest(request, hosts) });
+        expect(recorder.requests.every((r) => r.method === 'GET' || (classes as readonly string[]).includes('TOKEN_EXCHANGE'))).toBe(true);
+        expect([...new Set(recorder.requests.map((r) => classifyRequest(r, hosts)))].sort()).toEqual([...classes]);
+        for (const request of recorder.requests) seen.push({ row: kind, via: 'scan', request, cls: classifyRequest(request, hosts) });
     });
 
     it('the preflight: the same holds, nothing failed, and nothing was written', async () => {
-        const configPath = join(dir, 'entra-integrations.json');
-        mkdirSync(join(dir, 'out-integrations'), { recursive: true, mode: 0o700 });
-        writeFileSync(configPath, JSON.stringify(estateConfig([ESTATE_SOURCES.code, INTEGRATIONS_ESTATE_SOURCE], { outputs: [{ kind: 'file', dir: join(dir, 'out-integrations') }] })), { mode: 0o600 });
+        const configPath = join(dir, `${kind}.json`);
+        const out = join(dir, `out-${kind}`);
+        mkdirSync(out, { recursive: true, mode: 0o700 });
+        writeFileSync(configPath, JSON.stringify(estateConfig([ESTATE_SOURCES.code, source], { outputs: [{ kind: 'file', dir: out }] })), { mode: 0o600 });
         chmodSync(configPath, 0o600);
         const recorder = recordRequests(worldFor().fetchImpl);
         const report = await runDoctor({ configPath, env: estateEnv(), fetchImpl: recorder.fetchImpl, resolveHost: PUBLIC_RESOLVER, now: () => NOW, nodeVersion: 'v24.1.0', uid: 1000 });
         expect(report.checks.filter((c) => c.status === 'FAIL').map((c) => `${c.scope} ${c.id}`)).toEqual([]);
         expect(report.checks.filter((c) => c.status === 'SKIPPED' && c.cause === 'BLOCKED').map((c) => `${c.scope} ${c.id}`)).toEqual([]);
-        expect(report.checks.filter((c) => c.scope === 'entra-integrations' && c.status === 'PASS').map((c) => c.id)).toEqual(['credential.present', 'host.resolves', 'reachable', 'authenticated', 'read.permitted']);
+        expect(report.checks.filter((c) => c.scope === kind && c.status === 'PASS').map((c) => c.id)).toEqual(['credential.present', 'host.resolves', 'reachable', 'authenticated', 'read.permitted']);
         expect(readOnlyProblems(recorder.requests, hosts)).toEqual([]);
         expect(recorder.requests.length).toBeGreaterThan(0);
-        for (const request of recorder.requests) seen.push({ row: 'entra-integrations', via: 'doctor', request, cls: classifyRequest(request, hosts) });
-        expect(readdirSync(join(dir, 'out-integrations'))).toEqual([]);
+        for (const request of recorder.requests) seen.push({ row: kind, via: 'doctor', request, cls: classifyRequest(request, hosts) });
+        expect(readdirSync(out)).toEqual([]);
     });
 });
 
@@ -280,8 +291,8 @@ describe('exhaustiveness', () => {
     it('the rows are the source kinds of the configuration schema, each once', () => {
         const schemaKinds = SourceConfigSchema.options.map((option) => option.shape.kind.value as string).sort();
         // The agent rows, and the integrations row of its own.
-        expect([...new Set([...ROWS.map((r) => r.kind as string), INTEGRATIONS_ESTATE_SOURCE.kind])].sort()).toEqual(schemaKinds);
-        expect([...ESTATE_SOURCE_KINDS, INTEGRATIONS_ESTATE_SOURCE.kind].sort()).toEqual(schemaKinds);
+        expect([...new Set([...ROWS.map((r) => r.kind as string), ...INTEGRATION_ROWS.map((r) => r.kind)])].sort()).toEqual(schemaKinds);
+        expect([...ESTATE_SOURCE_KINDS, ...Object.keys(INTEGRATIONS_ESTATE_SOURCES)].sort()).toEqual(schemaKinds);
     });
 
     it('every declared read path was requested by some row', () => {

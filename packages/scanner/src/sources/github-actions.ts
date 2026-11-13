@@ -373,8 +373,8 @@ function secretsListing(): {
 }
 
 /** A classic token's scopes that can change a repository. A classic token cannot be read-only for private repositories. */
-const WRITING_SCOPE = /^(repo|public_repo|workflow|delete_repo|admin:.+|write:.+)$/;
-const SCOPE_NAME = /^[a-z][a-z_:]{0,63}$/;
+export const WRITING_SCOPE = /^(repo|public_repo|workflow|delete_repo|admin:.+|write:.+)$/;
+export const SCOPE_NAME = /^[a-z][a-z_:]{0,63}$/;
 
 /**
  * What GitHub's `X-OAuth-Scopes` response header says about write access. The

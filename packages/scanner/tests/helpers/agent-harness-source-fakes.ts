@@ -484,9 +484,39 @@ export type Override = (req: RequestLogEntry) => Answer | 'throw' | undefined;
 export interface OktaFixture {
     /** Pages of the apps listing (already filtered to OIDC by the fake, as Okta's filter would). */
     apps: unknown[][];
+    /**
+     * Pages of the apps listing with no filter, as `okta-integrations` asks for
+     * it: every application of the org. Absent, the filtered pages are answered.
+     */
+    allApps?: unknown[][];
+    /** Pages of `/api/v1/apps/{appId}/grants`, by app id. An app not here has none. */
+    grants?: Record<string, unknown[][]>;
     tokens: unknown[][];
     /** The id `GET /api/v1/api-tokens/current` answers: the token the scanner reads with. */
     currentTokenId: string;
+}
+
+/** What an Okta grant names and a report must never carry: who consented, and the grant's own client and issuer. */
+export const OKTA_GRANT_MARKERS = {
+    consentingUser: '00uConsentingPersonMarker',
+    createdBy: '00uGrantCreatorMarker',
+} as const;
+
+/** One consent grant as Okta's "List all app grants" documents it. */
+export function oktaGrant(id: string, appId: string, scopeId: string, status: 'ACTIVE' | 'REVOKED' = 'ACTIVE', source: 'ADMIN' | 'END_USER' = 'ADMIN'): Record<string, unknown> {
+    return {
+        id,
+        status,
+        created: '2026-06-01T00:00:00.000Z',
+        lastUpdated: '2026-06-01T00:00:00.000Z',
+        createdBy: { id: OKTA_GRANT_MARKERS.createdBy, type: 'User' },
+        issuer: OKTA_ORG,
+        clientId: appId,
+        scopeId,
+        source,
+        ...(source === 'END_USER' ? { userId: OKTA_GRANT_MARKERS.consentingUser } : {}),
+        _links: { app: { href: `${OKTA_ORG}/api/v1/apps/${appId}` }, self: { href: `${OKTA_ORG}/api/v1/apps/${appId}/grants/${id}` } },
+    };
 }
 
 /** The scanner's own SSWS token in the fixture org: listed, and answered by `/current`. */
@@ -527,6 +557,46 @@ export function oktaFixture(): OktaFixture {
             [{ id: '00TToken2', name: 'Automation token', userId: '00uAdmin2', created: '2026-10-01T00:00:00.000Z' }],
         ],
         currentTokenId: SCANNER_OKTA_TOKEN_ID,
+        // Every application, as the unfiltered listing answers: the OIDC ones above with their labels, and two more.
+        allApps: [
+            [
+                {
+                    id: '0oaService1',
+                    name: 'oidc_client',
+                    label: 'Reporting service',
+                    status: 'ACTIVE',
+                    signOnMode: 'OPENID_CONNECT',
+                    credentials: { oauthClient: { client_id: '0oaService1', token_endpoint_auth_method: 'client_secret_basic' } },
+                    settings: { oauthClient: { application_type: 'service' } },
+                    profile: { owner: 'jane.doe@acme.example' },
+                },
+                { id: '0oaWeb1', name: 'oidc_client', label: 'Acme portal', status: 'ACTIVE', signOnMode: 'OPENID_CONNECT', settings: { oauthClient: { application_type: 'web' } } },
+                // Okta's own apps, which every org holds: the platform, never reported.
+                { id: '0oaOktaAdmin', name: 'saasure', label: 'Okta Admin Console', status: 'ACTIVE', signOnMode: 'OPENID_CONNECT' },
+                { id: '0oaOktaDash', name: 'okta_enduser', label: 'Okta Dashboard', status: 'ACTIVE', signOnMode: 'OPENID_CONNECT' },
+            ],
+            [
+                { id: '0oaService2', name: 'oidc_client', label: 'Nightly export', status: 'INACTIVE', signOnMode: 'OPENID_CONNECT', settings: { oauthClient: { application_type: 'service' } } },
+                { id: '0oaSaml1', name: 'acme_expenses_1', label: 'Expenses', status: 'ACTIVE', signOnMode: 'SAML_2_0' },
+                { id: '0oaOktaPlugin', name: 'okta_browser_plugin', label: 'Okta Browser Plugin', status: 'ACTIVE', signOnMode: 'AUTO_LOGIN' },
+                // Named like Okta's own app by its label alone: an administrator can type a label, so it is an integration.
+                { id: '0oaLookalike', name: 'oidc_client', label: 'Okta Admin Console', status: 'ACTIVE', signOnMode: 'OPENID_CONNECT' },
+            ],
+        ],
+        grants: {
+            '0oaService1': [
+                [
+                    oktaGrant('oag1', '0oaService1', 'okta.users.read'),
+                    oktaGrant('oag2', '0oaService1', 'okta.logs.read'),
+                    // Revoked: not a grant the application holds.
+                    oktaGrant('oag3', '0oaService1', 'okta.users.manage', 'REVOKED'),
+                ],
+            ],
+            // Two pages, followed by the `Link` header.
+            '0oaService2': [[oktaGrant('oag4', '0oaService2', 'okta.logs.read')], [oktaGrant('oag5', '0oaService2', 'okta.groups.manage')]],
+            // A scope the table does not know, consented by a person.
+            '0oaWeb1': [[oktaGrant('oag6', '0oaWeb1', 'okta.myAccount.email.read', 'ACTIVE', 'END_USER')]],
+        },
     };
 }
 
@@ -794,7 +864,9 @@ export function createSourceFakes(opts: {
     function page(pages: unknown[][], u: URL, base: string): Answer {
         const at = Number(u.searchParams.get('after') ?? '0');
         const items = pages[at] ?? [];
-        const next = at + 1 < pages.length ? `<${base}${u.pathname}?limit=200&after=${at + 1}>; rel="next"` : null;
+        // Okta's next link keeps the listing's filter, as Okta writes it.
+        const filter = u.searchParams.get('filter');
+        const next = at + 1 < pages.length ? `<${base}${u.pathname}?limit=200&after=${at + 1}${filter === null ? '' : `&filter=${encodeURIComponent(filter)}`}>; rel="next"` : null;
         return json(items, 200, next ? { link: next } : {});
     }
 
@@ -804,7 +876,13 @@ export function createSourceFakes(opts: {
         if (okta) {
             if (headers.get('authorization') !== `SSWS ${OKTA_TOKEN_VALUE}`) return json({ errorCode: 'E0000011' }, 401);
             if (method !== 'GET') return json({ errorCode: 'E0000022' }, 405);
-            if (u.pathname === '/api/v1/apps') return page(okta.apps, u, u.origin);
+            if (u.pathname === '/api/v1/apps') return page(u.searchParams.has('filter') ? okta.apps : (okta.allApps ?? okta.apps), u, u.origin);
+            const grants = /^\/api\/v1\/apps\/([^/]+)\/grants$/.exec(u.pathname);
+            if (grants !== null) {
+                const known = (okta.allApps ?? okta.apps).flat().some((a) => (a as { id?: unknown }).id === grants[1]);
+                if (!known) return json({ errorCode: 'E0000007', errorSummary: 'Not found: Resource not found' }, 404);
+                return page(okta.grants?.[grants[1]] ?? [[]], u, u.origin);
+            }
             if (u.pathname === '/api/v1/api-tokens') return page(okta.tokens, u, u.origin);
             if (u.pathname === '/api/v1/api-tokens/current') {
                 const own = okta.tokens.flat().find((t) => (t as { id?: string }).id === okta.currentTokenId);

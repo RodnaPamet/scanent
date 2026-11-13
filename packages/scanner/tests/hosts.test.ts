@@ -104,6 +104,25 @@ describe('the three formats', () => {
         expect(entries.filter((e) => e.scanner === 'integrations').map((e) => e.source)).toEqual(['entra-integrations', 'entra-integrations']);
     });
 
+    it('the Okta and GitHub readers: the org\'s host and api.github.com, under the integrations scanner', () => {
+        const config = parseScannerConfig({
+            estate: 'a',
+            scanner: { agentId: 'a', signingKeyEnv: 'K' },
+            schedule: { everyHours: 1 },
+            outputs: [{ kind: 'stdout' }],
+            sources: [
+                { kind: 'okta-integrations', orgUrl: 'https://acme.okta.com', apiTokenEnv: 'X' },
+                { kind: 'github-integrations', organization: 'acme', tokenEnv: 'Y' },
+            ],
+        });
+        const entries = hostsFor(config);
+        expect(entries.map((e) => [e.scanner, e.host, e.source, e.purpose, e.named])).toEqual([
+            ['integrations', 'acme.okta.com', 'okta-integrations', 'read', 'configured'],
+            ['integrations', 'api.github.com', 'github-integrations', 'read', 'fixed'],
+        ]);
+        expect(renderHosts(entries, 'lines')).toBe('# integrations scanner\nacme.okta.com:443\napi.github.com:443\n');
+    });
+
     it('egress-allow: the value the bundled proxy\'s EGRESS_ALLOW takes', () => {
         const value = renderHosts(hostsFor(full()), 'egress-allow').trim();
         expect([...parseEgressAllowlist(value)].sort()).toEqual(hostNames(hostsFor(full())));

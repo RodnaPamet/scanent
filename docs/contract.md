@@ -441,7 +441,7 @@ neither verifier reads the other's report.
 <!-- contract:integrations-ids -->
 | Id | State | What it adds |
 |---|---|---|
-| `scanent-integrations/1` | Accepted; what scanent writes | The first integrations contract: Microsoft Entra ID's applications |
+| `scanent-integrations/1` | Accepted; what scanent writes | The first integrations contract: the applications Microsoft Entra ID, Okta and GitHub have granted access to |
 <!-- /contract:integrations-ids -->
 
 **The same rules as the agent report.** The same byte limit, the same
@@ -454,9 +454,9 @@ secret-shape walk (`firstSecretShapedMember`), card numbers included.
 
 **What it cannot carry, by its schema.** No person: a delegated grant made for
 named people says how many, never who. No credential value: a credential is a
-`scheme://locator` reference. No URL: no member holds one, and a reader that
-later reports a webhook reports its target's host alone, because a URL's path
-and query can carry a secret. No finding and no completeness flag: both are
+`scheme://locator` reference. No URL: no member holds one, and a webhook is
+reported by its target's host alone (`WEBHOOK_HOST`), because a URL's path and
+query can carry a secret. No finding and no completeness flag: both are
 derived by the reader (`planIntegrationsScan`, `isIntegrationsScanComplete`).
 
 ### Its body
@@ -466,27 +466,34 @@ derived by the reader (`planIntegrationsScan`, `isIntegrationsScanComplete`).
 | `contract` | string | The contract id |
 | `scan` | object | `id`, `asOf` and `scanner` (`agentId`, `version`, `manifestHash`), as in the agent report. A run's two reports carry the same `scan.id` |
 | `sources[]` | 1 to `MAX_INTEGRATIONS_SOURCES` | Every integrations source the run was configured to read, read or not. Each kind once |
-| `applications[]` | 0 to `MAX_APPLICATIONS` | Every application found. Each `id` once |
+| `applications[]` | 0 to `MAX_APPLICATIONS` | Every application found, each in its product's shape (below). Each `id` once |
+| `webhooks` | object, or absent | Present exactly when a `github-integrations` source is listed: `read` (whether the organisation's webhooks were listed in full) and `hooks[]` (below) |
 
 A **source** is `kind`, `status` (`COMPLETE` or `INCOMPLETE`), `reason`
 (present exactly when `INCOMPLETE`, from the agent report's list of reasons),
 `rows`, and `signInActivity`: `{ "status": "NOT_READ" }` when the source was
 not configured to read sign-in activity, or `COMPLETE` or `INCOMPLETE` (with a
 reason) and the rows that read returned. A sign-in read that fails leaves the
-source's own status as it was.
+source's own status as it was. Only an Entra source reads sign-in activity:
+an Okta or GitHub source is always `NOT_READ`, because neither product's API
+records an application's last use short of reading its logs.
 
 <!-- contract:integrations-source-kinds -->
 | Kind | Since | What it is |
 |---|---|---|
 | `entra-integrations` | `/1` | Microsoft Entra ID: applications' service principals, delegated grants and application permissions |
+| `okta-integrations` | `/1` | Okta: the org's applications and the Okta API scopes consented to each |
+| `github-integrations` | `/1` | GitHub: the organisation's App installations with their permissions, and its webhooks by host |
 <!-- /contract:integrations-source-kinds -->
 
-An **application**:
+An **application** is the shape its `sourceKind` names, one strict shape per
+product, and only the members that product's documented API answers. An
+Entra application:
 
 | Member | Type | Meaning |
 |---|---|---|
 | `id` | `entra:<directory id>:sp:<object id>` | Directory-scoped: two directories' applications never share one |
-| `sourceKind` | source kind | The source that found it, one the report lists |
+| `sourceKind` | `entra-integrations` | The source that found it, one the report lists |
 | `appId` | GUID or null | The application's id, the same in every directory |
 | `displayName` | string or null | As the directory holds it, when it is printable, at most `MAX_DISPLAY_NAME_CHARS` characters and not secret-shaped; otherwise null |
 | `origin` | `THIS_DIRECTORY`, `OTHER_DIRECTORY` or `UNKNOWN` | Which directory registered it |
@@ -497,8 +504,61 @@ An **application**:
 | `signIn` | object | `read` and `lastSeen` (`YYYY-MM-DD` or null). A sign-in not read has no date |
 | `credentials[]` | 0 to `MAX_CREDENTIALS_PER_APPLICATION` | `ref`, `ageDays` and `expires`, by reference as in the agent report |
 
+An Okta application (from `/api/v1/apps` and `/api/v1/apps/{appId}/grants`):
+
+| Member | Type | Meaning |
+|---|---|---|
+| `id` | `okta:<org host>:app:<app id>` | Org-scoped |
+| `sourceKind` | `okta-integrations` | |
+| `appId` | string | Okta's id of the application |
+| `displayName` | string or null | Its label, under the Entra rule for a display name |
+| `status` | `ACTIVE`, `INACTIVE` or null | As the apps listing gives it |
+| `signOnMode` | one of Okta's nine modes, or null | As the apps listing gives it |
+| `scopeGrants` | object | `read` (every grant of the application read), `scopes[]` (at most `MAX_OKTA_SCOPES_PER_APPLICATION`, each once: the Okta API scopes with an active consent grant), `unreadableScopes` (grants seen whose scope could not be reported) |
+
+Okta's own first-party apps (the Admin Console, the End-User Dashboard and the
+Browser Plugin) are not reported, as Microsoft's own applications are not.
+
+It has no owner, publisher or sign-in member: Okta's documented app object has
+none of the three, and Okta marks no application as an Okta Integration
+Network app. Who consented (`userId` of an end user's grant) is never kept.
+
+A GitHub App installation (from `/orgs/{org}/installations`):
+
+| Member | Type | Meaning |
+|---|---|---|
+| `id` | `github:<organisation>:installation:<installation id>` | Organisation-scoped |
+| `sourceKind` | `github-integrations` | |
+| `appId` | positive integer or null | The GitHub App's id |
+| `appSlug` | string or null | The app's slug: the name the outputs show |
+| `repositorySelection` | `all`, `selected` or null | Which of the organisation's repositories it reaches |
+| `suspended` | boolean or null | Whether the installation is suspended |
+| `events[]` | 0 to `MAX_EVENTS` | The events it subscribes to, each once |
+| `permissions` | object | `read` (the permissions map was read whole), `grants[]` (at most `MAX_GITHUB_PERMISSIONS_PER_INSTALLATION`): `name` and `level` (`read`, `write` or `admin`), each name once; `unreadable` (entries seen that could not be reported) |
+
+It has no owner, publisher or sign-in member: the installation response names
+the app and what it may do, and nobody who owns it, no publisher verification
+and no last use.
+
+A **webhook** (from `/orgs/{org}/hooks`): `id`
+(`github:<organisation>:hook:<hook id>`), `sourceKind`, `host` (the target's
+host, or null when it could not be reduced to one that may be reported),
+`events[]`, `active` and `created` (`YYYY-MM-DD`), each nullable where the
+listing did not say. The URL, its path and query, and the hook's secret are
+never read into the report: the reader reduces the URL to its host where it
+receives it.
+
 A list whose `read` is false holds what was seen: a presence in it is real,
 and an absence from it says nothing.
+
+**Why `/1` grew rather than `/2` beside it.** Okta and GitHub joined `/1`
+before any `/1` report was released, and they joined it without changing what
+an earlier `/1` report says: the Entra shape is member for member what step 1
+shipped, the new kinds come with shapes of their own, and `webhooks` appears
+only beside a GitHub source. So every report written with Entra alone is
+accepted, and read to the same findings, by the schema as it now stands. A
+change that made such a report invalid, or read it to a different meaning,
+would be `/2`, beside `/1`, and never one looser schema reading both.
 
 <!-- contract:integrations-limits -->
 | Constant | Value | What it bounds |
@@ -512,6 +572,10 @@ and an absence from it says nothing.
 | `MAX_CREDENTIALS_PER_APPLICATION` | 100 | Credentials of one application |
 | `MAX_DISPLAY_NAME_CHARS` | 256 | A display name |
 | `MAX_PERMISSION_NAME_CHARS` | 128 | A scope or permission name |
+| `MAX_OKTA_SCOPES_PER_APPLICATION` | 300 | Okta scopes granted to one application |
+| `MAX_GITHUB_PERMISSIONS_PER_INSTALLATION` | 200 | Permissions of one GitHub App installation |
+| `MAX_EVENTS` | 300 | Events of one installation or webhook |
+| `MAX_WEBHOOKS` | 1,000 | Webhooks of one organisation |
 <!-- /contract:integrations-limits -->
 
 **Completeness is derived** (`isIntegrationsScanComplete`): at least one
@@ -529,10 +593,10 @@ scanner:
 | Code | Severity | Keyed by | Opened when |
 |---|---|---|---|
 | `INTEGRATION_HIGH_PRIVILEGE_GRANT` | HIGH | the application | It holds a permission the classification calls high: it reaches the directory, mail, files, chats or calendars, or it writes |
-| `INTEGRATION_UNVERIFIED_PUBLISHER` | HIGH | the application | It holds such a permission, it is not this directory's own, and `publisherVerified` is false |
-| `INTEGRATION_NO_OWNER` | MEDIUM | the application | It holds any grant, and its owners were read and are none |
-| `INTEGRATION_UNUSED` | LOW | the application | Its sign-in was read, and is none or older than the window |
-| `INTEGRATION_EMPTY_INVENTORY` | HIGH | the source | A source read in full reported no application: not a clean result |
+| `INTEGRATION_UNVERIFIED_PUBLISHER` | HIGH | the application | Entra only: it holds such a permission, it is not this directory's own, and `publisherVerified` is false |
+| `INTEGRATION_NO_OWNER` | MEDIUM | the application | Entra only: it holds any grant, and its owners were read and are none |
+| `INTEGRATION_UNUSED` | LOW | the application | Entra only: its sign-in was read, and is none or older than the window |
+| `INTEGRATION_EMPTY_INVENTORY` | HIGH; LOW for `github-integrations` | the source | A source read in full reported no application: not a clean result. LOW for a GitHub organisation (owner decision, 2026-11-13), where no app installed is possible; the finding asks for the token to be confirmed |
 <!-- /contract:integrations-finding-codes -->
 
 **A presence counts on any read; an absence only on a whole one.** A grant
@@ -551,11 +615,21 @@ listed, with its reason, and is never a clean result:
 | `SIGN_IN_NOT_READ` | Sign-in activity was not asked for |
 | `SIGN_IN_READ_INCOMPLETE` | Sign-in activity was asked for, not read in full, and this application was not in what was read |
 | `SOURCE_INCOMPLETE` | The source was not read in full and reported no application |
+| `OWNER_NOT_EXPOSED` | The product's API records no owner of an application (Okta, GitHub) |
+| `PUBLISHER_NOT_EXPOSED` | The product's API records no publisher verification (Okta, GitHub) |
+| `SIGN_IN_NOT_EXPOSED` | The product's API records no last use of an application, short of reading its logs (Okta, GitHub) |
 <!-- /contract:integrations-not-concluded -->
 
-**Which permissions are high is a written table** (`GRAPH_PERMISSION_CLASSES`,
-`classifyPermission`), Microsoft Graph's permissions by name, each with the
-classes it reaches:
+The three `*_NOT_EXPOSED` reasons are written once per Okta or GitHub source
+that reported an application, with no application id: they hold for every
+application of the source, and those three findings are never raised for
+either product.
+
+**Which permissions are high is a written table per product**:
+Microsoft Graph's permissions (`GRAPH_PERMISSION_CLASSES`,
+`classifyPermission`), Okta's API scopes (`OKTA_SCOPE_CLASSES`,
+`classifyOktaScope`) and GitHub's App permissions (`GITHUB_PERMISSION_CLASSES`,
+`classifyGithubPermission`), each name with the classes it reaches:
 
 <!-- contract:integrations-permission-classes -->
 `DIRECTORY`, `MAIL`, `FILES`, `CHAT`, `CALENDAR`, `WRITE`
@@ -570,6 +644,19 @@ in the table, and any permission on an API other than Microsoft Graph, is
 unknown: never called high, never called low, and listed for a person to
 judge. An application whose only grants are unknown is not concluded either
 way.
+
+Okta's table follows Graph's: every `.manage` scope writes; reading the org's
+people, groups, applications, roles, policies, devices or identity providers
+is `DIRECTORY` (`okta.users.read` among them, because Okta's users API answers
+each person's enrolled factors, which Graph classes as directory); the System
+Log, the org's settings and the signed-in person's own profile are in the
+table with no class. GitHub's table classes a READ: repository content
+(`contents`, `pull_requests`, `issues`, `discussions`, `actions`, `packages`,
+secret-scanning alerts) is `FILES`, members and administration are `DIRECTORY`, and metadata and every
+kind of secret (GitHub returns a secret's name, never its value) have no
+class. Any `write` or `admin` level is a write whatever the name, because the
+level is GitHub's own statement that it may change what it names. A read of a
+name not in GitHub's table, projects and webhooks among them, is unknown.
 
 ## Transport
 

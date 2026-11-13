@@ -32,7 +32,7 @@ import {
     type Fakes,
     type GraphFixture,
 } from './helpers/agent-harness-source-fakes';
-import { IntegrationsReportBodyV1Schema } from '@rodnapamet/scanent-contract/integrations-contract';
+import { IntegrationsReportBodyV1Schema, type EntraIntegrationsApplication } from '@rodnapamet/scanent-contract/integrations-contract';
 import { createSourceWire } from '../src/http';
 import type { IntegrationsSourceRead } from '../src/integrations-source';
 import { isDeclaredRequest, isDeclaredTokenExchange } from '../src/scanner-surface';
@@ -57,7 +57,8 @@ async function preflight(fakes: Fakes, readSignInActivity = true): Promise<reado
     return source(readSignInActivity).preflight({ asOf: ASOF, deadline: Number.MAX_SAFE_INTEGER, now: Date.now, ...wire });
 }
 
-const byId = (r: IntegrationsSourceRead, sp: string) => r.applications.find((a) => a.id === app(sp));
+const byId = (r: IntegrationsSourceRead, sp: string): EntraIntegrationsApplication | undefined =>
+    r.applications.find((a): a is EntraIntegrationsApplication => a.sourceKind === 'entra-integrations' && a.id === app(sp));
 
 describe('1. which applications', () => {
     it('the directory\'s own and other directories\' enabled applications; never Microsoft\'s, a managed identity or a disabled one', async () => {
@@ -176,7 +177,7 @@ describe('4. completeness', () => {
         expect(byId(r, ENTRA.spThirdParty)?.delegatedGrants.read).toBe(true);
         expect(byId(r, ENTRA.spThirdParty)?.applicationPermissions).toEqual({ read: false, permissions: [] });
         expect(r.signInActivity).toMatchObject({ status: 'INCOMPLETE', reason: 'RATE_LIMITED', rows: 0 });
-        expect(r.applications.every((a) => !a.signIn.read)).toBe(true);
+        expect(r.applications.every((a) => a.sourceKind === 'entra-integrations' && !a.signIn.read)).toBe(true);
         // No retry: the throttled page was asked for once.
         expect(fakes.log.filter((e) => e.path === `/v1.0/servicePrincipals/${ENTRA.spThirdParty}/appRoleAssignments`)).toHaveLength(1);
     });
@@ -247,7 +248,7 @@ describe('5. sign-in activity', () => {
         const fakes = createSourceFakes();
         const r = await read(fakes, false);
         expect(r).toMatchObject({ status: 'COMPLETE', signInActivity: { status: 'NOT_READ' } });
-        expect(r.applications.every((a) => a.signIn.read === false && a.signIn.lastSeen === null)).toBe(true);
+        expect(r.applications.every((a) => a.sourceKind === 'entra-integrations' && a.signIn.read === false && a.signIn.lastSeen === null)).toBe(true);
         expect(fakes.log.some((e) => e.path.startsWith('/beta/'))).toBe(false);
     });
 
@@ -257,7 +258,7 @@ describe('5. sign-in activity', () => {
         const r = await read(fakes);
         expect(r.status).toBe('COMPLETE');
         expect(r.signInActivity).toMatchObject({ status: 'INCOMPLETE', reason: 'AUTH_FAILED', rows: 0 });
-        expect(r.applications.every((a) => !a.signIn.read)).toBe(true);
+        expect(r.applications.every((a) => a.sourceKind === 'entra-integrations' && !a.signIn.read)).toBe(true);
     });
 });
 

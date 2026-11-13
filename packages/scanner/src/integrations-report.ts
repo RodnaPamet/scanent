@@ -34,6 +34,8 @@ const kindOrder = (k: string) => (INTEGRATIONS_SOURCE_KINDS as readonly string[]
 /** Build the report body. Pure: no clock, no I/O. */
 export function buildIntegrationsReportBody(identity: ScanIdentity, reads: readonly IntegrationsSourceRead[]): IntegrationsReportBody {
     const ordered = [...reads].sort((a, b) => kindOrder(a.kind) - kindOrder(b.kind));
+    // The webhooks go with a GitHub source, read or not: one that never reached them lists none, and says so.
+    const github = ordered.find((r) => r.kind === 'github-integrations');
     return {
         contract: INTEGRATIONS_CONTRACT_V1,
         scan: {
@@ -54,6 +56,7 @@ export function buildIntegrationsReportBody(identity: ScanIdentity, reads: reado
                         : { status: 'INCOMPLETE' as const, reason: r.signInActivity.reason, rows: r.signInActivity.rows },
         })),
         applications: ordered.flatMap((r) => r.applications).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+        ...(github === undefined ? {} : { webhooks: github.webhooks ?? { read: false, hooks: [] } }),
     };
 }
 

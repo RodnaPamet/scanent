@@ -8,11 +8,11 @@
  * bytes, the window "unused" is measured over, and what the sources said about
  * a read that stopped.
  */
-import type { IntegrationsReportBody } from '@rodnapamet/scanent-contract/integrations-contract';
+import type { IntegrationsReportApplication, IntegrationsReportBody } from '@rodnapamet/scanent-contract/integrations-contract';
 import { isIntegrationsScanComplete } from '@rodnapamet/scanent-contract/integrations-contract-rules';
-import { planIntegrationsScan } from '@rodnapamet/scanent-contract/integrations-findings';
+import { planIntegrationsScan, type PlannedApplication, type PlannedPermission } from '@rodnapamet/scanent-contract/integrations-findings';
 
-import type { LocalApplicationPermission, LocalIntegrationsResults, SourceNote } from './types';
+import type { LocalApplicationPermission, LocalApplicationResult, LocalIntegrationsResults, SourceNote } from './types';
 
 export interface IntegrationsScoreInput {
     readonly body: IntegrationsReportBody;
@@ -23,11 +23,71 @@ export interface IntegrationsScoreInput {
     readonly sourceNotes?: readonly SourceNote[];
 }
 
-const permission = (p: { readonly via: 'DELEGATED' | 'APPLICATION'; readonly resourceAppId: string | null; readonly name: string | null }): LocalApplicationPermission => ({
+const permission = (p: PlannedPermission): LocalApplicationPermission => ({
     via: p.via,
     resourceAppId: p.resourceAppId,
     name: p.name,
 });
+
+/** One application in its product's shape, beside what the planner concluded of it. */
+function applicationResult(app: IntegrationsReportApplication, p: PlannedApplication): LocalApplicationResult {
+    const common = {
+        id: app.id,
+        privilege: p.privilege,
+        classes: [...p.classes],
+        highPermissions: p.highPermissions.map(permission),
+        unknownPermissions: p.unknownPermissions.map(permission),
+        usage: p.usage,
+    };
+    if (app.sourceKind === 'okta-integrations') {
+        return {
+            ...common,
+            sourceKind: app.sourceKind,
+            appId: app.appId,
+            displayName: app.displayName,
+            status: app.status,
+            signOnMode: app.signOnMode,
+            scopeGrants: { read: app.scopeGrants.read, scopes: [...app.scopeGrants.scopes], unreadableScopes: app.scopeGrants.unreadableScopes },
+        };
+    }
+    if (app.sourceKind === 'github-integrations') {
+        return {
+            ...common,
+            sourceKind: app.sourceKind,
+            appId: app.appId === null ? null : String(app.appId),
+            displayName: app.appSlug,
+            repositorySelection: app.repositorySelection,
+            suspended: app.suspended,
+            events: [...app.events],
+            permissions: { read: app.permissions.read, grants: app.permissions.grants.map((g) => ({ name: g.name, level: g.level })), unreadable: app.permissions.unreadable },
+        };
+    }
+    return {
+        ...common,
+        sourceKind: app.sourceKind,
+        appId: app.appId,
+        displayName: app.displayName,
+        origin: app.origin,
+        publisherVerified: app.publisherVerified,
+        owners: app.owners === null ? null : app.owners.map((o) => ({ kind: o.kind, id: o.id })),
+        delegatedGrants: {
+            read: app.delegatedGrants.read,
+            grants: app.delegatedGrants.grants.map((g) => ({
+                resourceAppId: g.resourceAppId,
+                consentType: g.consentType,
+                principalCount: g.principalCount,
+                scopes: [...g.scopes],
+                unreadableScopes: g.unreadableScopes,
+            })),
+        },
+        applicationPermissions: {
+            read: app.applicationPermissions.read,
+            permissions: app.applicationPermissions.permissions.map((x) => ({ resourceAppId: x.resourceAppId, roleId: x.roleId, name: x.name })),
+        },
+        signIn: { read: app.signIn.read, lastSeen: app.signIn.lastSeen, daysSince: p.daysSinceSignIn },
+        credentials: app.credentials.length,
+    };
+}
 
 export function scoreIntegrationsLocally(input: IntegrationsScoreInput): LocalIntegrationsResults {
     const { body } = input;
@@ -39,36 +99,7 @@ export function scoreIntegrationsLocally(input: IntegrationsScoreInput): LocalIn
         .map((app) => {
             const p = planned.get(app.id);
             if (p === undefined) throw new Error('the planner left out an application of the report');
-            return {
-                id: app.id,
-                sourceKind: app.sourceKind,
-                appId: app.appId,
-                displayName: app.displayName,
-                origin: app.origin,
-                publisherVerified: app.publisherVerified,
-                owners: app.owners === null ? null : app.owners.map((o) => ({ kind: o.kind, id: o.id })),
-                delegatedGrants: {
-                    read: app.delegatedGrants.read,
-                    grants: app.delegatedGrants.grants.map((g) => ({
-                        resourceAppId: g.resourceAppId,
-                        consentType: g.consentType,
-                        principalCount: g.principalCount,
-                        scopes: [...g.scopes],
-                        unreadableScopes: g.unreadableScopes,
-                    })),
-                },
-                applicationPermissions: {
-                    read: app.applicationPermissions.read,
-                    permissions: app.applicationPermissions.permissions.map((x) => ({ resourceAppId: x.resourceAppId, roleId: x.roleId, name: x.name })),
-                },
-                privilege: p.privilege,
-                classes: [...p.classes],
-                highPermissions: p.highPermissions.map(permission),
-                unknownPermissions: p.unknownPermissions.map(permission),
-                signIn: { read: app.signIn.read, lastSeen: app.signIn.lastSeen, daysSince: p.daysSinceSignIn },
-                usage: p.usage,
-                credentials: app.credentials.length,
-            };
+            return applicationResult(app, p);
         });
     const count = (code: string) => plan.findings.filter((f) => f.code === code).length;
     return {
@@ -91,12 +122,20 @@ export function scoreIntegrationsLocally(input: IntegrationsScoreInput): LocalIn
                     rows: s.signInActivity.status === 'NOT_READ' ? null : s.signInActivity.rows,
                 },
                 ...(stopped && detail !== null ? { detail } : {}),
+                ...(notes.get(s.kind)?.excluded === undefined ? {} : { excluded: notes.get(s.kind)?.excluded }),
             };
         }),
         applications,
         findings: plan.findings.map((f) => ({ code: f.code, sourceRef: f.sourceRef, severity: f.severity, applicationId: f.applicationId, title: f.title, description: f.description })),
         notConcluded: plan.notConcluded.map((n) => ({ code: n.code, applicationId: n.applicationId, sourceKind: n.sourceKind, why: n.why })),
-        unknownPermissions: plan.unknownPermissionNames.map((u) => ({ resourceAppId: u.resourceAppId, name: u.name })),
+        unknownPermissions: plan.unknownPermissionNames.map((u) => ({ via: u.via, resourceAppId: u.resourceAppId, name: u.name })),
+        webhooks:
+            body.webhooks === undefined
+                ? null
+                : {
+                    read: body.webhooks.read,
+                    hooks: body.webhooks.hooks.map((h) => ({ id: h.id, sourceKind: h.sourceKind, host: h.host, events: [...h.events], active: h.active, created: h.created })),
+                },
         counts: {
             applications: applications.length,
             highPrivilege: count('INTEGRATION_HIGH_PRIVILEGE_GRANT'),

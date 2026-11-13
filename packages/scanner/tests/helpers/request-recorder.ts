@@ -86,6 +86,7 @@ export function configuredHostsOf(config: ScannerConfig): ConfiguredHosts {
     const mcpEndpoints: string[] = [];
     for (const s of config.sources) {
         if (s.kind === 'okta-app') productOrigins.okta = [new URL(s.orgUrl).origin];
+        if (s.kind === 'okta-integrations') productOrigins['okta-integrations'] = [new URL(s.orgUrl).origin];
         if (s.kind === 'vault') productOrigins['azure-key-vault'] = s.vaultUrls.map((v) => new URL(v).origin);
         if (s.kind === 'runtime') {
             productOrigins.langsmith = ['cloud' in s.endpoint ? LANGSMITH_CLOUD_ORIGINS[s.endpoint.cloud] : new URL(s.endpoint.selfHosted).origin];

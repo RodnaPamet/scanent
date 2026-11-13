@@ -25,7 +25,8 @@ import { SCANNER_VERSION } from '../src/scanner-surface';
 
 import { INCOMPLETE_REASONS, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 import { HARNESS_FINDING_CODES, planHarnessScan, type PriorHarnessState } from '@rodnapamet/scanent-contract/harness-findings';
-import { INTEGRATION_FINDING_CODES, INTEGRATION_FINDING_SEVERITY } from '@rodnapamet/scanent-contract/integrations-findings';
+import { INTEGRATION_FINDING_CODES, integrationFindingSeverity } from '@rodnapamet/scanent-contract/integrations-findings';
+import { INTEGRATIONS_SOURCE_KINDS } from '@rodnapamet/scanent-contract/integrations-contract-rules';
 import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LEVELS, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 import { AGENTS_CSV_LEADING_COLUMNS, csvCriterionState, FINDINGS_CSV_COLUMNS } from '@scanent/report/render/csv';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
@@ -303,7 +304,10 @@ describe('docs/guide/findings.md: the integration findings', () => {
     it('gives each integration finding the severity the planner gives it', () => {
         for (const [code, severity] of tableRows(text, 'integration-findings')) {
             const stated = SEVERITIES.filter((s) => new RegExp(`\\b${s}\\b`).test(severity));
-            expect({ code, stated }).toEqual({ code, stated: [INTEGRATION_FINDING_SEVERITY[code.replace(/`/g, '') as (typeof INTEGRATION_FINDING_CODES)[number]]] });
+            // Every severity the planner gives it for some product, and no other: the empty inventory's is the product's.
+            const c = code.replace(/`/g, '') as (typeof INTEGRATION_FINDING_CODES)[number];
+            const planned = SEVERITIES.filter((s) => INTEGRATIONS_SOURCE_KINDS.some((k) => integrationFindingSeverity(c, k) === s));
+            expect({ code, stated: [...stated].sort() }).toEqual({ code, stated: [...planned].sort() });
         }
     });
 });

@@ -25,6 +25,8 @@ both; a product read by both (Microsoft Entra ID) is two sources, which may use 
 | agents | `code` | Read access to the listed directories for the user the scanner runs as | `(none)` | none |
 | agents | `inflect-register` | An API key bound to the scanner agent with the admin:harness_ingest scope, plus mcp:read when the register is read | `INFLECT_INGEST_KEY` | the tenant's host |
 | integrations | `entra-integrations` | Microsoft Graph application permissions Application.Read.All and Directory.Read.All, with admin consent; AuditLog.Read.All as well only when readSignInActivity is set | `ENTRA_INTEGRATIONS_CLIENT_SECRET` | login.microsoftonline.com, graph.microsoft.com |
+| integrations | `okta-integrations` | An SSWS API token created by a user holding the Read-only Administrator role only. It may be the token the okta-app source uses | `OKTA_API_TOKEN` | the Okta org's host |
+| integrations | `github-integrations` | A fine-grained personal access token whose resource owner is the organisation, with the organisation permissions Administration: Read-only and Webhooks: Read-only, created by an organisation owner | `GITHUB_INTEGRATIONS_TOKEN` | api.github.com |
 
 ## The agent scanner
 
@@ -264,3 +266,62 @@ Source kind: `entra-integrations`. Credential: `ENTRA_INTEGRATIONS_CLIENT_SECRET
 - Any delegated permission
 - Any directory role
 - AuditLog.Read.All, unless readSignInActivity is set
+
+### Okta (applications and the Okta API scopes granted to them)
+
+Source kind: `okta-integrations`. Credential: `OKTA_API_TOKEN`. Hosts: the Okta org's host.
+
+**Grant.** An SSWS API token created by a user holding the Read-only Administrator role only. It may be the token the okta-app source uses.
+
+**Where it is created.**
+
+1. Okta admin console: Security, Administrators: assign Read-only Administrator to a dedicated user.
+2. Signed in as that user: Security, API, Tokens, Create token.
+
+**Lets the scanner read.**
+
+- Every application of the org except Okta's own (the Admin Console, the End-User Dashboard, the Browser Plugin): its id, label, status and sign-on mode (GET /api/v1/apps)
+- The Okta API scopes consented to each application, never who consented (GET /api/v1/apps/{appId}/grants)
+
+**What this grant does not show.**
+
+- Okta's application object records no owner, no publisher verification and no time of last use, so the three findings that need them are not concluded for Okta, and the results say so. Last use is only in the System Log, which this source does not read.
+- It reads consent grants of Okta API scopes. Scopes of a custom authorization server, and the people and groups assigned to an application, are not read.
+
+**Not needed, and must not be granted.**
+
+- Super Administrator
+- Org Administrator
+- App Administrator
+- API Access Management Administrator
+
+### GitHub (an organisation's app installations and webhooks)
+
+Source kind: `github-integrations`. Credential: `GITHUB_INTEGRATIONS_TOKEN`. Hosts: api.github.com.
+
+**Grant.** A fine-grained personal access token whose resource owner is the organisation, with the organisation permissions Administration: Read-only and Webhooks: Read-only, created by an organisation owner.
+
+**Where it is created.**
+
+1. Signed in as an owner of the organisation: Settings, Developer settings, Personal access tokens, Fine-grained tokens, Generate new token.
+2. Resource owner: the organisation. Repository access: Public repositories (read-only); no repository is needed.
+3. Organization permissions: Administration: Read-only, Webhooks: Read-only.
+4. If the organisation requires approval of fine-grained tokens, approve it in the organisation's settings.
+
+**Lets the scanner read.**
+
+- The organisation's GitHub App installations: each app's slug and id, its permissions, its repository selection, its events and whether it is suspended (GET /orgs/{org}/installations)
+- The organisation's webhooks: each one's target HOST, events, active state and creation date; never its URL or secret (GET /orgs/{org}/hooks)
+
+**What this grant does not show.**
+
+- GitHub answers both endpoints only for a token of an organisation owner.
+- The installation response names no owner of an installation, no publisher verification and no last use, so the three findings that need them are not concluded for GitHub, and the results say so.
+- OAuth apps authorised by members, and repository webhooks, are not read.
+
+**Not needed, and must not be granted.**
+
+- Any Read and write permission
+- Any repository permission
+- Members, or any organisation permission other than the two above
+- A classic token: listing webhooks takes admin:org_hook, which can also change them

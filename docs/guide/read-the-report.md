@@ -343,14 +343,19 @@ incomplete, so this is not a clean result."
 
 Only when the integrations scanner is set up
 ([what-it-reads.md](what-it-reads.md#microsoft-entra-id-for-integrations)).
-It opens with its own completeness: whether the directory's applications,
-their grants and, if asked for, their sign-ins were read in full. Then the
-counts, the integration findings ([findings.md](findings.md#integration-findings)),
-the questions that could not be concluded and why, and one row per
-application: its publisher, its owners, its grants, whether any is
-high-privilege, and when it last signed in. "Not read" in a cell means the
-scan did not read that part, not that it is empty. Permissions the scanner's
-list does not know are listed last, for you to judge.
+It opens with its own completeness: for each product it read (Microsoft Entra
+ID, Okta, GitHub), whether its applications, their grants and, for Entra if
+asked for, their sign-ins were read in full, and how many of the product's
+own applications (Microsoft's, Okta's) were left out as the platform. Then the counts, the integration
+findings ([findings.md](findings.md#integration-findings)), the questions that
+could not be concluded and why, grouped by product, and one row per
+application: its product, its publisher, its owners, its grants, whether any
+is high-privilege, and when it last signed in. "Not read" in a cell means the
+scan did not read that part, not that it is empty. "Not exposed by Okta" (or
+GitHub) means that product does not record it at all, so the scan cannot
+answer it. Permissions the scanner's lists do not know are listed next, for
+you to judge, and last, for GitHub, the organisation's webhooks: where it
+sends its events, by the server's name only.
 
 The same section is in `report.pdf`, and the same rows are in
 `integrations.csv` and `integration-findings.csv`. The signed report it comes
