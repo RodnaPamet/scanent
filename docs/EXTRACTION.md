@@ -320,7 +320,7 @@ What the Inflect Compliance repository still has to do, in order:
 2. **Route the scope.** Add `@rodnapamet:registry=https://npm.pkg.github.com`
    to the application's `.npmrc`, and give each workflow job that installs
    `permissions: packages: read` and the token
-   ([contract.md](contract.md#install-it) has the lines). No token goes in
+   ([contract.md](contract.md#install-it-from-github-packages) has the lines). No token goes in
    the repository.
 3. **Depend on it**, at an exact version, and check `zod`. The package pins
    `zod` to one exact version (`packages/contract/package.json`). At the

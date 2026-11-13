@@ -152,6 +152,12 @@ on 2026-11-13, with `cosign` 3.1.4 and the commands of
   `+ @rodnapamet/scanent-contract@0.13.2`. Installing it was not tried from
   outside: that needs a token with read access to GitHub Packages.
 
+0.14.0 (2026-11-13) was checked the same way the same day: no-login pull and
+no `latest` tag; tag and per-architecture signatures; an SBOM attestation for
+each architecture (1,345 and 1,344 components); ten release files; the
+bundle's checksum and signed list; `verify.sh` with networking off given a
+trusted root file; and the bundle's provenance.
+
 Before the first tag, the release workflow was run by hand, which signs and
 publishes nothing: twice on
   2026-11-12, where the first run failed at the SBOM step and the second

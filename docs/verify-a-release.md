@@ -14,7 +14,7 @@ check does and does not prove.
 **The image is public.** Pulling it, and every check of it below, needs no
 GitHub account and no login to the registry. The contract package is
 different: GitHub Packages asks for a token on every npm install, public or
-not ([contract.md](contract.md#install-it)).
+not ([contract.md](contract.md#install-it-from-github-packages)).
 
 Nothing here needs a key from us. Signing is keyless: the release workflow
 asks GitHub for a short-lived token that says which workflow of which
@@ -153,6 +153,8 @@ A release carries five files for the bundle:
 | `scanent-<version>-airgap.SHA256SUMS` | The list of checksums of every file inside the bundle |
 | `scanent-<version>-airgap.SHA256SUMS.sigstore.json` | The signature over that list |
 | `scanent-<version>-airgap.provenance.jsonl` | The archive's build provenance (above) |
+| `rodnapamet-scanent-contract-<version>.tgz` | The report contract package, as published to GitHub Packages (from 0.15.0) |
+| `rodnapamet-scanent-contract-<version>.tgz.sha256` | Its SHA-256 |
 
 On a machine with network access, before the bundle is carried anywhere:
 
@@ -228,7 +230,7 @@ A release also publishes the report contract as an npm package,
 `@rodnapamet/scanent-contract@<version>`, to GitHub Packages, and attests the
 build provenance of the tarball it publishes. Download that tarball and check
 it. The download needs the `.npmrc` lines and the token of
-[contract.md](contract.md#install-it):
+[contract.md](contract.md#install-it-from-github-packages):
 
 ```bash
 npm pack "@rodnapamet/scanent-contract@$VERSION"

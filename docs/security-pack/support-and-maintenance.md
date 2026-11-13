@@ -167,7 +167,7 @@ says what was checked.
 | Build provenance for the manifest, each image and the bundle | Attestations, and attached to the release as files |
 | The air-gapped bundle: one image archive per architecture, `load.sh`, `verify.sh`, the Compose files, the Helm chart, example configurations, the operating documents, the SBOMs, `LICENSE` and `NOTICE`, with a SHA-256 for every file | Attached to the release as `scanent-<version>-airgap.tar` |
 | The bundle's SHA-256, its list of checksums, and the signature over that list | Attached to the release |
-| The report contract as an npm package, `@rodnapamet/scanent-contract@<version>`: compiled code, type declarations, `LICENSE` and `NOTICE`, with build provenance for the tarball. A published version is never published again | GitHub Packages. An install needs a token ([the contract page](../contract.md#install-it)) |
+| The report contract as an npm package, `@rodnapamet/scanent-contract@<version>`: compiled code, type declarations, `LICENSE` and `NOTICE`, with build provenance for the tarball. A published version is never published again | GitHub Packages, where an install needs a token ([the contract page](../contract.md#install-it-from-github-packages)), and from 0.15.0 the GitHub release, where it needs none ([from a release](../contract.md#install-it-from-a-release-with-no-token)) |
 
 Before anything is built, the workflow holds the tagged commit to what a
 commit on `main` is held to, and refuses a tag whose commit is not on `main`.

@@ -486,7 +486,27 @@ and `@scanent/scanner`, are not published and keep their names.
 replaced. The package version says which release the code is from. What a
 consumer compares is on this page: the contract ids and the ladder version.
 
-### Install it
+### Install it from a release, with no token
+
+From 0.15.0 each GitHub release carries the package's tarball and its
+SHA-256: `rodnapamet-scanent-contract-<version>.tgz` and
+`rodnapamet-scanent-contract-<version>.tgz.sha256`. They are the bytes the
+release workflow published to GitHub Packages and attested. Download both,
+check them, and install the file:
+
+```bash
+sha256sum -c rodnapamet-scanent-contract-<version>.tgz.sha256
+gh attestation verify rodnapamet-scanent-contract-<version>.tgz --repo RodnaPamet/scanent
+npm install --save-exact ./rodnapamet-scanent-contract-<version>.tgz
+```
+
+npm records the file's integrity hash in the lockfile, so a later install of
+other bytes under the same name fails. A project that installs in CI can
+also name the release asset's URL instead of a committed file; the
+integrity hash still binds it. The `./` matters: without it npm reads
+`name/file.tgz` as a GitHub `owner/repo` shorthand.
+
+### Install it from GitHub Packages
 
 GitHub Packages asks for a token on every install of an npm package, whether
 the package is public or private.

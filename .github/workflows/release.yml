@@ -925,6 +925,24 @@ jobs:
           cp "$sums" "scanent-${VERSION}-airgap.SHA256SUMS"
           cp "$sig" "scanent-${VERSION}-airgap.SHA256SUMS.sigstore.json"
 
+      # The contract package's tarball, the bytes `publish-contract` attested
+      # and published, attached so that a consumer can install it from the
+      # release with no registry token (`npm install <url>`), and check it
+      # against its SHA-256 and with `gh attestation verify` first.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: contract-package
+          path: contract-package
+
+      - name: Write the contract package's SHA-256
+        run: |
+          set -euo pipefail
+          test -s "contract-package/rodnapamet-scanent-contract-${VERSION}.tgz"
+          [ "$(find contract-package -type f | wc -l)" -eq 1 ]
+          cp "contract-package/rodnapamet-scanent-contract-${VERSION}.tgz" .
+          sha256sum "rodnapamet-scanent-contract-${VERSION}.tgz" > "rodnapamet-scanent-contract-${VERSION}.tgz.sha256"
+          cat "rodnapamet-scanent-contract-${VERSION}.tgz.sha256"
+
       # The checksum a site compares the archive with, in `sha256sum -c` form.
       - name: Write the bundle's SHA-256
         run: |
@@ -941,10 +959,11 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$REF_NAME" --verify-tag --title "scanent ${VERSION}" \
-            --notes "Image: ${IMAGE_REPOSITORY}:${VERSION} (linux/amd64, linux/arm64), signed by this repository's release workflow, with an SBOM and build provenance attached. The air-gapped bundle, its SHA-256, the SBOM of each image, the signed list of the bundle's checksums, and the build provenance of the manifest, of each image and of the bundle are attached. The report contract is published to GitHub Packages as @rodnapamet/scanent-contract@${VERSION}, with build provenance. docs/verify-a-release.md has the commands that check each of them. What changed in this version, what was run before the tag and what has not been tested are in docs/releases/${VERSION}.md." \
+            --notes "Image: ${IMAGE_REPOSITORY}:${VERSION} (linux/amd64, linux/arm64), signed by this repository's release workflow, with an SBOM and build provenance attached. The air-gapped bundle, its SHA-256, the SBOM of each image, the signed list of the bundle's checksums, and the build provenance of the manifest, of each image and of the bundle are attached. The report contract is published to GitHub Packages as @rodnapamet/scanent-contract@${VERSION}, with build provenance, and its tarball and SHA-256 are attached so that it can be installed with no registry token. docs/verify-a-release.md has the commands that check each of them. What changed in this version, what was run before the tag and what has not been tested are in docs/releases/${VERSION}.md." \
             "scanent-${VERSION}-airgap.tar" "scanent-${VERSION}-airgap.tar.sha256" \
             "scanent-${VERSION}-linux-amd64.cdx.json" "scanent-${VERSION}-linux-arm64.cdx.json" \
             "scanent-${VERSION}-airgap.SHA256SUMS" "scanent-${VERSION}-airgap.SHA256SUMS.sigstore.json" \
             "provenance/scanent-${VERSION}-image.provenance.jsonl" \
             "provenance/scanent-${VERSION}-linux-amd64.provenance.jsonl" "provenance/scanent-${VERSION}-linux-arm64.provenance.jsonl" \
-            "provenance/scanent-${VERSION}-airgap.provenance.jsonl"
+            "provenance/scanent-${VERSION}-airgap.provenance.jsonl" \
+            "rodnapamet-scanent-contract-${VERSION}.tgz" "rodnapamet-scanent-contract-${VERSION}.tgz.sha256"

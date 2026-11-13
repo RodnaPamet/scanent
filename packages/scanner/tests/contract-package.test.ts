@@ -608,7 +608,7 @@ describe('the release workflow and the contract package', () => {
         expect(job.needs).toContain('publish');
         expect(job.needs).toContain('publish-contract');
         const create = steps(job).map((s) => String(s.run ?? '')).join('\n');
-        expect(create).toContain(`The report contract is published to GitHub Packages as ${manifest.name}@\${VERSION}, with build provenance.`);
+        expect(create).toContain(`The report contract is published to GitHub Packages as ${manifest.name}@\${VERSION}, with build provenance, and its tarball and SHA-256 are attached so that it can be installed with no registry token.`);
     });
 
     it('says, after it logs out, whether the image answers with no login, and fails the release either way round never', () => {

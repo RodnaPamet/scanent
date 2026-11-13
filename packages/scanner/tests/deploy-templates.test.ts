@@ -1696,14 +1696,18 @@ describe('the release workflow', () => {
         const text = scripts(job);
         expect(text).toContain('sha256sum "scanent-${VERSION}-airgap.tar" > "scanent-${VERSION}-airgap.tar.sha256"');
         expect(text).toMatch(/gh release create "\$REF_NAME" --verify-tag[\s\S]*"scanent-\$\{VERSION\}-airgap\.tar" "scanent-\$\{VERSION\}-airgap\.tar\.sha256"/);
-        // No third-party action, and the token is the job's own. (Four downloads: the bundle, its signed checksums, the SBOMs,
-        // and, since the Phase 4 review, the provenance attestations.)
+        // No third-party action, and the token is the job's own. (Five downloads: the bundle, its signed checksums, the SBOMs,
+        // the provenance attestations, and the contract package's tarball, the one `publish-contract` attested and published.)
         expect(steps(job).filter((s) => s.uses !== undefined).map((s) => String(s.uses).split('@')[0])).toEqual([
             'actions/download-artifact',
             'actions/download-artifact',
             'actions/download-artifact',
             'actions/download-artifact',
+            'actions/download-artifact',
         ]);
+        const contract = steps(job).find((s) => String(s.uses ?? '').startsWith('actions/download-artifact') && s.with?.name === 'contract-package');
+        const packUpload = steps(release.jobs['contract-package']).find((s) => String(s.name ?? '') === 'Upload the package');
+        expect(contract?.with).toEqual({ name: packUpload?.with.name, path: 'contract-package' });
         // The release also carries each image's SBOM and the signed list of the bundle's checksums, named by version.
         const create = text.slice(text.indexOf('gh release create'));
         for (const file of [
@@ -1716,6 +1720,9 @@ describe('the release workflow', () => {
             '"provenance/scanent-${VERSION}-linux-amd64.provenance.jsonl"',
             '"provenance/scanent-${VERSION}-linux-arm64.provenance.jsonl"',
             '"provenance/scanent-${VERSION}-airgap.provenance.jsonl"',
+            // The contract package, installable from the release with no registry token, and its checksum.
+            '"rodnapamet-scanent-contract-${VERSION}.tgz"',
+            '"rodnapamet-scanent-contract-${VERSION}.tgz.sha256"',
         ]) {
             expect(create).toContain(file);
         }
