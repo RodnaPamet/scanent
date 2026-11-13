@@ -124,7 +124,15 @@ describe('1. a thousand runs that fail, overrun and throw', () => {
         }
     });
 
-    it('a hundred thousand more runs do not grow the heap', async () => {
+    // What is measured is memory still held after a collection. Without one it is
+    // garbage not yet collected, which says nothing and varies with the machine
+    // (58 MiB once in CI, under a megabyte the next run). `npm test`,
+    // `npm run test:coverage` and `npm run test:long` start Node with
+    // `--expose-gc` (the test below holds them to it); a bare `npx jest` has no
+    // collector to call, and shows this test as skipped.
+    const measured = typeof global.gc === 'function' ? it : it.skip;
+
+    measured('a hundred thousand more runs do not grow the heap', async () => {
         const quiet = recordingLog().log;
         let t = T0;
         const loop = (runs: number) => runOnSchedule({ everyHours: 1, log: quiet, now: () => t, sleep: async (ms) => void (t += ms), maxRuns: runs, run: async () => void (t += 1_000) });
@@ -134,6 +142,24 @@ describe('1. a thousand runs that fail, overrun and throw', () => {
         await loop(100_000);
         global.gc?.();
         expect(process.memoryUsage().heapUsed - before).toBeLessThan(32 * 1024 * 1024);
+    });
+});
+
+describe('the heap is measured where the tests are gated', () => {
+    const scripts = (JSON.parse(readFileSync(join(__dirname, '..', '..', '..', 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts;
+
+    it.each(['test', 'test:coverage', 'test:long'])('`npm run %s` starts Node with a collector the tests can call', (name) => {
+        expect(scripts[name]).toMatch(/(^| )node --expose-gc node_modules\/jest\/bin\/jest\.js( |$)/);
+    });
+
+    it('the CI and release workflows run the suite through those scripts, never a bare jest', () => {
+        for (const workflow of ['ci.yml', 'release.yml', 'long-tests.yml']) {
+            const text = readFileSync(join(__dirname, '..', '..', '..', '.github', 'workflows', workflow), 'utf8');
+            const runs = text.split('\n').filter((line) => /^\s*run: /.test(line) && /jest|npm (run )?test/.test(line));
+            expect(runs.length).toBeGreaterThan(0);
+            // A run of one named file is a targeted check; the whole suite goes through a script.
+            for (const line of runs) expect(line).toMatch(/npm test$|npm run test:(coverage|long)$|npx jest packages\/\S+\.test\.ts$/);
+        }
     });
 });
 

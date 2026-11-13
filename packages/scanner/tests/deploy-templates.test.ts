@@ -2099,7 +2099,8 @@ describe('the other workflows', () => {
         const scripts = (JSON.parse(read('package.json')) as { scripts: Record<string, string> }).scripts;
         expect(scripts['test:long']).toContain('SCANENT_LONG=1');
         // And `npm test`, which CI's normal job runs, does not set it.
-        expect(scripts.test).toBe('jest');
+        expect(scripts.test).toBe('node --expose-gc node_modules/jest/bin/jest.js');
+        expect(scripts.test).not.toContain('SCANENT_LONG');
         expect(read('.github/workflows/ci.yml')).not.toMatch(/SCANENT_LONG|test:long\b(?! )/);
         // A seed typed into the form reaches the tests as a value of the environment, never as script text.
         expect(wf.jobs.long.env.FUZZ_SEED).toBe("${{ github.event_name == 'schedule' && github.run_id || inputs.seed }}");
