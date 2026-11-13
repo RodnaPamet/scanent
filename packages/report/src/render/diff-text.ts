@@ -12,7 +12,8 @@
  * line is passed through `terminalLine`, so an id can neither forge a line of
  * this output nor send the terminal an escape sequence.
  */
-import { csvCriterionState } from './csv';
+import { harnessMatrixCellState } from '@rodnapamet/scanent-contract/harness-matrix-model';
+
 import { terminalLine } from './escape';
 import type { AgentNotSeen, CriterionChange, FindingChange, OrphanChange, ResultsDiff } from '../diff/diff';
 
@@ -148,7 +149,7 @@ export function renderDiffText(diff: ResultsDiff): string {
     return `${lines.map(terminalLine).join('\n')}\n`;
 }
 
-/** One side of a criterion change, in the word `agents.csv` uses for that cell. */
+/** One side of a criterion change, in the table model's word for that cell: the one `agents.csv` uses. */
 function cell(c: CriterionChange['from']): string {
-    return csvCriterionState(c);
+    return harnessMatrixCellState(c);
 }

@@ -24,6 +24,7 @@ import {
 } from '../src/harness-contract-rules';
 import { HARNESS_FINDING_CODES } from '../src/harness-findings';
 import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LEVELS, shortfallBarFor } from '../src/harness-ladder';
+import { HARNESS_MATRIX_CELL_STATES } from '../src/harness-matrix-model';
 import { validV3ReportBody } from './helpers/agent-harness-fake-scanner';
 
 const DOC = readFileSync(resolve(__dirname, '..', '..', '..', 'docs', 'contract.md'), 'utf8');
@@ -133,10 +134,21 @@ describe('docs/contract.md', () => {
         expect(rows('planned-finding-codes').map((r) => code(r[0]))).toEqual([...HARNESS_FINDING_CODES]);
     });
 
+    it('lists the seven cell states of the table, in order', () => {
+        expect(codesIn(block('matrix-cell-states'))).toEqual([...HARNESS_MATRIX_CELL_STATES]);
+    });
+
     it('names the functions it refers to, and each is one the contract exports', async () => {
-        const modules = [contract, await import('../src/harness-contract-rules'), await import('../src/harness-findings'), await import('../src/harness-ladder'), await import('../src/canonical-json')];
+        const modules = [
+            contract,
+            await import('../src/harness-contract-rules'),
+            await import('../src/harness-findings'),
+            await import('../src/harness-ladder'),
+            await import('../src/canonical-json'),
+            await import('../src/harness-matrix-model'),
+        ];
         const exported = new Set(modules.flatMap((m) => Object.keys(m)));
-        const referred = ['verifyAndParseHarnessReport', 'isScanComplete', 'looksLikeSecret', 'containsCardNumber', 'firstSecretShapedMember', 'firstSecretShapedPath', 'canonicalJson', 'scoreHarness', 'collapseVerdicts', 'levelAtLeast', 'shortfallBarFor', 'planHarnessScan', 'toolEvidenceSourcesOf', 'LADDER_VERSION'];
+        const referred = ['verifyAndParseHarnessReport', 'isScanComplete', 'looksLikeSecret', 'containsCardNumber', 'firstSecretShapedMember', 'firstSecretShapedPath', 'canonicalJson', 'scoreHarness', 'collapseVerdicts', 'levelAtLeast', 'shortfallBarFor', 'planHarnessScan', 'toolEvidenceSourcesOf', 'LADDER_VERSION', 'buildHarnessMatrix', 'harnessJudgementOf', 'compareHarnessMatrixRows'];
         for (const name of referred) {
             expect(DOC).toContain(`\`${name}\``);
             expect(exported.has(name)).toBe(true);

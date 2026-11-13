@@ -24,6 +24,13 @@
 import { HARNESS_CONTRACT_V2, HARNESS_CONTRACT_V3 } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import { harnessBarFor } from '@rodnapamet/scanent-contract/harness-findings';
 import { HARNESS_LEVEL_NAMES, HARNESS_LEVELS, levelAtLeast, type HarnessCriterionId, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
+import {
+    compareHarnessMatrixRows,
+    HARNESS_MATRIX_CELL_STATES,
+    harnessMatrixCellState,
+    type HarnessMatrixCellState,
+    type HarnessMatrixRowRank,
+} from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 import type { LocalAgentResult, LocalCriterionCell, LocalFinding, LocalResults } from '../results/types';
 import { html, htmlText, type HtmlValue, type SafeHtml } from './escape';
@@ -68,22 +75,24 @@ function capped<T>(
     };
 }
 
+/** An agent as the table model orders it: its level, and where that stands against its bar. */
+function rankOf(agent: LocalAgentResult): HarnessMatrixRowRank {
+    const j = agent.judgement;
+    if (j.state !== 'JUDGED') return { discoveredId: agent.discoveredId, level: null, barStatus: 'NOT_JUDGED' };
+    return { discoveredId: agent.discoveredId, level: j.level, barStatus: j.shortfall ? 'BELOW_BAR' : 'AT_BAR' };
+}
+
 /**
  * Which agents the matrix shows when the run holds more than it can: the ones
- * that most need a reader. Not judged first, then below their bar, then the
- * lowest level; within each, in order of id (the order the results list them in).
+ * that most need a reader, in the table model's order (`compareHarnessMatrixRows`):
+ * not judged first, then below their bar, then the lowest level; within each,
+ * in order of id (the order the results list them in).
  */
 function matrixSelection(agents: readonly LocalAgentResult[]): readonly LocalAgentResult[] {
     if (agents.length <= MATRIX_MAX_AGENTS) return agents;
-    const rank = (a: LocalAgentResult): number => {
-        const j = a.judgement;
-        if (j.state !== 'JUDGED') return 0;
-        const rung = Math.max(0, HARNESS_LEVELS.indexOf(j.level));
-        return (j.shortfall ? 1 : 1 + HARNESS_LEVELS.length) + rung;
-    };
     return agents
-        .map((agent, i): [LocalAgentResult, number, number] => [agent, rank(agent), i])
-        .sort(([, ra, ia], [, rb, ib]) => ra - rb || ia - ib)
+        .map((agent): [LocalAgentResult, HarnessMatrixRowRank] => [agent, rankOf(agent)])
+        .sort(([, a], [, b]) => compareHarnessMatrixRows(a, b))
         .slice(0, MATRIX_MAX_AGENTS)
         .map(([agent]) => agent);
 }
@@ -96,28 +105,22 @@ interface CellStyle {
     readonly text: string;
 }
 
-const CELL_EVIDENCED: CellStyle = { code: 'E', cls: 'c-e', text: 'Evidenced: a source observed it' };
-const CELL_DECLARED: CellStyle = { code: 'D', cls: 'c-d', text: 'Evidenced on what the operator declared in the inventory, not observed' };
-const CELL_UNEVIDENCED: CellStyle = { code: 'M', cls: 'c-m', text: 'Reported met without evidence; counts as not met' };
-const CELL_NOT_MET: CellStyle = { code: 'N', cls: 'c-n', text: 'Not met: a source saw it fail' };
-const CELL_NOT_MET_DECLARED: CellStyle = { code: 'n', cls: 'c-n', text: 'Not met on what the operator declared in the inventory; no source saw it fail' };
-const CELL_UNANSWERED: CellStyle = { code: '·', cls: 'c-u', text: 'Unanswered: a configured reader could have reported it and none did; counts as not met' };
-const CELL_NOT_READABLE: CellStyle = { code: '–', cls: 'c-x', text: 'Not readable: nothing this run was configured to read could have reported it; counts as not met' };
+/** How each of the table model's seven cell states is drawn. A `Record`, so a new state is a compile error here. */
+const CELL_STYLE: Readonly<Record<HarnessMatrixCellState, CellStyle>> = {
+    EVIDENCED: { code: 'E', cls: 'c-e', text: 'Evidenced: a source observed it' },
+    DECLARED: { code: 'D', cls: 'c-d', text: 'Evidenced on what the operator declared in the inventory, not observed' },
+    MET_UNEVIDENCED: { code: 'M', cls: 'c-m', text: 'Reported met without evidence; counts as not met' },
+    NOT_MET: { code: 'N', cls: 'c-n', text: 'Not met: a source saw it fail' },
+    NOT_MET_DECLARED: { code: 'n', cls: 'c-n', text: 'Not met on what the operator declared in the inventory; no source saw it fail' },
+    UNANSWERED: { code: '·', cls: 'c-u', text: 'Unanswered: a configured reader could have reported it and none did; counts as not met' },
+    NOT_READABLE: { code: '–', cls: 'c-x', text: 'Not readable: nothing this run was configured to read could have reported it; counts as not met' },
+};
 
-const LEGEND: readonly CellStyle[] = [CELL_EVIDENCED, CELL_DECLARED, CELL_UNEVIDENCED, CELL_NOT_MET, CELL_NOT_MET_DECLARED, CELL_UNANSWERED, CELL_NOT_READABLE];
+/** In the table model's order. */
+const LEGEND: readonly CellStyle[] = HARNESS_MATRIX_CELL_STATES.map((state) => CELL_STYLE[state]);
 
-function cellStyle(cell: LocalCriterionCell): CellStyle {
-    switch (cell.state) {
-        case 'EVIDENCED':
-            return cell.basis === 'DECLARED' ? CELL_DECLARED : CELL_EVIDENCED;
-        case 'MET_UNEVIDENCED':
-            return CELL_UNEVIDENCED;
-        case 'NOT_MET':
-            return cell.basis === 'DECLARED' ? CELL_NOT_MET_DECLARED : CELL_NOT_MET;
-        default:
-            return cell.readable ? CELL_UNANSWERED : CELL_NOT_READABLE;
-    }
-}
+/** A cell the results do not hold reads as unanswered. */
+const cellStyle = (cell: LocalCriterionCell | undefined): CellStyle => CELL_STYLE[cell === undefined ? 'UNANSWERED' : harnessMatrixCellState(cell)];
 
 const SEVERITY_CLASS: Readonly<Record<string, string>> = { LOW: 'sev-low', MEDIUM: 'sev-medium', HIGH: 'sev-high', CRITICAL: 'sev-critical' };
 const SEVERITY_ORDER: Readonly<Record<string, number>> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
@@ -385,8 +388,7 @@ function matrixRow(agent: LocalAgentResult, order: readonly HarnessCriterionId[]
 <td>${fixed(REACH_TEXT, agent.reach, 'Unknown')}</td>
 ${level}
 ${order.map((criterion) => {
-        const cell = cells.get(criterion);
-        const style = cell === undefined ? CELL_UNANSWERED : cellStyle(cell);
+        const style = cellStyle(cells.get(criterion));
         return html`<td class="cell ${style.cls}" title="${criterion}: ${style.text}"><span aria-hidden="true">${style.code}</span><span class="vh">${style.text}</span></td>`;
     })}
 </tr>`;

@@ -118,7 +118,7 @@ changes the report contract, because the kinds are a closed list on the wire:
 |---|---|---|---|
 | 15 | Add a new contract id with its own strict schema beside the others. Never widen an existing one | `packages/contract/src/harness-contract-rules.ts`, `packages/contract/src/harness-contract.ts` | `packages/contract/tests/harness-contract.test.ts`, `packages/contract/tests/contract-doc.test.ts` |
 | 16 | Classify the kind: does it bear identities and credentials? | `packages/contract/src/harness-findings.ts` (`IDENTITY_BEARING_SOURCE`) | A record over every kind: it does not compile until the kind is classified |
-| 17 | Classify the kind: does it report verdicts about other sources' agents? | `packages/report/src/results/judgement.ts` (`CROSS_AGENT_VERDICT_SOURCE`) | The same |
+| 17 | Classify the kind: does it report verdicts about other sources' agents? | `packages/contract/src/harness-matrix-model.ts` (`CROSS_AGENT_VERDICT_SOURCE`) | The same |
 | 18 | Describe the new id | `docs/contract.md` | `packages/contract/tests/contract-doc.test.ts` |
 | 19 | Any consumer of the report must accept the new id before a scanner writes it | The consumer | |
 

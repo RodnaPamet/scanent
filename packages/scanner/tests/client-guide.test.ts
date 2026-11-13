@@ -28,7 +28,8 @@ import { HARNESS_FINDING_CODES, planHarnessScan, type PriorHarnessState } from '
 import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LEVELS, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 import { AGENTS_CSV_LEADING_COLUMNS, csvCriterionState, FINDINGS_CSV_COLUMNS } from '@scanent/report/render/csv';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
-import { coverageOf, scoreReportLocally } from '@scanent/report/results/score';
+import { scoreReportLocally } from '@scanent/report/results/score';
+import { harnessCoverageOf } from '@rodnapamet/scanent-contract/harness-matrix-model';
 import type { ReaderKind } from '@scanent/report/results/types';
 
 import { HELP, main, USAGE_HINT } from '../src/cli';
@@ -89,7 +90,7 @@ describe('docs/guide/read-the-report.md: the ladder', () => {
 
     it('states the highest level each kind of run can show, as the criterion readers allow', () => {
         const sources = GUIDE_ORDER.filter((kind) => kind !== 'inflect-register') as ReaderKind[];
-        const reachable = (readers: ReaderKind[]): HarnessLevel => coverageOf(CRITERION_READERS, readers).coverage.reachableLevel;
+        const reachable = (readers: ReaderKind[]): HarnessLevel => harnessCoverageOf(CRITERION_READERS, readers).coverage.reachableLevel;
         expect(tableRows(text, 'ceilings').map((r) => r[1])).toEqual([
             reachable(sources),
             reachable([...sources, 'inventory']),

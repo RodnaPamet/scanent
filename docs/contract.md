@@ -401,6 +401,34 @@ the agent's tools was read in full: `code` for a tool whose `server` is a
 (`toolEvidenceSourcesOf`). An agent absent from a scan closes nothing about
 it, and an empty scan is a finding and never a clean result.
 
+## The table
+
+A reader that shows a scan as a table of agents against criteria builds it
+with `buildHarnessMatrix` (`harness-matrix-model`), and does not work out a
+cell, a level or a row order for itself. scanent's local results are built from
+it, and Inflect's harness tab is to read it too, so two tables of one scan say
+the same about each agent. [design/table-model.md](design/table-model.md)
+describes what goes in and what comes out.
+
+A cell has one of seven states, in this order. Only the first two are met:
+
+<!-- contract:matrix-cell-states -->
+`EVIDENCED`, `DECLARED`, `MET_UNEVIDENCED`, `NOT_MET`, `NOT_MET_DECLARED`, `UNANSWERED`, `NOT_READABLE`
+<!-- /contract:matrix-cell-states -->
+
+- A cell is `criterionState` over `collapseVerdicts`, so it never disagrees
+  with the level.
+- A declared verdict (an operator's inventory) never outvotes an observed NOT
+  MET, and a cell it decides says so.
+- `NOT_READABLE` is a criterion no configured reader could have reported met:
+  nothing in the run could have seen it, which is not the same as `UNANSWERED`.
+- An agent is given a level only when every source that could have reported a
+  verdict about it was read in full (`harnessJudgementOf`). Otherwise its row
+  states no level at all.
+- A scan with no agents is `EMPTY`, never complete.
+- Rows are read worst first (`compareHarnessMatrixRows`): not judged, below the
+  bar, then by level and id.
+
 ## Transport
 
 A consumer that takes reports over HTTP takes them as scanent sends them:
@@ -522,12 +550,14 @@ import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
 ```
 
 <!-- contract:package-modules -->
-`audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `receipt-verification`
+`audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `harness-matrix-model`, `receipt-verification`
 <!-- /contract:package-modules -->
 
 - The package holds compiled CommonJS and type declarations, for Node 22 or
   later. It holds no TypeScript source, no test and no source map.
-- It uses Node's `crypto`, so it runs on a server and not in a browser.
+- It uses Node's `crypto`, so it runs on a server and not in a browser. The
+  one exception is `harness-matrix-model`: its only runtime import is
+  `harness-ladder`, which imports nothing, so a page may import those two.
 - Its one dependency is `zod`, at an exact version. A consumer that passes
   the exported schemas to its own `zod` needs that same version; with another
   one, npm installs a second copy for the package.

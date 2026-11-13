@@ -18,8 +18,7 @@ import * as ts from 'typescript';
 import { AGENT_SDK_OPTION_CRITERIA, type HarnessSourceKind } from '@rodnapamet/scanent-contract/harness-findings';
 import { SOURCE_KINDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, isHarnessCriterionId, type CriterionVerdict, type HarnessCriterionId } from '@rodnapamet/scanent-contract/harness-ladder';
-import { CROSS_AGENT_VERDICT_SOURCE } from '@scanent/report/results/judgement';
-import { coverageOf } from '@scanent/report/results/score';
+import { CROSS_AGENT_VERDICT_SOURCE, harnessCoverageOf } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 import { parseScannerConfig } from '../src/config';
 import { configuredSourceKinds, CRITERION_READERS } from '../src/criterion-readers';
@@ -267,8 +266,8 @@ describe('4. what follows for a standalone result', () => {
     const everySource = SOURCE_KINDS.filter((kind) => kind !== 'inflect-register');
 
     it('without the register no run can state a level above H1, whatever else it reads', () => {
-        expect(coverageOf(CRITERION_READERS, everySource).coverage.reachableLevel).toBe('H0');
-        const { coverage } = coverageOf(CRITERION_READERS, [...everySource, 'inventory']);
+        expect(harnessCoverageOf(CRITERION_READERS, everySource).coverage.reachableLevel).toBe('H0');
+        const { coverage } = harnessCoverageOf(CRITERION_READERS, [...everySource, 'inventory']);
         expect(coverage.reachableLevel).toBe('H1');
         // The two H2 criteria only the register reads are what stand in the way.
         const blocked = coverage.unreadable.filter((u) => u.criterion.startsWith('H2.'));
@@ -279,7 +278,7 @@ describe('4. what follows for a standalone result', () => {
     });
 
     it('with the register none can state a level above H3: nothing reads H4 or H5', () => {
-        const { coverage } = coverageOf(CRITERION_READERS, [...SOURCE_KINDS, 'inventory']);
+        const { coverage } = harnessCoverageOf(CRITERION_READERS, [...SOURCE_KINDS, 'inventory']);
         expect(coverage.reachableLevel).toBe('H3');
         expect(coverage.unreadable).toEqual(
             [...HARNESS_CRITERIA.H4, ...HARNESS_CRITERIA.H5].map((criterion) => ({ criterion, why: 'NO_READER', readers: [] })),
@@ -287,7 +286,7 @@ describe('4. what follows for a standalone result', () => {
     });
 
     it('with code alone nothing is readable', () => {
-        const { readable, coverage } = coverageOf(CRITERION_READERS, ['code']);
+        const { readable, coverage } = harnessCoverageOf(CRITERION_READERS, ['code']);
         expect(readable.size).toBe(0);
         expect(coverage.reachableLevel).toBe('H0');
     });

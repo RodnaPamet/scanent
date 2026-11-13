@@ -10,11 +10,10 @@ hands the values in.
 
 | Module | Holds |
 |---|---|
-| `results/score` | `scoreReportLocally(input)`: a signed report body, an optional inventory and the reader table, to `LocalResults`. The level, the cell states, the bar and the findings are the contract's own functions; none is re-implemented here |
-| `results/types` | `LocalResults` (the content of `results.json`), `ScoreInput`, `CriterionReaders` |
+| `results/score` | `scoreReportLocally(input)`: a signed report body, an optional inventory and the reader table, to `LocalResults`. Each agent's row (cells, judgement, level, bar) is the contract's table model (`buildHarnessMatrix` in `harness-matrix-model`), and the findings are the contract's planner; none is re-implemented here |
+| `results/types` | `LocalResults` (the content of `results.json`), `ScoreInput`, and `CriterionReaders` from the contract's table model |
 | `results/schema` | `LocalResultsSchema`, the strict schema a results file is read back with |
 | `results/inventory` | The operator's inventory: the strict schema, `parseInventory`, and the four H1 verdicts a matched row declares |
-| `results/judgement` | When an agent may be given a level at all (`judgementBasisOf`, `CROSS_AGENT_VERDICT_SOURCE`) |
 | `render/results-json` | `renderResultsJson`: the results as text with sorted keys, so the same results give the same bytes |
 | `render/csv` | `renderAgentsCsv`, `renderFindingsCsv` and `csvCell`, the one function every cell passes through: RFC 4180, and a cell a spreadsheet would evaluate is neutralised |
 | `render/html` | `renderSummaryHtml`: one self-contained page. No script, nothing loaded, one style block |

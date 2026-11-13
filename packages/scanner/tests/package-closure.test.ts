@@ -111,7 +111,7 @@ describe('each package ships its import closure, and nothing else', () => {
         expect(scanner.packages).toContain('@rodnapamet/scanent-contract');
     });
 
-    it('the contract is the eight files the scanner ran with before the extraction, and no other', () => {
+    it('the contract is the eight files the scanner ran with before the extraction, and the shared table model, and no other', () => {
         expect(contract.files).toEqual([
             'audit-redact.ts',
             'canonical-json.ts',
@@ -120,6 +120,7 @@ describe('each package ships its import closure, and nothing else', () => {
             'harness-contract.ts',
             'harness-findings.ts',
             'harness-ladder.ts',
+            'harness-matrix-model.ts',
             'receipt-verification.ts',
         ]);
     });

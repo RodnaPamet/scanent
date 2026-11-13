@@ -25,26 +25,19 @@ import type { HarnessFindingCode, HarnessSourceKind, IntakeConflict, ModelSign, 
 import type { CriterionState, HarnessCriterionId, HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 import type { HarnessPaymentCapability, HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 
+import type { CriterionReaders, HarnessMatrixCoverage, VerdictBasis } from '@rodnapamet/scanent-contract/harness-matrix-model';
+
 import type { ParsedInventory } from './inventory';
 
 /** The id `results.json` names itself by. A change of shape is a new id. */
 export const RESULTS_SCHEMA = 'scanent-results/1';
 
-/** What can report a verdict: a source kind, or the operator's inventory. */
-export type ReaderKind = HarnessSourceKind | 'inventory';
-
 /**
- * For each criterion, the readers that report a verdict about it at all
- * (`reportedBy`) and the ones that can report it MET (`metBy`, a subset). A
- * reader that can only say NOT MET (the `code` source) evidences a failure and
- * never a pass, so it does not make a criterion readable.
- *
- * The table itself belongs to whoever owns the readers: the scanner holds it
- * and holds it to its sources by test. The scorer only consumes it.
+ * What can report a verdict (a source kind, or the operator's inventory), and
+ * for each criterion which readers can report it at all and which can report it
+ * MET: the contract's table model owns both, and the scanner holds the table.
  */
-export type CriterionReaders = Readonly<
-    Record<HarnessCriterionId, { readonly reportedBy: readonly ReaderKind[]; readonly metBy: readonly ReaderKind[] }>
->;
+export type { CriterionReaders, ReaderKind } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 /** Facts about the run that the report body does not carry and the scorer cannot derive. */
 export interface ScoreMeta {
@@ -106,8 +99,8 @@ export interface SourceNote {
 export type ToolEvidenceSourceKind = 'code' | 'mcp';
 export type RegistrationBasis = 'NONE' | 'DECLARED_INVENTORY' | 'OBSERVED_REGISTER';
 export type EstateRegistrationBasis = 'NONE' | 'INVENTORY' | 'INFLECT_REGISTER' | 'BOTH';
-export type VerdictBasis = 'OBSERVED' | 'DECLARED';
-export type UnreadableWhy = 'NO_READER' | 'READER_NOT_CONFIGURED';
+/** Where a cell's verdict came from, and why a criterion was not readable: the table model's words. */
+export type { UnreadableWhy, VerdictBasis } from '@rodnapamet/scanent-contract/harness-matrix-model';
 export type UnboundNotConcludedWhy = 'OWN_SOURCE_INCOMPLETE' | 'IDENTITY_SOURCE_INCOMPLETE';
 
 /**
@@ -279,16 +272,8 @@ export interface LocalResults {
         readonly unmatched: readonly string[];
     };
     readonly sources: readonly LocalSourceResult[];
-    readonly coverage: {
-        /** The highest level this run could have stated for any agent. */
-        readonly reachableLevel: HarnessLevel;
-        readonly unreadable: readonly {
-            readonly criterion: HarnessCriterionId;
-            readonly why: UnreadableWhy;
-            /** The readers that could report it met; empty for `NO_READER`. */
-            readonly readers: readonly ReaderKind[];
-        }[];
-    };
+    /** What this run could have evidenced: the table model's coverage, over the readers it configured. */
+    readonly coverage: HarnessMatrixCoverage;
     readonly estate: {
         /** No agents at all: `EMPTY_SCAN`, a finding and never a clean result. */
         readonly empty: boolean;

@@ -3,9 +3,10 @@
  *
  * `scoreReportLocally` turns a signed report body (and, when the operator has
  * one, an inventory) into `LocalResults`. It decides nothing the contract
- * already decides: the level is `scoreHarness`, a cell is `criterionState`
- * over `collapseVerdicts`, the bar is `harnessBarFor`, and the findings are
- * `planHarnessScan`'s. What it adds is what a tenant would have supplied and a
+ * already decides: every row of the agent table — its cells, whether it is
+ * judged, its level, observed level and bar — is the contract's shared table
+ * model (`buildHarnessMatrix`, the one Inflect's harness tab reads), and the
+ * findings are `planHarnessScan`'s. What it adds is what a tenant would have supplied and a
  * standalone run cannot: a prior state built from the run itself, the
  * inventory in the register's place, and an account of what was not read.
  *
@@ -37,14 +38,14 @@
  *
  * DECLARED VERDICTS FOLLOW THE OBSERVED ONES into the collapse, so a declared
  * "met" never outvotes an observed NOT MET (least favourable wins), and where
- * both say the same the observed one stands.
+ * both say the same the observed one stands. The planner is given both, so a
+ * finding rests on the same level the table shows; the table model is given
+ * them apart, so it can say which a cell rests on.
  *
  * PURE: no clock, no I/O, no hashing. Same input, same value.
  */
 import { LADDER_VERSION, type HarnessReportAgent, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 import {
-    harnessBarFor,
-    isHarnessShortfall,
     isWriteCapable,
     orphanCredentialRefOf,
     planHarnessScan,
@@ -59,26 +60,14 @@ import {
     type PlannedFinding,
 } from '@rodnapamet/scanent-contract/harness-findings';
 import { isScanComplete } from '@rodnapamet/scanent-contract/harness-contract-rules';
-import {
-    ALL_HARNESS_CRITERIA,
-    collapseVerdicts,
-    criterionState,
-    HARNESS_CRITERIA,
-    HARNESS_LEVELS,
-    scoreHarness,
-    type CriterionVerdict,
-    type HarnessCriterionId,
-    type HarnessLevel,
-} from '@rodnapamet/scanent-contract/harness-ladder';
+import { HARNESS_CRITERIA, HARNESS_LEVELS, type CriterionVerdict, type HarnessCriterionId, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
+import { buildHarnessMatrix, type HarnessMatrixCoverage } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 import { declaredVerdicts, inventoryRegistrationRef, type InventoryRow } from './inventory';
-import { judgementBasisOf } from './judgement';
 import {
     RESULTS_SCHEMA,
-    type CriterionReaders,
     type EstateRegistrationBasis,
     type LocalAgentResult,
-    type LocalCriterionCell,
     type LocalFinding,
     type LocalJudgement,
     type LocalResults,
@@ -97,27 +86,6 @@ const REGISTRATION_BASIS: Readonly<Record<'REPORT' | 'INTAKE', RegistrationBasis
 
 /** By code unit, not by locale: the order must not depend on where the scan ran. */
 const byCodeUnit = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
-
-/**
- * What this run could have evidenced: per criterion whether a configured
- * reader can report it met, the highest level that follows, and why each
- * other criterion is out of reach.
- */
-export function coverageOf(
-    table: CriterionReaders,
-    configured: readonly ReaderKind[],
-): { readonly readable: ReadonlySet<HarnessCriterionId>; readonly coverage: LocalResults['coverage'] } {
-    const has = new Set<ReaderKind>(configured);
-    const readable = new Set<HarnessCriterionId>(ALL_HARNESS_CRITERIA.filter((c) => table[c].metBy.some((r) => has.has(r))));
-    // The ladder's own rule, over a met-with-evidence answer for everything readable.
-    const reachableLevel = scoreHarness([...readable].map((criterion) => ({ criterion, met: true, evidence: 'readable' }))).level;
-    const unreadable = ALL_HARNESS_CRITERIA.filter((c) => !readable.has(c)).map((criterion) => ({
-        criterion,
-        why: table[criterion].metBy.length === 0 ? ('NO_READER' as const) : ('READER_NOT_CONFIGURED' as const),
-        readers: [...table[criterion].metBy],
-    }));
-    return { readable, coverage: { reachableLevel, unreadable } };
-}
 
 /**
  * The planner's UNREGISTERED_IDENTITY text for a run whose registrations come
@@ -224,41 +192,42 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
     });
 
     const configured: ReaderKind[] = [...input.readers.configuredSources, ...(inventory === null ? [] : (['inventory'] as const))];
-    const { readable, coverage } = coverageOf(input.readers.table, configured);
+
+    // ── The table: cells, judgement, level and bar are the shared model's ──
+    // The planner's agents, with the OBSERVED verdicts only: the model adds the
+    // declared ones itself, after them, and keeps the two apart.
+    const observedOf = new Map(body.agents.map((a) => [a.discoveredId, a]));
+    const matrix = buildHarnessMatrix({
+        agents: plan.agents.map((planned) => ({ ...planned, verdicts: (observedOf.get(planned.discoveredId) as HarnessReportAgent).verdicts })),
+        sources,
+        readers: { table: input.readers.table, configured },
+        declared: declaredOf,
+    });
+    const coverage = matrix.coverage as HarnessMatrixCoverage;
 
     // ── Each agent ──
-    const observedOf = new Map(body.agents.map((a) => [a.discoveredId, a]));
     const notJudged = new Set<string>();
-    const agents: LocalAgentResult[] = plan.agents.map((planned) => {
+    const agents: LocalAgentResult[] = plan.agents.map((planned, i) => {
         const observed = observedOf.get(planned.discoveredId) as HarnessReportAgent;
-        const declared = new Set(declaredOf.get(planned.discoveredId) ?? []);
-        const collapsed = collapseVerdicts(planned.verdicts);
-        const criteria: LocalCriterionCell[] = ALL_HARNESS_CRITERIA.map((criterion) => {
-            const verdict = collapsed.get(criterion);
-            return {
-                criterion,
-                state: criterionState(verdict),
-                basis: verdict === undefined ? null : declared.has(verdict) ? 'DECLARED' : 'OBSERVED',
-                evidence: verdict?.evidence ?? null,
-                readable: readable.has(criterion),
-            };
-        });
-
-        const basis = judgementBasisOf(planned.discoveredVia, sources);
+        const tableRow = matrix.rows[i];
+        const t = tableRow.judgement;
         let judgement: LocalJudgement;
-        if (basis.judged) {
+        if (t.kind === 'JUDGED') {
             judgement = {
                 state: 'JUDGED',
-                level: planned.level,
-                observedLevel: scoreHarness(observed.verdicts).level,
-                bar: harnessBarFor(planned.reach),
-                shortfall: isHarnessShortfall(planned.level, planned.reach),
-                blockingNextRung: planned.blockingNextRung,
-                caveats: basis.caveats,
+                level: tableRow.level as HarnessLevel,
+                observedLevel: tableRow.observedLevel as HarnessLevel,
+                bar: tableRow.bar,
+                // Where the level stands against the bar, as the ladder has it. Whether
+                // the agent is held to that bar at all is its class, which the files
+                // say beside it; the count of shortfalls below uses `countsAsShortfall`.
+                shortfall: tableRow.barStatus === 'BELOW_BAR',
+                blockingNextRung: tableRow.blockingNextRung as readonly HarnessCriterionId[],
+                caveats: t.caveats,
             };
         } else {
             notJudged.add(planned.discoveredId);
-            judgement = { state: 'NOT_JUDGED', reasons: basis.reasons };
+            judgement = { state: 'NOT_JUDGED', reasons: t.reasons };
         }
 
         const row = rowByAgent.get(planned.discoveredId);
@@ -278,7 +247,7 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
             modelSigns: [...planned.modelSigns],
             paymentCapabilities: planned.paymentCapabilities === null ? null : [...planned.paymentCapabilities],
             reach: planned.reach,
-            criteria,
+            criteria: tableRow.cells.map((c) => ({ criterion: c.criterion, state: c.verdictState, basis: c.basis, evidence: c.evidence, readable: c.readable })),
             counts: {
                 credentials: observed.credentials.length,
                 tools: planned.tools.length,
@@ -314,8 +283,6 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
     }
     const where = `scan ${body.scan.id}, scanner ${scanner}`;
     const levelOf = new Map(agents.map((a) => [a.discoveredId, a.judgement]));
-    // The planner's class: named by nothing, and showing no sign of a model. Held to no bar.
-    const unregisteredIdentities = new Set(plan.agents.filter((a) => a.unregisteredIdentity).map((a) => a.discoveredId));
     const findings: LocalFinding[] = [];
     for (const planned of plan.assert) {
         const discoveredId = agentOfRef.get(planned.sourceRef) ?? null;
@@ -370,12 +337,9 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
     }
 
     const byLevel = Object.fromEntries(HARNESS_LEVELS.map((level) => [level, 0])) as Record<HarnessLevel, number>;
-    let shortfallCount = 0;
-    for (const a of agents) {
-        if (a.judgement.state !== 'JUDGED') continue;
-        byLevel[a.judgement.level] += 1;
-        if (a.judgement.shortfall && !unregisteredIdentities.has(a.discoveredId)) shortfallCount += 1;
-    }
+    for (const a of agents) if (a.judgement.state === 'JUDGED') byLevel[a.judgement.level] += 1;
+    // An unregistered automated identity is held to no bar, and is not counted.
+    const shortfallCount = matrix.rows.filter((r) => r.countsAsShortfall).length;
     const registrationBasis: EstateRegistrationBasis =
         registerRead && inventory !== null ? 'BOTH' : registerRead ? 'INFLECT_REGISTER' : inventory !== null ? 'INVENTORY' : 'NONE';
 

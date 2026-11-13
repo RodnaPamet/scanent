@@ -35,10 +35,10 @@ import {
     validV3ReportBodyWithSandbox,
     validV3ReportBodyWithSdkAgent,
 } from '../../contract/tests/helpers/agent-harness-fake-scanner';
-import { CROSS_AGENT_VERDICT_SOURCE, judgementBasisOf } from '../src/results/judgement';
+import { CROSS_AGENT_VERDICT_SOURCE, harnessCoverageOf, harnessJudgementOf } from '@rodnapamet/scanent-contract/harness-matrix-model';
 import { renderSummaryHtml } from '../src/render/html';
 import { LocalResultsSchema } from '../src/results/schema';
-import { coverageOf, scoreReportLocally } from '../src/results/score';
+import { scoreReportLocally } from '../src/results/score';
 import { RESULTS_SCHEMA, type LocalAgentResult, type LocalResults } from '../src/results/types';
 import { ALPHA, AS_OF, BRAVO, fullRow, HASH, input, INVENTORY_SHA, inventoryOf, META, standaloneBody, TEST_READERS, withSource } from './helpers/fixtures';
 
@@ -377,15 +377,15 @@ describe('2. an agent that cannot be judged', () => {
     });
 
     it('judges on listed sources alone: a kind it does not know is a caveat, and a source with no reason still counts', () => {
-        expect(judgementBasisOf(['entra-sp'], [{ kind: 'entra-sp', status: 'COMPLETE' }, { kind: 'future-kind', status: 'INCOMPLETE', reason: 'TIME_BOX' }])).toEqual({
-            judged: true,
+        expect(harnessJudgementOf(['entra-sp'], [{ kind: 'entra-sp', status: 'COMPLETE' }, { kind: 'future-kind', status: 'INCOMPLETE', reason: 'TIME_BOX' }])).toEqual({
+            kind: 'JUDGED',
             caveats: ['OTHER_SOURCE_INCOMPLETE:future-kind'],
         });
-        expect(judgementBasisOf(['entra-sp'], [{ kind: 'entra-sp', status: 'INCOMPLETE' }, { kind: 'inflect-register', status: 'INCOMPLETE' }])).toEqual({
-            judged: false,
+        expect(harnessJudgementOf(['entra-sp'], [{ kind: 'entra-sp', status: 'INCOMPLETE' }, { kind: 'inflect-register', status: 'INCOMPLETE' }])).toEqual({
+            kind: 'NOT_JUDGED',
             reasons: ['SOURCE_INCOMPLETE:entra-sp:UNKNOWN', 'VERDICT_SOURCE_INCOMPLETE:inflect-register:UNKNOWN'],
         });
-        expect(judgementBasisOf(['entra-sp'], [])).toEqual({ judged: false, reasons: ['SOURCE_INCOMPLETE:entra-sp:NOT_LISTED'] });
+        expect(harnessJudgementOf(['entra-sp'], [])).toEqual({ kind: 'NOT_JUDGED', reasons: ['SOURCE_INCOMPLETE:entra-sp:NOT_LISTED'] });
     });
 });
 
@@ -718,27 +718,27 @@ describe('6. the inventory', () => {
 
 describe('7. what this run could not have evidenced', () => {
     it('with code alone can state nothing above H0', () => {
-        const { coverage, readable } = coverageOf(TEST_READERS, ['code']);
+        const { coverage, readable } = harnessCoverageOf(TEST_READERS, ['code']);
         expect(coverage.reachableLevel).toBe('H0');
         expect(readable.size).toBe(0);
         expect(coverage.unreadable).toHaveLength(ALL_HARNESS_CRITERIA.length);
     });
 
     it('with an inventory can state H1', () => {
-        expect(coverageOf(TEST_READERS, ['code', 'inventory']).coverage.reachableLevel).toBe('H1');
+        expect(harnessCoverageOf(TEST_READERS, ['code', 'inventory']).coverage.reachableLevel).toBe('H1');
         const results = scoreReportLocally(input(standaloneBody(), { inventory: inventoryOf([]), configuredSources: ['code'] }));
         expect(results.coverage.reachableLevel).toBe('H1');
     });
 
     it('with the register can state H3, and nothing reads H4 or H5', () => {
-        const { coverage } = coverageOf(TEST_READERS, ['inflect-register']);
+        const { coverage } = harnessCoverageOf(TEST_READERS, ['inflect-register']);
         expect(coverage.reachableLevel).toBe('H3');
         expect(coverage.unreadable.map((u) => u.criterion)).toEqual([...HARNESS_CRITERIA.H4, ...HARNESS_CRITERIA.H5]);
         expect(coverage.unreadable.every((u) => u.why === 'NO_READER' && u.readers.length === 0)).toBe(true);
     });
 
     it('tells a criterion nothing reads from one whose reader was not configured, and names that reader', () => {
-        const { coverage } = coverageOf(TEST_READERS, ['entra-sp']);
+        const { coverage } = harnessCoverageOf(TEST_READERS, ['entra-sp']);
         expect(coverage.reachableLevel).toBe('H0');
         const why = new Map(coverage.unreadable.map((u) => [u.criterion, u]));
         expect(why.has('H2.credential_bound')).toBe(false);
@@ -750,7 +750,7 @@ describe('7. what this run could not have evidenced', () => {
     it('does not count a reader that can only report NOT MET', () => {
         // `code` reports H2.tools_allowlisted, and only ever as not met.
         expect(TEST_READERS['H2.tools_allowlisted'].reportedBy).toContain('code');
-        expect(coverageOf(TEST_READERS, ['code']).readable.has('H2.tools_allowlisted')).toBe(false);
+        expect(harnessCoverageOf(TEST_READERS, ['code']).readable.has('H2.tools_allowlisted')).toBe(false);
     });
 
     it('marks each cell with whether this run could have answered it', () => {

@@ -211,7 +211,7 @@ describe('what npm pack puts in the package', () => {
         const listed = dry.files.map((f) => f.path).sort();
         expect(listed).toEqual(EXPECTED);
         // Spelled out, so that a change to the derivation above cannot quietly change what is expected.
-        expect(MODULES).toEqual(['audit-redact.ts', 'canonical-json.ts', 'cidr.ts', 'harness-contract-rules.ts', 'harness-contract.ts', 'harness-findings.ts', 'harness-ladder.ts', 'receipt-verification.ts']);
+        expect(MODULES).toEqual(['audit-redact.ts', 'canonical-json.ts', 'cidr.ts', 'harness-contract-rules.ts', 'harness-contract.ts', 'harness-findings.ts', 'harness-ladder.ts', 'harness-matrix-model.ts', 'receipt-verification.ts']);
         expect(listed).toHaveLength(MODULES.length * 2 + 4);
         expect(listed.filter((f) => !f.startsWith('dist/'))).toEqual(['LICENSE', 'NOTICE', 'README.md', 'package.json']);
         for (const file of listed.filter((f) => f.startsWith('dist/'))) expect(file).toMatch(/^dist\/[a-z-]+\.(js|d\.ts)$/);
