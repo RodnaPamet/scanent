@@ -38,7 +38,7 @@ You need [`cosign`](https://docs.sigstore.dev/cosign/system_config/installation/
 ## The identity
 
 Every signature of a release is made by one workflow, at that release's tag.
-For version `<version>` (for example `0.13.0`) the two values to give `cosign`
+For version `<version>` (for example `0.13.1`) the two values to give `cosign`
 are:
 
 ```

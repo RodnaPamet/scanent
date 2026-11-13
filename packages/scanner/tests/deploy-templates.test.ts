@@ -1504,7 +1504,7 @@ done
         const quick = read('docs/quick-start.md');
         // A variable given as a prefix of one command is gone for the next: `docker compose logs` then cannot read the file.
         expect(quick).not.toMatch(/^SCANENT_VERSION=\S+ .*docker compose/m);
-        expect(quick).toContain('export SCANENT_VERSION=0.13.0 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"\ndocker compose up -d\ndocker compose logs');
+        expect(quick).toContain('export SCANENT_VERSION=0.13.1 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"\ndocker compose up -d\ndocker compose logs');
         expect(read('docs/deployment.md')).not.toMatch(/^SCANENT_VERSION=\S+ docker compose/m);
         // Step 6 says a code source needs its roots mounted, and what a read estate looks like in the log.
         expect(quick).toMatch(/add each\s+root under the service's `volumes:`/);
@@ -1656,7 +1656,12 @@ describe('the release workflow', () => {
 
     it('pushes the images it tested, one manifest over exactly two architectures, and never latest', () => {
         const publish = scripts(release.jobs.publish);
-        expect(publish).toContain('docker load -i');
+        // The archives that were smoke-tested and scanned, pushed with skopeo: `docker push`
+        // asked GHCR for cross-repository mounts it then refused (0.13.0 was never published).
+        expect(publish).toContain('skopeo copy');
+        expect(publish).toContain('"docker-archive:scanent-${VERSION}-linux-${arch}.tar"');
+        expect(publish).not.toMatch(/docker push|docker load/);
+        expect(scripts(release.jobs.build)).toContain('skopeo inspect --config "docker-archive:scanent-${VERSION}-linux-${ARCH}.tar"');
         expect(publish).not.toMatch(/docker build /);
         expect(publish).toContain('docker buildx imagetools create');
         expect(publish).toContain('[ "$platforms" = "linux/amd64,linux/arm64" ]');

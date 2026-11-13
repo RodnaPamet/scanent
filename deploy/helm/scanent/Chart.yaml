@@ -3,8 +3,8 @@ name: scanent
 description: scanent, the Agent Estate Scanner, as a CronJob that reads an estate read-only and writes each run to a volume.
 type: application
 # The chart's version and the image tag it installs move together.
-version: 0.13.0
-appVersion: "0.13.0"
+version: 0.13.1
+appVersion: "0.13.1"
 kubeVersion: ">=1.25.0-0"
 home: https://github.com/RodnaPamet/scanent
 sources:

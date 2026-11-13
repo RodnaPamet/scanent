@@ -364,7 +364,7 @@ describe('5. the declared surface', () => {
         // 0.13.0 put each token exchange's grant inside the surface, so the hash moved once, on purpose,
         // and the surface names its own version. Put those two back and the surface is, to the byte,
         // the one from before outputs existed: nothing else was added to it, by outputs or by anything since.
-        expect(SCANNER_SURFACE.version).toBe('0.13.0');
+        expect(SCANNER_SURFACE.version).toBe('0.13.1');
         const withoutGrants = {
             ...SCANNER_SURFACE,
             version: '0.12.0',

@@ -6,9 +6,9 @@ Every request scanent can make, and every permission it asks for. This page is r
 the surface the scanner declares in its own code, the same declaration whose hash is in every
 signed report, so it lists what the code can do and nothing else.
 
-Scanner `inflect-agent-harness-scanner`, version 0.13.0, report contract `inflect-agent-harness/3`.
+Scanner `inflect-agent-harness-scanner`, version 0.13.1, report contract `inflect-agent-harness/3`.
 
-Manifest hash: `sha256:b3f849ccdc10031f2d2e8aa6a0acd02b96843f7be71699a894288f07a7fcdf0a`
+Manifest hash: `sha256:aa50edc8fc3c2934655e26a8672d6d64bb8a2b88e51f6205d12779c107d808b5`
 
 The hash is SHA-256 over the canonical JSON of the declared surface. A scanner that can reach
 anything this page does not list has a different hash, and every report it signs carries it.
