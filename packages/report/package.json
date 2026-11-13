@@ -27,7 +27,7 @@
   },
   "sideEffects": false,
   "dependencies": {
-    "@rodnapamet/scanent-contract": "0.14.0",
+    "@rodnapamet/scanent-contract": "0.15.0",
     "zod": "4.6.7"
   }
 }

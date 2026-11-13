@@ -58,7 +58,7 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * image and names every scanner's requests, so an agents-only run's report
  * carries the new hash too; nothing else in it changed.
  */
-export const SCANNER_VERSION = '0.14.0';
+export const SCANNER_VERSION = '0.15.0';
 
 /** The ingest route, as `docs/contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';

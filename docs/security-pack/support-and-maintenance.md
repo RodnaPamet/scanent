@@ -176,7 +176,7 @@ holds it:
 
 | Thing | Identifier today | How it changes |
 |---|---|---|
-| The scanner | `SCANNER_VERSION`, 0.14.0 | Raised with any change to what the scanner reads or reports. It is in every report, beside the hash of the declared request surface |
+| The scanner | `SCANNER_VERSION`, 0.15.0 | Raised with any change to what the scanner reads or reports. It is in every report, beside the hash of the declared request surface |
 | The integrations report contract | `scanent-integrations/1` is written, only for a run with an integrations source | A contract of its own beside the agent report's, with the same rules: a new id is a new strict schema. Before its first release `/1` gained the Okta and GitHub kinds, each with an application shape of its own, without changing what a report of Entra alone says |
 | The report contract | `inflect-agent-harness/4` is written; `/2` and `/3` are accepted by the verifier; `/1` is retired and refused | A new id is a new strict schema beside the others, never a looser schema that reads several. An unknown member anywhere is a refusal. [The report contract](../contract.md) is the normative description, and a test holds it to the code |
 | The ladder | `LADDER_VERSION`, a hash over the levels, criteria and bars | It is not in the report. Results derived from a report carry it, and two sets of results compare level for level only when they carry the same one |

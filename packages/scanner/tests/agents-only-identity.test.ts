@@ -8,14 +8,16 @@
  * and scan id, and every file the run would write is compared with the
  * recording by its SHA-256.
  *
- * ONE MEMBER IS ALLOWED TO DIFFER, AND ONLY ONE: `scan.scanner.manifestHash`.
- * The declared surface is one for the image and its hash is in every report
- * (`docs/design/scanners.md`, decision 2), so a surface that gained the
- * integrations scanner's requests has a new hash, by design. The test puts the
- * recorded hash back into the body, signs it again with the same key (Ed25519
- * signs deterministically), and from there on demands identity: the signed
- * bytes, the results, both CSV files, the page, the PDF and the manifest. It
- * also checks that the hash it put back is the only member that differed.
+ * TWO MEMBERS ARE ALLOWED TO DIFFER, AND ONLY TWO: `scan.scanner.manifestHash`
+ * and `scan.scanner.version`. The declared surface is one for the image and its
+ * hash is in every report (`docs/design/scanners.md`, decision 2), so a surface
+ * that gained the integrations scanner's requests has a new hash, by design;
+ * and the release that carries it has a new version, which the surface names.
+ * The test puts the recorded values back into the body, signs it again with
+ * the same key (Ed25519 signs deterministically), and from there on demands
+ * identity: the signed bytes, the results, both CSV files, the page, the PDF
+ * and the manifest. It also checks that those two are the only members that
+ * differed.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -40,7 +42,7 @@ import { jsonLineLog } from '../src/log';
 import { previousRunOf } from '../src/previous-run';
 import { signReport } from '../src/report';
 import { runScan, type ScanDeps } from '../src/scan';
-import { scannerManifestHash } from '../src/scanner-surface';
+import { SCANNER_VERSION, scannerManifestHash } from '../src/scanner-surface';
 import { isAgentSourceKind } from '../src/scanners';
 import { ESTATE, REPO } from './helpers/output-fixtures';
 import { createEstateWorld, ESTATE_SOURCES, estateConfig, estateEnv, PUBLIC_RESOLVER } from './helpers/estate-world';
@@ -117,26 +119,37 @@ const SCENARIOS: readonly Scenario[] = [
     { name: 'estate-one-source-down', config: parseScannerConfig(estateConfig(everyAgentSource)), deps: estateDeps(true), inventory: false },
 ];
 
-/** One scan, with the recorded manifest hash put back and the body signed again. */
-async function scanAt(s: Scenario, now: number, recordedHash: string | null): Promise<{ raw: string; body: HarnessReportBodyV4; sourceNotes: Parameters<typeof scoreScanLocally>[0]['sourceNotes'] }> {
+/** What a recording's scanner member held: put back before comparing. */
+interface RecordedScanner {
+    readonly manifestHash: string;
+    readonly version: string;
+}
+
+const recordedScannerOf = (raw: string): RecordedScanner => {
+    const scanner = (JSON.parse(raw) as { scan: { scanner: RecordedScanner } }).scan.scanner;
+    return { manifestHash: scanner.manifestHash, version: scanner.version };
+};
+
+/** One scan, with the recorded manifest hash and version put back and the body signed again. */
+async function scanAt(s: Scenario, now: number, recorded: RecordedScanner | null): Promise<{ raw: string; body: HarnessReportBodyV4; sourceNotes: Parameters<typeof scoreScanLocally>[0]['sourceNotes'] }> {
     const scan = await runScan(s.deps(s.config, now));
     expect(scan.body.scan.scanner.manifestHash).toBe(scannerManifestHash());
-    if (recordedHash === null) return scan;
-    const body: HarnessReportBodyV4 = { ...scan.body, scan: { ...scan.body.scan, scanner: { ...scan.body.scan.scanner, manifestHash: recordedHash } } };
+    if (recorded === null) return scan;
+    const body: HarnessReportBodyV4 = { ...scan.body, scan: { ...scan.body.scan, scanner: { ...scan.body.scan.scanner, ...recorded } } };
     return { raw: signReport(body, KEYS), body, sourceNotes: scan.sourceNotes };
 }
 
 const sha = (content: string | Uint8Array) => createHash('sha256').update(content).digest('hex');
 
-async function filesOf(s: Scenario, recordedHash: string | null): Promise<{ manifestHash: string; raw: string; files: Record<string, string> }> {
+async function filesOf(s: Scenario, recorded: RecordedScanner | null): Promise<{ manifestHash: string; raw: string; files: Record<string, string> }> {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scanent-identity-'));
     try {
         const inventory = s.inventory && s.config.inventory !== undefined ? loadInventoryFile(s.config.inventory.path) : null;
         // A first run, written, so the second has a previous run to compare with.
-        const first = await scanAt(s, AT, recordedHash);
+        const first = await scanAt(s, AT, recorded);
         const firstResults = scoreScanLocally({ config: s.config, raw: first.raw, body: first.body, inventory, sourceNotes: first.sourceNotes });
         writeRun({ dir }, { raw: first.raw, results: firstResults, previous: null });
-        const second = await scanAt(s, LATER, recordedHash);
+        const second = await scanAt(s, LATER, recorded);
         const results = scoreScanLocally({ config: s.config, raw: second.raw, body: second.body, inventory, sourceNotes: second.sourceNotes });
         const previous = previousRunOf(dir, results);
         const files: Record<string, string> = {};
@@ -163,18 +176,18 @@ describe.each(SCENARIOS)('an agents-only run, $name', (s) => {
         return;
     }
 
-    it('writes every file the recording holds, byte for byte, with the recorded manifest hash put back', async () => {
+    it('writes every file the recording holds, byte for byte, with the recorded manifest hash and version put back', async () => {
         const recorded = JSON.parse(fs.readFileSync(file, 'utf8')) as Recording;
-        const now = await filesOf(s, recorded.manifestHash);
+        const now = await filesOf(s, recordedScannerOf(recorded.raw));
         expect(now.raw).toBe(recorded.raw);
         expect(now.files).toEqual(recorded.files);
     });
 
-    it('differs from the recording, before the hash is put back, in the manifest hash alone', async () => {
+    it('differs from the recording, before they are put back, in the manifest hash and the version alone', async () => {
         const recorded = JSON.parse(fs.readFileSync(file, 'utf8')) as Recording;
         const scan = await runScan(s.deps(s.config, LATER));
         const { signature: _signature, ...wasBody } = JSON.parse(recorded.raw) as Record<string, unknown> & { scan: { scanner: Record<string, unknown> } };
-        const was = { ...wasBody, scan: { ...wasBody.scan, scanner: { ...wasBody.scan.scanner, manifestHash: scannerManifestHash() } } };
+        const was = { ...wasBody, scan: { ...wasBody.scan, scanner: { ...wasBody.scan.scanner, manifestHash: scannerManifestHash(), version: SCANNER_VERSION } } };
         expect(JSON.parse(JSON.stringify(scan.body))).toEqual(was);
     });
 });
