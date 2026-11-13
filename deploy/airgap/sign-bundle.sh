@@ -12,7 +12,7 @@
 #
 # It exists so that the release builds and tests the bundle in a job that
 # cannot ask for the signing identity, and signs it in a job that runs for a
-# pushed tag only and does nothing else. The tree is checked with its own
+# release tag only and does nothing else. The tree is checked with its own
 # verify.sh before it is signed: a list that does not match its files is not
 # signed. This script holds no key and signs nothing itself.
 #

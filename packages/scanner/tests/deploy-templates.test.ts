@@ -35,6 +35,12 @@ const abs = (rel: string): string => path.join(REPO_ROOT, rel);
 const read = (rel: string): string => fs.readFileSync(abs(rel), 'utf8');
 const CHART = 'deploy/helm/scanent';
 const IMAGE_REPOSITORY = 'ghcr.io/rodnapamet/scanent';
+/**
+ * The condition every publishing job and the two release-tag steps of `gates` run under: a run on a tag that the
+ * tag's push started, or that GitHub Actions itself dispatched (auto-release.yml, with GITHUB_TOKEN). A person's
+ * manual run on a tag ref is neither, and publishes nothing.
+ */
+const RELEASE_TAG = "github.ref_type == 'tag' && (github.event_name == 'push' || github.actor == 'github-actions[bot]')";
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -1537,17 +1543,47 @@ describe('the release workflow', () => {
     const steps = (job: Json): Json[] => job.steps as Json[];
     const scripts = (job: Json): string => steps(job).map((s) => (s.run as string | undefined) ?? '').join('\n');
 
-    it('runs on a version tag or by hand, and publishes only from a tag', () => {
+    it('runs on a version tag or by dispatch, and publishes only from a release tag', () => {
         // js-yaml reads the bare key `on` as the boolean true.
         const on = (release.on ?? release.true) as Json;
         expect(Object.keys(on).sort()).toEqual(['push', 'workflow_dispatch']);
         expect(on.push).toEqual({ tags: ['v*.*.*'] });
-        // A PUSHED tag (the review): a manual run on a tag ref, which is also ref_type tag, pushes nothing.
-        expect(release.jobs.publish.if).toBe("github.event_name == 'push' && github.ref_type == 'tag'");
+        // A RELEASE tag: pushed, or dispatched by auto-release.yml. A person's manual run on a tag ref, which is also
+        // ref_type tag, pushes nothing (the review).
+        expect(release.jobs.publish.if).toBe(RELEASE_TAG);
         expect(release.jobs.release.if).toBe(release.jobs.publish.if);
         // The contract package is published under the same condition, and packed and checked on every run.
         expect(release.jobs['publish-contract'].if).toBe(release.jobs.publish.if);
         expect(release.jobs['contract-package'].if).toBeUndefined();
+    });
+
+    it('the release-tag condition admits a pushed tag and a tag GitHub Actions dispatched, and nothing else', () => {
+        // The condition, evaluated as GitHub does for these three context values: `==` on strings, `&&`, `||`.
+        const admits = (ctx: { event: string; refType: string; actor: string }): boolean => {
+            const js = RELEASE_TAG.replace(/==/g, '===')
+                .replace(/github\.event_name/g, JSON.stringify(ctx.event))
+                .replace(/github\.ref_type/g, JSON.stringify(ctx.refType))
+                .replace(/github\.actor/g, JSON.stringify(ctx.actor));
+            expect(js).not.toMatch(/github\./);
+            return new Function(`return (${js});`)() as boolean;
+        };
+        const BOT = 'github-actions[bot]';
+        // A tag's push, whoever pushed it; auto-release.yml's dispatch on the tag ref, and any re-run of it, whose
+        // `github.actor` stays the first attempt's.
+        expect(admits({ event: 'push', refType: 'tag', actor: 'a-person' })).toBe(true);
+        expect(admits({ event: 'workflow_dispatch', refType: 'tag', actor: BOT })).toBe(true);
+        // A person's manual run, on a tag ref or a branch; the bot on a branch; a push to a branch.
+        expect(admits({ event: 'workflow_dispatch', refType: 'tag', actor: 'a-person' })).toBe(false);
+        expect(admits({ event: 'workflow_dispatch', refType: 'branch', actor: 'a-person' })).toBe(false);
+        expect(admits({ event: 'workflow_dispatch', refType: 'branch', actor: BOT })).toBe(false);
+        expect(admits({ event: 'push', refType: 'branch', actor: BOT })).toBe(false);
+        // A login that only contains the bot's name is not it.
+        expect(admits({ event: 'workflow_dispatch', refType: 'tag', actor: `x-${BOT}` })).toBe(false);
+        // Six places, all the same condition: the two release-tag steps of `gates` and the four publishing jobs.
+        const text = read('.github/workflows/release.yml');
+        expect(text.split(`if: ${RELEASE_TAG}\n`).length - 1).toBe(6);
+        // Decided on `github.actor`, which a re-run keeps; `github.triggering_actor` is whoever started the re-run.
+        for (const line of text.split('\n').filter((l) => /^\s*if:/.test(l))) expect(line).not.toContain('triggering_actor');
     });
 
     it('may read the repository everywhere and write packages in the two publishing jobs alone', () => {
@@ -1557,17 +1593,17 @@ describe('the release workflow', () => {
         expect(release.jobs.build.permissions).toBeUndefined();
         // The Phase 4 review: `bundle` runs the repository's scripts on a manual run from any branch, so it holds no
         // identity token at all. The list of checksums is signed by `sign-bundle`, which exists for that and runs
-        // for a pushed tag only. (`bundle` held `id-token: write` here before, with step conditions keeping it unused.)
+        // for a release tag only. (`bundle` held `id-token: write` here before, with step conditions keeping it unused.)
         expect(release.jobs.bundle.permissions).toEqual({ contents: 'read' });
         expect(release.jobs['sign-bundle'].permissions).toEqual({ contents: 'read', 'id-token': 'write', attestations: 'write' });
         expect(release.jobs.gates.permissions).toBeUndefined();
-        // The identity token exists only in jobs that run for a pushed tag and for nothing else.
+        // The identity token exists only in jobs that run for a release tag and for nothing else.
         for (const [name, job] of Object.entries(release.jobs as Record<string, Json>)) {
             const granted = (job.permissions ?? {}) as Record<string, string>;
             if (granted['id-token'] !== undefined || granted.attestations !== undefined) {
                 // `publish-contract` joined with the contract package: it attests the tarball it publishes.
                 expect(['publish', 'sign-bundle', 'publish-contract']).toContain(name);
-                expect(job.if).toBe("github.event_name == 'push' && github.ref_type == 'tag'");
+                expect(job.if).toBe(RELEASE_TAG);
             }
         }
         // No job but `publish` (the image) and `publish-contract` (the npm package) may write a package, and none
@@ -1744,12 +1780,12 @@ describe('the release workflow', () => {
         expect(run(ciSteps, 'Test')).toBe('npm test');
         expect(run(steps(gates), 'Test with coverage (gate)')).toBe('npm run test:coverage');
 
-        // The commit is on main, asked of the whole history, on a pushed tag, before anything is installed.
+        // The commit is on main, asked of the whole history, on a release tag, before anything is installed.
         const checkout = steps(gates)[0];
         expect(String(checkout.uses)).toMatch(/^actions\/checkout@[0-9a-f]{40}$/);
         expect(checkout.with).toEqual({ 'persist-credentials': false, 'fetch-depth': 0 });
         const onMain = steps(gates).find((s) => s.name === 'The tagged commit is on main') as Json;
-        expect(onMain.if).toBe("github.event_name == 'push' && github.ref_type == 'tag'");
+        expect(onMain.if).toBe(RELEASE_TAG);
         expect(onMain.run).toContain('git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main');
         // A main that could not be read is a failure, never a pass.
         expect(onMain.run).toContain('git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || {');
@@ -1761,7 +1797,7 @@ describe('the release workflow', () => {
         const gates = release.jobs.gates;
         const names = steps(gates).map((s) => String(s.name ?? s.uses ?? ''));
         const notes = steps(gates).find((s) => s.name === 'The release has its notes') as Json;
-        expect(notes.if).toBe("github.event_name == 'push' && github.ref_type == 'tag'");
+        expect(notes.if).toBe(RELEASE_TAG);
         expect(names.indexOf('The release has its notes')).toBeGreaterThan(names.indexOf('The tagged commit is on main'));
         expect(names.indexOf('The release has its notes')).toBeLessThan(names.indexOf('Install'));
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scanent-notes-'));
@@ -1845,7 +1881,6 @@ describe('what a release signs and attests', () => {
         expect(at.every((i) => i >= 0)).toBe(true);
         expect([...at].sort((a, b) => a - b)).toEqual(at);
     };
-    const TAG_ONLY = "github.event_name == 'push' && github.ref_type == 'tag'";
 
     it('signs by digest, never by tag: the manifest and each architecture, read from what was pushed', () => {
         const publish = release.jobs.publish as Json;
@@ -1935,12 +1970,12 @@ describe('what a release signs and attests', () => {
         expect(verify.run).toContain('cosign verify-attestation --type cyclonedx "${IMAGE_REPOSITORY}@${digest}" --certificate-identity "$identity" --certificate-oidc-issuer "$issuer"');
     });
 
-    it('signs the bundle\'s list of checksums on a pushed tag only, and requires the signature when it checks that bundle', () => {
+    it('signs the bundle\'s list of checksums on a release tag only, and requires the signature when it checks that bundle', () => {
         // What this held of the `bundle` job's tag-only steps, it now holds of the `sign-bundle` job, which is tag-only
         // as a whole: the same signing command, the same test that a signature was written, the same required check.
         const bundle = release.jobs.bundle as Json;
         const sign = release.jobs['sign-bundle'] as Json;
-        expect(sign.if).toBe(TAG_ONLY);
+        expect(sign.if).toBe(RELEASE_TAG);
         expect(sign.needs).toEqual(['build', 'bundle']);
         const installer = steps(sign).find((s) => String(s.uses ?? '').startsWith('sigstore/cosign-installer@'));
         expect(installer?.if).toBeUndefined();
@@ -1962,10 +1997,10 @@ describe('what a release signs and attests', () => {
         const unsigned = steps(bundle).find((s) => String(s.uses ?? '').startsWith('actions/upload-artifact')) as Json;
         const download = steps(sign).find((s) => String(s.uses ?? '').startsWith('actions/download-artifact')) as Json;
         expect(download.with.name).toBe(unsigned.with.name);
-        // A manual run signs nothing: every use of cosign is in a job that runs on a pushed tag only.
-        expect(release.jobs.publish.if).toBe(TAG_ONLY);
+        // A person's manual run signs nothing: every use of cosign is in a job that runs on a release tag only.
+        expect(release.jobs.publish.if).toBe(RELEASE_TAG);
         for (const [name, job] of Object.entries(release.jobs as Record<string, Json>)) {
-            if (JSON.stringify(job).includes('cosign')) expect([name, job.if]).toEqual([name, TAG_ONLY]);
+            if (JSON.stringify(job).includes('cosign')) expect([name, job.if]).toEqual([name, RELEASE_TAG]);
         }
     });
 
@@ -2065,7 +2100,7 @@ describe('the CI gates', () => {
 describe('the other workflows', () => {
     const load = (name: string): Json => yaml.load(read(`.github/workflows/${name}`)) as Json;
 
-    it('are exactly these five', () => {
+    it('are exactly these six', () => {
         expect(fs.readdirSync(abs('.github/workflows')).sort()).toEqual(['ci.yml', 'codeql.yml', 'long-tests.yml', 'release.yml', 'scorecard.yml']);
     });
 

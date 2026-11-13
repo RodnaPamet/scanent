@@ -4,18 +4,19 @@
 #                commit being released: the dependency gates (npm audit, the
 #                licence allowlist), lint, type-check, build, the tests under
 #                the coverage gate, and the reproducible-build check. On a
-#                pushed tag it first refuses a commit that is not on main.
-#                Nothing below starts unless it passes
+#                release tag it first refuses a commit that is not on main,
+#                and a version with no release notes. Nothing below starts
+#                unless it passes
 #   build        one image per architecture, each built and smoke-tested on a
 #                runner of that architecture, scanned (the Trivy and Grype
 #                gates), and described by a CycloneDX SBOM made from that image
 #   bundle       the air-gapped bundle from the two images and their SBOMs,
 #                unsigned, checked by loading it. It cannot ask for the signing
 #                identity
-#   sign-bundle  a pushed tag only: sign the bundle's SHA256SUMS, make the
+#   sign-bundle  a release tag only: sign the bundle's SHA256SUMS, make the
 #                archive again with the signature inside, check that one as a
 #                site would, and attest its provenance
-#   publish      a pushed tag only, and only after the signed bundle's check
+#   publish      a release tag only, and only after the signed bundle's check
 #                passed: push both images and one manifest over them, sign the
 #                three by digest, attach each SBOM as an attestation, and
 #                attest the build's provenance for the manifest and for each
@@ -26,18 +27,35 @@
 #                NOTICE and nothing else. It cannot publish and cannot ask for
 #                the signing identity
 #   publish-contract
-#                a pushed tag only, and only after the images were published:
+#                a release tag only, and only after the images were published:
 #                attest that tarball's provenance and publish it to GitHub
 #                Packages as @rodnapamet/scanent-contract. A version already in
 #                the registry is never published again
-#   release      a pushed tag only: a GitHub release holding the bundle and its
+#   release      a release tag only: a GitHub release holding the bundle and its
 #                SHA-256, the SBOMs, the signed SHA256SUMS, and the provenance
 #                attestations
 #
-# A pushed tag `v<MAJOR>.<MINOR>.<PATCH>` publishes. A manual run
-# (workflow_dispatch) builds, tests, bundles and packs, and pushes, publishes
-# and signs nothing, whatever ref it is started on; so does a re-run that finds
-# the version published.
+# A RELEASE TAG publishes: a run on a tag `v<MAJOR>.<MINOR>.<PATCH>` that was
+# either started by the tag's push, or dispatched by GitHub Actions itself.
+# Nobody pushes the tag by hand (owner decision, 2026-11-13): a session bumps
+# SCANNER_VERSION and writes docs/releases/<version>.md, and once CI is green
+# on main, auto-release.yml tags main's head `v<version>` and dispatches this
+# workflow ON THE TAG'S REF with the repository's GITHUB_TOKEN. It dispatches
+# because a tag pushed with GITHUB_TOKEN starts no workflow, and a dispatch is
+# the one event GITHUB_TOKEN can start one with. Its actor is
+# github-actions[bot], and a re-run of it keeps that actor: `github.actor` is
+# the actor of the run's first attempt, and whoever starts a re-run is
+# `github.triggering_actor`. The push trigger stays, so a tag pushed by
+# whoever the tag ruleset lets push one publishes as before.
+#
+# Either way the run is on `refs/tags/v<version>`, so the signing identity is
+# the same one (below). A person's manual run (workflow_dispatch) builds,
+# tests, bundles and packs, and pushes, publishes and signs nothing, whatever
+# ref it is started on, a tag's included; so does a re-run that finds the
+# version published. A run another workflow of this repository dispatches
+# with GITHUB_TOKEN is also github-actions[bot]'s: the `gates` job still holds
+# its commit to main and to its release notes, and the tag ruleset decides
+# which workflow can make the tag.
 #
 # SIGNING IS KEYLESS. There is no signing key in this repository or its
 # secrets. `cosign` asks GitHub for a token that says "this is release.yml of
@@ -71,7 +89,7 @@ concurrency:
 
 # Read the repository, and nothing else. `publish` and `publish-contract`
 # alone may write packages; they and `sign-bundle` alone may ask for the signing
-# identity and write attestations, and all three run for a pushed tag only;
+# identity and write attestations, and all three run for a release tag only;
 # `release` alone may write a release.
 permissions:
   contents: read
@@ -83,7 +101,7 @@ env:
   SYFT_VERSION: v1.57.1
 
 jobs:
-  # A tag can be pushed on any commit. What is signed below is signed with the
+  # A tag can be made on any commit. What is signed below is signed with the
   # identity docs/verify-a-release.md tells a client to trust, so the commit is
   # held here to everything a commit on main is held to, whatever CI said about
   # it or did not: the steps from `Install` to `Reproducible build` are
@@ -102,7 +120,7 @@ jobs:
       # A release is cut from main. A tag on a commit of some other branch, or
       # of no branch, is refused before anything is installed.
       - name: The tagged commit is on main
-        if: github.event_name == 'push' && github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && (github.event_name == 'push' || github.actor == 'github-actions[bot]')
         run: |
           set -euo pipefail
           git rev-parse --verify --quiet refs/remotes/origin/main > /dev/null || { echo "origin/main was not fetched; the check cannot be made, so the release stops" >&2; exit 1; }
@@ -113,10 +131,12 @@ jobs:
           echo "on main: $GITHUB_SHA"
 
       # What changed, what was run before the tag and what has not been tested
-      # are written in the repository before the tag is pushed. The release's
+      # are written in the repository before the tag is made. The release's
       # own text points at that page, so a release without it is refused here.
+      # auto-release.yml asks the same before it tags; this is asked again
+      # because a tag can also be pushed.
       - name: The release has its notes
-        if: github.event_name == 'push' && github.ref_type == 'tag'
+        if: github.ref_type == 'tag' && (github.event_name == 'push' || github.actor == 'github-actions[bot]')
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
@@ -313,8 +333,10 @@ jobs:
 
   publish:
     name: Push the images and the manifest
-    # A PUSHED tag: a manual run on a tag ref builds and bundles, and pushes nothing.
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # A RELEASE tag: pushed, or dispatched by auto-release.yml (actor
+    # github-actions[bot]). A person's manual run on a tag ref builds and
+    # bundles, and pushes nothing.
+    if: github.ref_type == 'tag' && (github.event_name == 'push' || github.actor == 'github-actions[bot]')
     # `sign-bundle` verifies, loads and scans with what a site would receive; a version whose bundle fails is not published.
     needs: [build, bundle, sign-bundle]
     runs-on: ubuntu-24.04
@@ -535,7 +557,7 @@ jobs:
     timeout-minutes: 20
     # No identity token here, on any run: this job runs the repository's own
     # scripts (build-bundle.sh, smoke.sh), on a manual run from any branch. The
-    # signature is made by `sign-bundle`, which runs for a pushed tag only.
+    # signature is made by `sign-bundle`, which runs for a release tag only.
     permissions:
       contents: read
     env:
@@ -601,8 +623,8 @@ jobs:
 
   sign-bundle:
     name: Sign the air-gapped bundle
-    # A PUSHED tag, as `publish`: the only two jobs that may ask for the signing identity.
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # A RELEASE tag, as `publish`: the only two jobs that may ask for the signing identity.
+    if: github.ref_type == 'tag' && (github.event_name == 'push' || github.actor == 'github-actions[bot]')
     needs: [build, bundle]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -749,8 +771,8 @@ jobs:
 
   publish-contract:
     name: Publish the contract package
-    # A PUSHED tag, as `publish`.
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # A RELEASE tag, as `publish`.
+    if: github.ref_type == 'tag' && (github.event_name == 'push' || github.actor == 'github-actions[bot]')
     # After the images: a version whose images were not published gets no package.
     needs: [build, contract-package, publish]
     runs-on: ubuntu-24.04
@@ -820,7 +842,8 @@ jobs:
 
   release:
     name: GitHub release with the bundle, its checksum, the SBOMs, the signature and the provenance
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    # A RELEASE tag, as `publish`.
+    if: github.ref_type == 'tag' && (github.event_name == 'push' || github.actor == 'github-actions[bot]')
     # After both publishing jobs: a release names what was published.
     needs: [build, bundle, sign-bundle, publish, publish-contract]
     runs-on: ubuntu-24.04

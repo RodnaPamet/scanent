@@ -15,7 +15,7 @@
  *                  workflow runs on the tarball it publishes, proved on
  *                  tarballs that hold what must not be published.
  *   The workflow   release.yml packs and checks in a job that cannot publish,
- *                  and publishes, on a pushed tag only, the tarball that job
+ *                  and publishes, on a release tag only, the tarball that job
  *                  checked.
  *
  * Nothing is published by any of this: no command here reaches a registry.
@@ -496,7 +496,8 @@ describe('the release workflow and the contract package', () => {
         expect(at.every((i) => i >= 0)).toBe(true);
         expect([...at].sort((a, b) => a - b)).toEqual(at);
     };
-    const TAG_ONLY = "github.event_name == 'push' && github.ref_type == 'tag'";
+    // A tag's push, or a dispatch on the tag by GitHub Actions itself (auto-release.yml); never a person's manual run.
+    const TAG_ONLY = "github.ref_type == 'tag' && (github.event_name == 'push' || github.actor == 'github-actions[bot]')";
     const pack = release.jobs['contract-package'] as Json;
     const publish = release.jobs['publish-contract'] as Json;
     const WORKFLOW_TARBALL = 'contract-package/rodnapamet-scanent-contract-${VERSION}.tgz';
@@ -525,7 +526,7 @@ describe('the release workflow and the contract package', () => {
         for (const step of steps(pack)) expect(step.if).toBeUndefined();
     });
 
-    it('publishes on a pushed tag only, after the images, the tarball that was checked, with no checkout', () => {
+    it('publishes on a release tag only, after the images, the tarball that was checked, with no checkout', () => {
         expect(publish.if).toBe(TAG_ONLY);
         expect(publish.needs).toEqual(['build', 'contract-package', 'publish']);
         expect(publish.permissions).toEqual({ contents: 'read', packages: 'write', 'id-token': 'write', attestations: 'write' });
