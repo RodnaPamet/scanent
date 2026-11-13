@@ -37,8 +37,9 @@ signature, SBOM and provenance. Report a vulnerability as
 The [security intake pack](docs/security-pack/README.md) is the index for a
 reviewer: architecture, a table of each control with the code that enforces it
 and the test that proves it, and a blunt page on what has and has not been
-done to test the scanner. No pilot on a real estate, no external penetration
-test and no signed release exist yet.
+done to test the scanner. One pilot has been run, on the maker's own estate.
+No pilot at a client, no external penetration test and no signed release
+exist yet.
 
 **For whoever arranges a scan:** the [engagement kit](docs/engagement/README.md)
 has a scoping checklist, a ready-to-send read-only access request for each
@@ -252,7 +253,8 @@ printed. What it says, in the order it says it:
   an Inflect tenant's register, and some by no reader yet. The page names
   each, so "nothing in this run could have seen it" is not mistaken for "a
   source saw it fail". Without a register no agent can be shown above H1.
-- **The estate**: agents per level, shortfalls, shadow agents, orphan
+- **The estate**: agents per level, shortfalls, shadow agents, unregistered
+  automated identities (on no list, and showing no sign of a model), orphan
   credentials, and every agent against every criterion.
 - **An empty scan is a finding**, never a clean result.
 

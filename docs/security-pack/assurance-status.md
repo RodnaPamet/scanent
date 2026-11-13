@@ -10,7 +10,7 @@ production.**
 
 | | Status |
 |---|---|
-| Run against a real estate of any provider | **Not done** |
+| Run against a real estate | **Once, on the maker's own estate** (Inflect's): Entra ID, GitHub Actions, Google Cloud, an Inflect register and one repository of source code. **Not at a client**, and not for Okta, Azure Key Vault, LangSmith or an MCP server |
 | External penetration test | **Not done** |
 | Independent code review | **Not done** |
 | 72-hour soak | **Not done** |
@@ -24,16 +24,54 @@ lists the same under ["What has not been done"](../threat-model.md#what-has-not-
 
 ## What has not been done
 
-### No pilot on a real estate
+### One pilot, on the maker's own estate, and none at a client
 
-Every source (Entra, Okta, Azure Key Vault, Google Cloud, GitHub Actions,
-LangSmith, MCP) is tested against an imitation of the provider's API, written
-from the provider's documentation. The only real input the scanner has read is
-the small offline code example in `examples/code-only`.
+On 2026-11-12 the scanner was run once against a real estate: Inflect's own,
+by Inflect. No client's estate has been scanned.
 
-What follows from that:
+| Source | What happened |
+|---|---|
+| Microsoft Entra ID (`entra-sp`) | Read in full: 55 rows, 4 principals |
+| GitHub Actions (`cicd`) | Read in full: 27 rows, 22 principals |
+| Google Cloud (`gcp-sa`) | Read in full: 10 rows, 9 principals |
+| An Inflect register (`inflect-register`) | Read in full: 6 agents |
+| Source code (`code`) | One repository of 7,539 source files. The first scan could not read it. After three defects were fixed (issue 24) it was read in full, and held no agent of the frameworks the scanner recognises |
+
+What it showed:
+
+- The four live sources were read through an egress proxy that admits six
+  hosts, in 14 seconds, and `doctor` passed first (26 checks passed, none
+  failed).
+- The scanner this one was extracted from ran on the same estate seconds
+  later. Both reported the same 40 principals, and no field of any principal
+  differed between the two reports.
+- The first scan of a real repository was reported incomplete, for three
+  reasons no test had caught: a vendored file over the size limit, ordinary
+  code counted as code that could not be resolved, and a reason given with no
+  sentence and no place. Issue 24 has the detail; all three are fixed.
+- Of the 40 principals, 34 are not in the register. They are CI workflows
+  that hold a credential, service accounts and service principals, and the
+  scanner cannot tell which of them run a model. At the time of the run each
+  was reported as a shadow agent at HIGH, with a second HIGH finding for
+  being below the agent bar: 73 high findings. Since then a principal that
+  shows no sign of a model is reported as an unregistered automated
+  identity, at MEDIUM, and is held to no bar (issue 25). The same report
+  scored again gives 5 high findings and 34 medium ones.
+
+What it does not show:
 
 - **False positives and false negatives are not measured**, for any source.
+  There is no independent inventory of that estate to count against.
+  Agreement with the earlier scanner shows that the extraction changed
+  nothing; both could miss the same thing.
+- It was the maker's estate, read by the maker. It says nothing about a
+  client's directory, its size, its proxy or its approval process.
+- An agent built directly on a model provider's SDK is not recognised by the
+  `code` source. That estate's own agents are built that way: they were found
+  through its register, not in its code.
+- Okta, Azure Key Vault, LangSmith and MCP servers were not part of it. Each
+  is still tested only against an imitation of the provider's API, written
+  from the provider's documentation.
 - A provider whose real behaviour differs from its documentation would not be
   caught by any test here.
 - One such difference is already suspected and unconfirmed. Okta's
@@ -50,8 +88,9 @@ What follows from that:
 - The scale figures in `docs/scanner.md` ("Limits and scale") were measured
   with imitations in place of the network. They are the scanner's own cost,
   not a measurement on a real estate.
-- Proxy support relies on Node's own handling of `HTTPS_PROXY`. It has not
-  been confirmed against a real corporate proxy (issue 18).
+- Proxy support relies on Node's own handling of `HTTPS_PROXY`. The pilot
+  ran through an egress proxy of the scanner's own kind. It has not been
+  confirmed against a real corporate proxy (issue 18).
 
 ### No external penetration test, no independent review
 

@@ -83,10 +83,12 @@ These are true today and are stated here so nobody has to find them out later.
 - **No finished release exists yet.** There is no published, signed download.
   Today the program is built from its source code. [run-it.md](run-it.md)
   shows how.
-- **It has not yet been run against a real organisation's systems as a
-  trial.** Each reader is tested against a stand-in for the product it reads,
-  written from that product's public documentation. How often it misses an
-  agent, or reports one wrongly, in a real organisation has not been measured.
+- **It has not yet been run at a client.** It has been run once against a
+  real organisation's systems: those of Inflect Ltd., the company that makes
+  it, for four of the nine kinds of system. The other readers are tested only
+  against a stand-in for the product they read, written from that product's
+  public documentation. How often it misses an agent, or reports one wrongly,
+  in a real organisation has not been measured.
 - **It has had no independent security test** by an outside firm, and no
   outside code review.
 - **It has not been run continuously for several days.** A five-minute

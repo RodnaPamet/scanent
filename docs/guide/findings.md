@@ -1,7 +1,7 @@
 # The findings, and what to do about each
 
 A finding is one thing the scan saw that somebody should look at. There are
-seven kinds. This page says, for each: what it means, why it matters, what to
+eight kinds. This page says, for each: what it means, why it matters, what to
 do, and who usually owns the fix.
 
 Three things are true of every finding:
@@ -20,6 +20,7 @@ Three things are true of every finding:
 | Code | Severity | Can a scan on its own raise it? |
 |---|---|---|
 | `SHADOW_AGENT` | HIGH | Yes |
+| `UNREGISTERED_IDENTITY` | MEDIUM | Yes. Only a scan's own results raise it: a system that receives the report calls the same account a shadow agent |
 | `UNPINNED_WRITE_TOOL` | HIGH | Yes |
 | `HARNESS_SHORTFALL` | HIGH, or MEDIUM for an agent that only reads | Yes |
 | `EMPTY_SCAN` | HIGH | Yes |
@@ -34,10 +35,13 @@ to you: that judgement is yours.
 
 ## `SHADOW_AGENT`
 
-**What it means.** The scan found an agent that is on no list. With an
-inventory: the agent is not in your inventory. With no inventory and no
-Inflect tenant: no agent can be on a list, so every agent the scan found gets
-this finding.
+**What it means.** The scan found an agent that is on no list, and something
+it read suggests the agent runs an AI model. The signs it goes by are these:
+it was found in agent code, in a tracing system or on a tool server, or it
+lists a tool or a model. With an inventory: the agent is not in your
+inventory. With no inventory and no Inflect tenant: nothing can be on a list,
+so everything the scan found gets this finding or the next one,
+`UNREGISTERED_IDENTITY`.
 
 **Why it matters.** An agent on no list has no owner on record. Nobody has
 said what it is for, nobody reviews what it can reach, and nobody will notice
@@ -59,6 +63,47 @@ agent in your inventory.
 **Who usually owns it.** The team that looks after the system the agent was
 found in (identity, cloud platform, or the development team for agent code),
 together with whoever keeps your list of agents.
+
+## `UNREGISTERED_IDENTITY`
+
+**What it means.** The scan found an automated account that is on no list,
+and nothing it read suggests the account runs an AI model. A build workflow
+that holds a key looks like this. So does a service account, or an
+application registered in a directory. The scanner reports it as an
+unregistered automated identity, not as an agent.
+
+**The scan cannot show that it runs no model.** It only saw no sign of one.
+The signs it looks for are listed under `SHADOW_AGENT` above. The name of a
+key is not one of them: a secret called after an AI provider is a guess about
+what uses it.
+
+**Why it matters.** An automated account with a key and no owner on record is
+a risk whether or not a model is behind it. And if it is an agent after all,
+nobody has said so.
+
+**What to do.**
+
+1. Find out what it is. The system's own administration shows who created
+   it.
+2. If it is an agent: add it to your inventory. It is then treated as an
+   agent, given a level, and held to the bar.
+3. If it is ordinary automation: make sure it has an owner on record in the
+   place your organisation keeps such things. Adding it to the scanner's
+   inventory would make the scanner treat it as an agent, so do not.
+4. If nobody claims it: disable it in the system it lives in, wait, and then
+   remove it. The scanner does not do this for you.
+
+**What it is not held to.** It is given a level, which you can see in the
+table and the spreadsheet, and it is not held to the bar. So it has no
+`HARNESS_SHORTFALL` finding.
+
+**When it closes.** When a later scan that read everything in full finds it
+in your inventory. If a later scan sees a sign of a model, this finding stays
+open and a `SHADOW_AGENT` finding is raised beside it.
+
+**Who usually owns it.** The team that looks after the system the account
+was found in: identity, the cloud platform, or the team that owns the build
+pipeline.
 
 ## `UNPINNED_WRITE_TOOL`
 
@@ -103,7 +148,8 @@ the next level.
 
 **Read this before you act on it.** A scan on its own cannot show any agent
 above H1. So in such a scan **every agent that was given a level gets this
-finding**. That is a limit of what the scan could read, not a failure of each
+finding**, except an unregistered automated identity, which is held to no
+bar. That is a limit of what the scan could read, not a failure of each
 agent. [read-the-report.md](read-the-report.md#what-a-scan-on-its-own-can-show)
 explains why.
 

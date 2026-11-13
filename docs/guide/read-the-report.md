@@ -189,15 +189,16 @@ guide uses plainer ones:
 
 ### Estate summary
 
-Six numbers:
+Seven numbers:
 
 | Number | Meaning |
 |---|---|
-| Agents found | Everything the scan found |
-| Judged | Agents that were given a level |
-| Not judged | Agents that were given no level, because a system they depend on was not read in full |
-| Below their bar | Judged agents below the level expected of them (see "The bar" below) |
-| Shadow agents | Agents that are on no list |
+| Agents found | Everything the scan found: agents, and automated accounts that may not be agents |
+| Judged | Those that were given a level |
+| Not judged | Those that were given no level, because a system they depend on was not read in full |
+| Below their bar | Judged agents below the level expected of them (see "The bar" below). An unregistered identity is held to no bar and is not counted here |
+| Shadow agents | On no list, and showing a sign of an AI model |
+| Unregistered identities | On no list, and showing no sign of an AI model |
 | Orphan credentials | Keys and secrets that no agent uses |
 
 Then a small chart of how many judged agents are on each level.
@@ -260,8 +261,18 @@ says so. The spreadsheet always has all of them.
 
 ### Shadow agents
 
-The agents that are on no list. With no inventory and no Inflect tenant,
-every agent is one, so the section says that instead of repeating the table.
+The agents that are on no list, and that show a sign of an AI model: found in
+agent code, in a tracing system or on a tool server, or listing a tool or a
+model. With no inventory and no Inflect tenant, nothing is on a list, so the
+section says that instead of repeating the table.
+
+### Unregistered identities
+
+The automated accounts that are on no list and show no sign of an AI model: a
+build workflow that holds a key, a service account. The page says "The scan
+cannot show that one of these runs no model." Each has one finding of medium
+severity, and none is held to the bar.
+[findings.md](findings.md#unregistered_identity) says what to do with them.
 
 ### Orphan credentials
 
@@ -352,20 +363,22 @@ One line for each agent. The first columns:
 | `observedOwnerKind`, `observedOwnerRef` | The owner a system reported: a user or a group, and its id |
 | `discoveredVia` | The kind of system the agent was found in |
 | `registration` | `NONE`, `DECLARED_INVENTORY` or `OBSERVED_REGISTER` |
+| `classification` | `REGISTERED`, `SHADOW_AGENT` (on no list, with a sign of an AI model) or `UNREGISTERED_IDENTITY` (on no list, with none) |
+| `modelSigns` | The signs of an AI model the scan saw, separated by `;`: `FOUND_IN_CODE`, `FOUND_IN_RUNTIME`, `FOUND_ON_MCP_SERVER`, `LISTS_A_TOOL`, `LISTS_A_MODEL`. Empty when it saw none |
 | `judged` | `yes` or `no` |
 | `level` | The level. Empty when not judged |
 | `observedLevel` | The level if everything from your inventory is set aside |
 | `notJudgedReasons` | Why not, when not judged |
 | `reach` | `READ_ONLY`, `WRITE_OR_EXTERNAL` or `UNKNOWN` |
 | `bar` | The level expected of it |
-| `shortfall` | `yes` when the agent is below its bar |
+| `shortfall` | `yes` when the agent is below its bar. `not held to a bar` for an unregistered identity |
 | `blockingNextRung` | The checks that stand between the agent and the next level |
 | `credentials`, `tools`, `writeCapableTools`, `unpinnedWriteTools` | Counts: its keys, its tools, the tools that can change things, and those of them that are not pinned |
 
 Then one column for each check, holding one of the six words in the table of
 cells above.
 
-Useful first sorts: by `registration` to see what you did not know about; by
+Useful first sorts: by `classification` to see what you did not know about; by
 `unpinnedWriteTools` to see the agents that can change the most with the
 least review; by `observedOwnerRef` to find agents with no owner.
 

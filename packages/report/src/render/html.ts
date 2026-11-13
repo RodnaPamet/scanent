@@ -314,6 +314,7 @@ function stat(label: string, value: number, note: string): SafeHtml {
 
 function summary(r: LocalResults): SafeHtml {
     const e = r.estate;
+    const identities = e.unregisteredIdentities;
     const most = Math.max(1, ...HARNESS_LEVELS.map((level) => e.byLevel[level] ?? 0));
     const rows = HARNESS_LEVELS.map((level) => {
         const count = e.byLevel[level] ?? 0;
@@ -327,16 +328,17 @@ function summary(r: LocalResults): SafeHtml {
     return html`<section id="summary" aria-labelledby="summary-h">
 <h2 id="summary-h">Estate summary</h2>
 <dl class="stats">
-${stat('Agents found', e.agentCount, '')}
+${stat('Agents found', e.agentCount, identities === undefined || identities.length === 0 ? '' : 'agents and automated identities')}
 ${stat('Judged', e.judgedCount, 'have a level')}
 ${stat('Not judged', e.notJudgedCount, e.notJudgedCount === 0 ? '' : 'no level stated')}
-${stat('Below their bar', e.shortfallCount, 'of the judged agents')}
-${stat('Shadow agents', e.shadowAgents.length, 'not registered')}
+${stat('Below their bar', e.shortfallCount, identities === undefined || identities.length === 0 ? 'of the judged agents' : 'of the judged agents held to a bar')}
+${stat('Shadow agents', e.shadowAgents.length, identities === undefined ? 'not registered' : 'not registered, with a sign of a model')}
+${identities === undefined ? '' : stat('Unregistered identities', identities.length, 'no sign of a model')}
 ${stat('Orphan credentials', e.orphanCredentials.length, 'bound to no agent')}
 </dl>
 <p>Registration is taken from: ${fixed(ESTATE_REGISTRATION_TEXT, e.registrationBasis, 'Not stated')}.</p>
 <div class="scroll"><table class="levels">
-<caption>Judged agents per level${e.notJudgedCount > 0 ? html` (${plural(e.notJudgedCount, 'agent', 'agents')} not judged and not counted here)` : ''}</caption>
+<caption>Judged agents per level${e.notJudgedCount > 0 ? html` (${plural(e.notJudgedCount, 'agent', 'agents')} not judged and not counted here)` : ''}${identities === undefined || identities.length === 0 ? '' : html`. ${plural(identities.length, 'unregistered identity is', 'unregistered identities are')} counted at the level observed, and held to no bar`}</caption>
 <thead><tr><th scope="col">Level</th><th scope="col" class="num">Agents</th><th scope="col">Share</th></tr></thead>
 <tbody>
 ${rows}
@@ -427,10 +429,12 @@ function shadowAgents(r: LocalResults): SafeHtml {
             ? html`<p>With no inventory and no register read, every agent this scan found is unregistered, so the list would repeat the table above. Supply an inventory to see which agents the estate does not know.</p>`
             : r.estate.shadowAgents.length === 0
                 ? r.scan.complete
-                    ? html`<p>None: every agent this scan found is registered.</p>`
+                    ? (r.estate.unregisteredIdentities ?? []).length === 0
+                        ? html`<p>None: every agent this scan found is registered.</p>`
+                        : html`<p>None: every principal this scan found that shows a sign of a model is registered. The unregistered identities that show none are listed in the next section.</p>`
                     : html`<p>None raised. The scan is incomplete, so this is not a statement that none exist.</p>`
                 : html`${shadow.notice}<div class="scroll"><table>
-<caption>Agents found by this scan that are not registered</caption>
+<caption>${r.estate.unregisteredIdentities === undefined ? 'Agents found by this scan that are not registered' : 'Not registered, and showing a sign of a model'}</caption>
 <thead><tr><th scope="col">Agent</th><th scope="col">Found through</th><th scope="col">Reach</th></tr></thead>
 <tbody>
 ${shadow.shown.map((id) => {
@@ -442,6 +446,45 @@ ${shadow.shown.map((id) => {
     return html`<section id="shadow" aria-labelledby="shadow-h">
 <h2 id="shadow-h">Shadow agents</h2>
 ${body}
+</section>`;
+}
+
+const MODEL_SIGN_TEXT: Readonly<Record<string, string>> = {
+    FOUND_IN_CODE: 'found in agent code',
+    FOUND_IN_RUNTIME: 'found in a tracing system',
+    FOUND_ON_MCP_SERVER: 'found on an MCP server',
+    LISTS_A_TOOL: 'lists a tool',
+    LISTS_A_MODEL: 'lists a model endpoint',
+};
+
+/**
+ * The principals nothing names and nothing shows to run a model. They are not
+ * called agents here and are held to no bar, and they are still listed: an
+ * identity nobody has classified does not leave the page.
+ */
+function unregisteredIdentities(r: LocalResults): SafeHtml {
+    const all = r.estate.unregisteredIdentities ?? [];
+    const byId = new Map(r.agents.map((a) => [a.discoveredId, a]));
+    const listed = capped(all, SECTION_MAX_ROWS, 'unregistered identities', 'in the order the results list them', RUN_FILE_NAMES.agents);
+    const meaning = html`<p>An unregistered automated identity is a principal that no register or inventory names, and that shows no sign of a model: it was not ${MODEL_SIGN_TEXT.FOUND_IN_CODE.slice('found '.length)}, ${MODEL_SIGN_TEXT.FOUND_IN_RUNTIME.slice('found '.length)} or ${MODEL_SIGN_TEXT.FOUND_ON_MCP_SERVER.slice('found '.length)}, and its report lists no tool and no model endpoint. A build workflow that holds a key, or a service account, looks like this.</p>
+<p><strong>The scan cannot show that one of these runs no model.</strong> Each is a finding of medium severity, and none is held to the agent bar. If one is an agent, register it or add it to the inventory, and it is then scored as one. If it is not, it still needs an owner on record.</p>`;
+    return html`<section id="identities" aria-labelledby="identities-h">
+<h2 id="identities-h">Unregistered identities</h2>
+${meaning}
+${all.length === 0
+        ? r.scan.complete
+            ? html`<p>None.</p>`
+            : html`<p>None raised. The scan is incomplete, so this is not a statement that none exist.</p>`
+        : html`${listed.notice}<div class="scroll"><table>
+<caption>Not registered, and showing no sign of a model</caption>
+<thead><tr><th scope="col">Identity</th><th scope="col">Found through</th><th scope="col" class="num">Credentials</th></tr></thead>
+<tbody>
+${listed.shown.map((id) => {
+            const agent = byId.get(id);
+            return html`<tr><th scope="row"><code class="id">${id}</code></th><td>${(agent?.discoveredVia ?? []).map((kind, i) => html`${i > 0 ? ', ' : ''}<code>${kind}</code>`)}</td><td class="num">${agent?.counts.credentials ?? 0}</td></tr>`;
+        })}
+</tbody>
+</table></div>`}
 </section>`;
 }
 
@@ -680,6 +723,8 @@ export function renderSummaryHtml(results: LocalResults): string {
               ['summary', 'Summary', summary(r)],
               ['matrix', 'Agents and criteria', matrix(r)],
               ['shadow', 'Shadow agents', shadowAgents(r)],
+              // Absent for results written before the member existed: there, every unregistered principal is a shadow agent.
+              ...(r.estate.unregisteredIdentities === undefined ? [] : [['identities', 'Unregistered identities', unregisteredIdentities(r)] as const]),
               ['orphans', 'Orphan credentials', orphans(r)],
               ['findings', 'Findings', findings(r)],
               ...(r.inventory === null ? [] : [['inventory', 'Inventory', inventory(r)] as const]),

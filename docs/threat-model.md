@@ -249,7 +249,9 @@ Stated plainly. None of these is closed by the code.
 ## What has not been done
 
 - No independent penetration test and no external code review.
-- No pilot against a real estate of each provider: every source is tested
+- One pilot, on the maker's own real estate (Entra ID, GitHub Actions, Google
+  Cloud, an Inflect register and source code; 2026-11-12). None at a client,
+  and Okta, Azure Key Vault, LangSmith and MCP servers are still tested only
   against fakes written from the providers' documentation. False positives and
   false negatives per provider are not measured.
 - The 72-hour soak has not been run; a five-minute one has.

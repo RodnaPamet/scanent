@@ -178,8 +178,8 @@ Detail: [../verify-a-release.md](../verify-a-release.md).
 - You can read the source code.
 
 What has **not** been done: no outside firm has tested it, nobody outside the
-project has reviewed the code, and it has not yet been trialled against a
-real organisation's systems.
+project has reviewed the code, and it has not yet been run at a client. It
+has been run once against a real organisation's systems: its maker's own.
 
 Detail: [../threat-model.md](../threat-model.md#what-has-not-been-done).
 
@@ -223,7 +223,8 @@ side, and one that is not finished by then is marked incomplete, with the
 reason `TIME_BOX`. Each system also has a size limit, and reaching it is
 reported the same way.
 
-We have not measured it against a real organisation's systems.
+The one real organisation scanned so far, the maker's own (four systems, 40
+agents), took 14 seconds. A larger one has not been measured.
 
 Detail: [../scanner.md](../scanner.md#limits-and-scale).
 

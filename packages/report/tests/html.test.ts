@@ -23,7 +23,7 @@ import { MATRIX_MAX_AGENTS, renderSummaryHtml } from '../src/render/html';
 import { scoreReportLocally } from '../src/results/score';
 import type { LocalResults } from '../src/results/types';
 import { fullRow, input, inventoryOf, standaloneBody, withSource } from './helpers/fixtures';
-import { ALPHA, BRAVO, emptyResults, hostile, inventoryResults, notJudgedResults, plainResults } from './helpers/results';
+import { ALPHA, BRAVO, CHARLIE, emptyResults, hostile, identityResults, inventoryResults, notJudgedResults, plainResults, withIdentityBody } from './helpers/results';
 
 interface Tag {
     readonly name: string;
@@ -244,6 +244,63 @@ describe('3. honest states', () => {
         const page = renderSummaryHtml(notJudgedResults());
         expect(page.includes('What was not read')).toBe(false);
         expect(page.includes('was not read in full</strong>')).toBe(false);
+    });
+
+    it('lists the unregistered identities apart from the shadow agents, and says what the scan cannot show', () => {
+        // An inventory that names one agent: registration is read from somewhere, so the shadow table is shown.
+        const results = scoreReportLocally(input(withIdentityBody(), { inventory: inventoryOf([fullRow(ALPHA)]) }));
+        const page = renderSummaryHtml(results);
+        const { text } = assertSafe(page);
+        const words = text.join('').replace(/\s+/g, ' ');
+        expect(page).toContain('<h2 id="identities-h">Unregistered identities</h2>');
+        expect(page.indexOf('id="shadow"')).toBeLessThan(page.indexOf('id="identities"'));
+        expect(page.indexOf('id="identities"')).toBeLessThan(page.indexOf('id="orphans"'));
+        expect(words).toContain('The scan cannot show that one of these runs no model.');
+        expect(words).toContain('Not registered, and showing no sign of a model');
+        expect(words).toContain('Not registered, and showing a sign of a model');
+        // The tiles: two shadow agents, one identity, and only the agents held to a bar counted below it.
+        expect(words).toContain('Shadow agents1 not registered, with a sign of a model');
+        expect(words).toContain('Unregistered identities1 no sign of a model');
+        expect(words).toContain(`Below their bar${results.estate.shortfallCount} of the judged agents held to a bar`);
+        expect(words).toContain('Agents found3 agents and automated identities');
+        expect(words).toContain('1 unregistered identity is counted at the level observed, and held to no bar');
+        // Its row is in its own table, once, and not in the shadow table.
+        const identities = page.slice(page.indexOf('id="identities"'), page.indexOf('id="orphans"'));
+        const shadow = page.slice(page.indexOf('id="shadow"'), page.indexOf('id="identities"'));
+        expect(identities).toContain(CHARLIE);
+        expect(shadow.includes(CHARLIE)).toBe(false);
+        expect(shadow).toContain(BRAVO);
+    });
+
+    it('with no register and no inventory, the identities are still listed apart', () => {
+        const page = renderSummaryHtml(identityResults());
+        assertSafe(page);
+        expect(page.slice(page.indexOf('id="identities"'), page.indexOf('id="orphans"'))).toContain(CHARLIE);
+        expect(page.replace(/\s+/g, ' ')).toContain('Shadow agents</dt><dd><span class="big">2</span>');
+    });
+
+    it('an estate with no unregistered identity says none, and an incomplete scan does not say none exist', () => {
+        const none = renderSummaryHtml(scoreReportLocally(input(standaloneBody(), { inventory: inventoryOf([fullRow(ALPHA), fullRow(BRAVO)]) })));
+        expect(none.slice(none.indexOf('id="identities"'), none.indexOf('id="orphans"'))).toContain('<p>None.</p>');
+        const partial = renderSummaryHtml(scoreReportLocally(input(withSource(standaloneBody(), 'mcp', 'TIME_BOX'), { inventory: inventoryOf([fullRow(ALPHA), fullRow(BRAVO)]) })));
+        expect(partial.slice(partial.indexOf('id="identities"'), partial.indexOf('id="orphans"'))).toContain('this is not a statement that none exist');
+    });
+
+    it('every agent registered, and identities beside them: the shadow section does not say every principal is registered', () => {
+        const page = renderSummaryHtml(scoreReportLocally(input(withIdentityBody(), { inventory: inventoryOf([fullRow(ALPHA), fullRow(BRAVO)]) })));
+        const shadow = page.slice(page.indexOf('id="shadow"'), page.indexOf('id="identities"'));
+        expect(shadow).toContain('every principal this scan found that shows a sign of a model is registered');
+        expect(shadow.includes('every agent this scan found is registered')).toBe(false);
+    });
+
+    it('results written before the identities existed render as they did: no section, and the old caption', () => {
+        const older = JSON.parse(JSON.stringify(inventoryResults())) as LocalResults & { estate: { unregisteredIdentities?: string[] } };
+        delete older.estate.unregisteredIdentities;
+        const page = renderSummaryHtml(older);
+        assertSafe(page);
+        expect(page.includes('id="identities"')).toBe(false);
+        expect(page).toContain('Agents found by this scan that are not registered');
+        expect(page.replace(/\s+/g, ' ')).toContain('not registered</span>');
     });
 
     it('completeness comes before every other section', () => {

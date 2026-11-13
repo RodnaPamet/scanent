@@ -190,4 +190,7 @@ gates; `image` with Trivy and Grype; `image-podman`; `chart`;
 `chart-install` on kind), `codeql.yml` and `scorecard.yml`.
 
 - The 72-hour soak.
-- A pilot against a real estate of each provider.
+- A pilot at a client, and any pilot against a real Okta, Azure Key Vault,
+  LangSmith or MCP server. One pilot was run on 2026-11-12 on the maker's own
+  estate: Entra ID, GitHub Actions, Google Cloud, an Inflect register and
+  source code.

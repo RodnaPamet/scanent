@@ -9,11 +9,13 @@
  */
 import { ALL_HARNESS_CRITERIA } from '@rodnapamet/scanent-contract/harness-ladder';
 
-import { AGENTS_CSV_LEADING_COLUMNS, CSV_BOM, csvCell, csvCriterionState, FINDINGS_CSV_COLUMNS, renderAgentsCsv, renderFindingsCsv } from '../src/render/csv';
+import { agentClassification, AGENTS_CSV_LEADING_COLUMNS, CSV_BOM, csvCell, csvCriterionState, FINDINGS_CSV_COLUMNS, renderAgentsCsv, renderFindingsCsv } from '../src/render/csv';
 import { renderResultsJson, stableJson } from '../src/render/results-json';
 import { LocalResultsSchema } from '../src/results/schema';
+import { scoreReportLocally } from '../src/results/score';
 import type { LocalResults } from '../src/results/types';
-import { ALPHA, BRAVO, emptyResults, hostile, inventoryResults, notJudgedResults, parseCsv, plainResults } from './helpers/results';
+import { fullRow, input, inventoryOf } from './helpers/fixtures';
+import { ALPHA, BRAVO, CHARLIE, emptyResults, hostile, inventoryResults, notJudgedResults, parseCsv, plainResults, withIdentityBody } from './helpers/results';
 
 const body = (csv: string): string[][] => parseCsv(csv.slice(CSV_BOM.length));
 
@@ -155,6 +157,25 @@ describe('3. content', () => {
         expect(col(bravo, 'registration')).toBe('NONE');
         expect(col(bravo, 'unpinnedWriteTools')).toBe('1');
         expect(col(bravo, 'H2.credential_bound')).toBe('UNANSWERED');
+    });
+
+    it('says what each principal is: registered, a shadow agent, or an unregistered identity held to no bar', () => {
+        const withInventory = scoreReportLocally(input(withIdentityBody(), { inventory: inventoryOf([fullRow(ALPHA)]) }));
+        const [header, ...rows] = body(renderAgentsCsv(withInventory));
+        const col = (id: string, name: string) => rows.find((r) => r[header.indexOf('discoveredId')] === id)![header.indexOf(name)];
+        expect(col(ALPHA, 'classification')).toBe('REGISTERED');
+        expect(col(BRAVO, 'classification')).toBe('SHADOW_AGENT');
+        expect(col(BRAVO, 'modelSigns')).toBe('LISTS_A_TOOL');
+        expect(col(BRAVO, 'shortfall')).toBe('yes');
+        expect(col(CHARLIE, 'classification')).toBe('UNREGISTERED_IDENTITY');
+        expect(col(CHARLIE, 'modelSigns')).toBe('');
+        // Its level is still there; what it is not is below a bar.
+        expect(col(CHARLIE, 'level')).toBe('H0');
+        expect(col(CHARLIE, 'shortfall')).toBe('not held to a bar');
+        // A file written before the signs existed: an unregistered principal is a shadow agent, as that file's findings say.
+        expect(agentClassification({ registration: { basis: 'NONE', ref: null } })).toBe('SHADOW_AGENT');
+        expect(agentClassification({ registration: { basis: 'NONE', ref: null }, modelSigns: [] })).toBe('UNREGISTERED_IDENTITY');
+        expect(agentClassification({ registration: { basis: 'OBSERVED_REGISTER', ref: 'agt_1' }, modelSigns: [] })).toBe('REGISTERED');
     });
 
     it('an agent that was not judged has empty level, observedLevel, bar and shortfall cells, and its reasons', () => {

@@ -278,7 +278,7 @@ describe('docs/security-pack/assurance-status.md', () => {
     it('says what has not been done before what has, and names each item', () => {
         expect(text.indexOf('## What has not been done')).toBeGreaterThan(0);
         expect(text.indexOf('## What has not been done')).toBeLessThan(text.indexOf('## What has been done'));
-        for (const heading of ['### No pilot on a real estate', '### No external penetration test, no independent review', '### No long soak', '### No signed release']) {
+        for (const heading of ['### One pilot, on the maker\'s own estate, and none at a client', '### No external penetration test, no independent review', '### No long soak', '### No signed release']) {
             expect(notDone).toContain(heading);
         }
         for (const phrase of ['False positives and false negatives are not measured', '72-hour', 'has never been started', 'never run']) expect(notDone).toContain(phrase);

@@ -27,7 +27,7 @@ import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LE
 import { AGENTS_CSV_LEADING_COLUMNS, csvCriterionState, FINDINGS_CSV_COLUMNS } from '@scanent/report/render/csv';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
 import { coverageOf, scoreReportLocally } from '@scanent/report/results/score';
-import type { ReaderKind } from '@scanent/report/results/types';
+import { LOCAL_FINDING_CODES, type ReaderKind } from '@scanent/report/results/types';
 
 import { HELP, main, USAGE_HINT } from '../src/cli';
 import { ConfigError } from '../src/config';
@@ -138,7 +138,7 @@ describe('docs/guide/read-the-report.md: the ladder', () => {
     it('names each section of the page by the heading the page gives it, and quotes the page\'s own sentences', () => {
         const html = fs.readFileSync(path.join(REPO, 'packages/report/src/render/html.ts'), 'utf8');
         const headings = [...new Set([...html.matchAll(/<h2 id="[a-z]+-h">([^<]+)<\/h2>/g)].map((m) => m[1]))];
-        expect(headings.length).toBe(9);
+        expect(headings.length).toBe(10);
         for (const heading of headings) expect(text).toContain(`### ${heading}\n`);
         // Sentences the guide puts in quotation marks are the page's own.
         for (const quoted of [
@@ -148,6 +148,7 @@ describe('docs/guide/read-the-report.md: the ladder', () => {
             'No reader in scanent reports this criterion',
             'A reader exists; this run did not configure it',
             'Seen unbound, not concluded',
+            'The scan cannot show that one of these runs no model.',
             'No finding was raised',
             'The scan is incomplete, so this is not a clean result.',
             'name declared by the operator',
@@ -213,11 +214,13 @@ describe('docs/guide/findings.md: the findings', () => {
     };
 
     it('has one section for every finding code the planner has, and a row for each', () => {
+        // The planner's, and the one the local results raise in place of a shadow agent.
+        const codes = [...HARNESS_FINDING_CODES, ...LOCAL_FINDING_CODES];
         const sections = [...text.matchAll(/^## `([A-Z_]+)`$/gm)].map((m) => m[1]);
-        expect([...sections].sort()).toEqual([...HARNESS_FINDING_CODES].sort());
-        expect(tableRows(text, 'findings').map((r) => r[0]).sort()).toEqual(HARNESS_FINDING_CODES.map((c) => `\`${c}\``).sort());
-        expect(text).toContain('There are\nseven kinds.');
-        expect(HARNESS_FINDING_CODES.length).toBe(7);
+        expect([...sections].sort()).toEqual([...codes].sort());
+        expect(tableRows(text, 'findings').map((r) => r[0]).sort()).toEqual(codes.map((c) => `\`${c}\``).sort());
+        expect(text).toContain('There are\neight kinds.');
+        expect(codes.length).toBe(8);
         // Each section answers the same five questions.
         for (const section of text.split(/^## `/m).slice(1)) {
             for (const part of ['**What it means.**', '**Why it matters.**', '**What to do.**', '**When it closes.**', '**Who usually owns it.**']) expect(section).toContain(part);
@@ -232,6 +235,19 @@ describe('docs/guide/findings.md: the findings', () => {
             for (const f of planHarnessScan(b, withHistory).assert) planned.set(f.code, (planned.get(f.code) ?? new Set()).add(f.severity));
         }
         expect([...planned.keys()].sort()).toEqual([...HARNESS_FINDING_CODES].sort());
+        // The local results' own finding, raised by the second scan: an agent that only reads, with no tool and no model.
+        for (const b of BODIES) {
+            const local = scoreReportLocally({
+                body: b,
+                inventory: null,
+                readers: { table: CRITERION_READERS, configuredSources: ['code', 'entra-sp', 'mcp', 'runtime'] },
+                meta: { estate: 'guide', registerClaimsVerified: true, report: { sha256: '0'.repeat(64), signerKeyFingerprint: 'guide', signerPinned: true } },
+            });
+            for (const f of local.findings.filter((x) => (LOCAL_FINDING_CODES as readonly string[]).includes(x.code))) {
+                planned.set(f.code, (planned.get(f.code) ?? new Set()).add(f.severity));
+            }
+        }
+        expect([...LOCAL_FINDING_CODES].every((code) => planned.has(code))).toBe(true);
         for (const [code, severity] of tableRows(text, 'findings')) {
             const stated = SEVERITIES.filter((s) => new RegExp(`\\b${s}\\b`).test(severity));
             expect({ code, severities: stated.sort() }).toEqual({ code, severities: [...(planned.get(code.replace(/`/g, '')) ?? [])].sort() });
@@ -489,7 +505,7 @@ describe('docs/guide: written for a reader who is not an engineer', () => {
 
     it('says, on its first page and in its questions, what has not been done', () => {
         const flat = (text: string): string => text.replace(/\n\s*/g, ' ');
-        for (const said of ['No finished release exists yet', 'has not yet been run against a real organisation', 'no independent security test', 'the planned 72-hour run has not']) {
+        for (const said of ['No finished release exists yet', 'has not yet been run at a client', 'no independent security test', 'the planned 72-hour run has not']) {
             expect(flat(GUIDE['README.md'])).toContain(said);
         }
         expect(flat(GUIDE['faq.md'])).toContain('No release exists');

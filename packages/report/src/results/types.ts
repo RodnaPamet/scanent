@@ -110,6 +110,27 @@ export type VerdictBasis = 'OBSERVED' | 'DECLARED';
 export type UnreadableWhy = 'NO_READER' | 'READER_NOT_CONFIGURED';
 export type UnboundNotConcludedWhy = 'OWN_SOURCE_INCOMPLETE' | 'IDENTITY_SOURCE_INCOMPLETE';
 
+/**
+ * What a scan read that suggests a principal runs a model: it was found in
+ * agent code, in a tracing system or on an MCP server, or its report lists a
+ * tool or a model endpoint. A credential's NAME is not one: a secret called
+ * after a model provider is a guess about what holds it (owner decision,
+ * 2026-11-13).
+ */
+export const MODEL_SIGNS = ['FOUND_IN_CODE', 'FOUND_IN_RUNTIME', 'FOUND_ON_MCP_SERVER', 'LISTS_A_TOOL', 'LISTS_A_MODEL'] as const;
+export type ModelSign = (typeof MODEL_SIGNS)[number];
+
+/**
+ * A finding only the local results raise, beside the contract's. An
+ * UNREGISTERED_IDENTITY is a principal no register or inventory names and
+ * that shows no sign of a model: a CI workflow, a service account. The
+ * contract's planner calls it a shadow agent; these results do not, and do
+ * not hold it to the agent bar. The signed report is the contract's and is
+ * unchanged.
+ */
+export const LOCAL_FINDING_CODES = ['UNREGISTERED_IDENTITY'] as const;
+export type LocalFindingCode = HarnessFindingCode | (typeof LOCAL_FINDING_CODES)[number];
+
 export interface LocalSourceResult {
     readonly kind: HarnessSourceKind;
     readonly status: 'COMPLETE' | 'INCOMPLETE';
@@ -182,6 +203,16 @@ export interface LocalAgentResult {
         readonly ref: string | null;
     };
     readonly judgement: LocalJudgement;
+    /**
+     * What the scan read that suggests this principal runs a model, in the
+     * order of `MODEL_SIGNS`. Empty: nothing did. With no registration, that
+     * is an unregistered automated identity, not a shadow agent.
+     *
+     * OPTIONAL, because a file written before the member existed has none; a
+     * reader that finds it absent treats every unregistered principal as a
+     * shadow agent, as that file's own findings do.
+     */
+    readonly modelSigns?: readonly ModelSign[];
     readonly reach: StoredReach;
     /** Every criterion, in ladder order. */
     readonly criteria: readonly LocalCriterionCell[];
@@ -196,7 +227,7 @@ export interface LocalAgentResult {
 }
 
 export interface LocalFinding {
-    readonly code: HarnessFindingCode;
+    readonly code: LocalFindingCode;
     readonly sourceRef: string;
     readonly severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
     readonly type: 'NONCONFORMITY' | 'OBSERVATION';
@@ -252,10 +283,18 @@ export interface LocalResults {
         readonly notJudgedCount: number;
         /** Judged agents only. */
         readonly byLevel: Readonly<Record<HarnessLevel, number>>;
-        /** Judged agents below their bar. */
+        /** Judged agents below their bar. An unregistered automated identity is held to none, and is not counted. */
         readonly shortfallCount: number;
         readonly registrationBasis: EstateRegistrationBasis;
+        /** Not registered, and showing a sign of a model. */
         readonly shadowAgents: readonly string[];
+        /**
+         * Not registered, and showing no sign of a model: listed, raised as a
+         * finding of their own, and not held to the agent bar. OPTIONAL, for a
+         * file written before the member existed: there, every unregistered
+         * principal is in `shadowAgents`.
+         */
+        readonly unregisteredIdentities?: readonly string[];
         readonly orphanCredentials: readonly { readonly ref: string; readonly sourceKind: string }[];
         /** Seen unbound, and the planner could not open a finding. */
         readonly unboundNotConcluded: readonly {

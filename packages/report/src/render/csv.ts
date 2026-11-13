@@ -74,6 +74,8 @@ export const AGENTS_CSV_LEADING_COLUMNS = [
     'observedOwnerRef',
     'discoveredVia',
     'registration',
+    'classification',
+    'modelSigns',
     'judged',
     'level',
     'observedLevel',
@@ -88,6 +90,18 @@ export const AGENTS_CSV_LEADING_COLUMNS = [
     'unpinnedWriteTools',
 ] as const;
 
+/**
+ * What a principal is, on what the run read: registered (by a register or
+ * the inventory), a shadow agent (unregistered, with a sign of a model) or an
+ * unregistered automated identity (unregistered, with none). A file written
+ * before `modelSigns` existed has no signs to go on, and every unregistered
+ * principal in it is a shadow agent, as its own findings say.
+ */
+export function agentClassification(agent: Pick<LocalAgentResult, 'registration' | 'modelSigns'>): 'REGISTERED' | 'SHADOW_AGENT' | 'UNREGISTERED_IDENTITY' {
+    if (agent.registration.basis !== 'NONE') return 'REGISTERED';
+    return agent.modelSigns !== undefined && agent.modelSigns.length === 0 ? 'UNREGISTERED_IDENTITY' : 'SHADOW_AGENT';
+}
+
 function agentRow(agent: LocalAgentResult): (string | number)[] {
     const j = agent.judgement;
     const judged = j.state === 'JUDGED';
@@ -101,6 +115,8 @@ function agentRow(agent: LocalAgentResult): (string | number)[] {
         agent.observedOwner?.ref ?? '',
         agent.discoveredVia.join(';'),
         agent.registration.basis,
+        agentClassification(agent),
+        (agent.modelSigns ?? []).join(';'),
         judged ? 'yes' : 'no',
         // Empty, never H0, for an agent that was not judged.
         judged ? j.level : '',
@@ -108,7 +124,8 @@ function agentRow(agent: LocalAgentResult): (string | number)[] {
         judged ? '' : j.reasons.join(';'),
         agent.reach,
         judged ? j.bar : '',
-        judged ? (j.shortfall ? 'yes' : 'no') : '',
+        // An unregistered identity is held to no bar, so it is neither below one nor at it.
+        judged ? (agentClassification(agent) === 'UNREGISTERED_IDENTITY' ? 'not held to a bar' : j.shortfall ? 'yes' : 'no') : '',
         judged ? j.blockingNextRung.join(';') : '',
         agent.counts.credentials,
         agent.counts.tools,

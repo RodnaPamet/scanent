@@ -20,6 +20,34 @@ export function inventoryResults(): LocalResults {
     );
 }
 
+export const CHARLIE = 'entra:sp:charlie';
+
+/** The standalone estate plus `charlie`: a principal with a credential, no tool and no model. */
+export function withIdentityBody(): HarnessReportBodyV3 {
+    const body = standaloneBody();
+    return {
+        ...body,
+        agents: [
+            ...body.agents,
+            {
+                discoveredId: CHARLIE,
+                discoveredVia: ['entra-sp'],
+                registeredAgentId: null,
+                owner: null,
+                credentials: [{ ref: 'entra://sp/charlie/password/1', ageDays: 30, expires: true, boundToAgent: true, grant: 'unknown' }],
+                tools: [],
+                skills: [],
+                verdicts: [],
+            },
+        ],
+    };
+}
+
+/** Two shadow agents and one unregistered identity. */
+export function identityResults(): LocalResults {
+    return scoreReportLocally(input(withIdentityBody()));
+}
+
 /** `entra-sp` stopped early: neither agent can be judged. */
 export function notJudgedResults(): LocalResults {
     return scoreReportLocally(input(withSource(standaloneBody(), 'entra-sp', 'AUTH_FAILED')));

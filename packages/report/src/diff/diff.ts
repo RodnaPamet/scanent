@@ -201,7 +201,8 @@ function findingStillOpenWhy(
     if (finding.discoveredId !== null) {
         const agent = nextAgents.get(finding.discoveredId);
         if (agent === undefined) return gone.has(finding.discoveredId) ? 'AGENT_GONE' : 'AGENT_NOT_SEEN';
-        if (finding.code === 'SHADOW_AGENT') {
+        // An unregistered identity closes as a shadow agent does: by being registered.
+        if (finding.code === 'SHADOW_AGENT' || finding.code === 'UNREGISTERED_IDENTITY') {
             // A link the register holds closes it on any scan; one the operator
             // declared closes it only on a complete scan (the planner's rule).
             if (agent.registration.basis === 'OBSERVED_REGISTER') return null;

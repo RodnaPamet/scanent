@@ -5,9 +5,9 @@ folder is an index and a set of summaries. The detailed documents it points
 to stay where they are; nothing here repeats them.
 
 **Read [Assurance status](assurance-status.md) first.** scanent has been
-tested and hardened in development. It has not been run against a real
-estate, has had no external penetration test, and has no published signed
-release. That page lists what has and has not been done.
+tested and hardened in development. It has been run against one real
+estate, its maker's own, and never at a client. It has had no external
+penetration test, and has no published signed release. That page lists what has and has not been done.
 
 ## What is in the pack
 

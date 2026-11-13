@@ -18,7 +18,7 @@ import { stableJson } from '../src/render/results-json';
 import { scoreReportLocally } from '../src/results/score';
 import type { LocalResults } from '../src/results/types';
 import { fullRow, HASH, input, inventoryOf, META, standaloneBody, withSource } from './helpers/fixtures';
-import { ALPHA, BRAVO, laterBody, plainResults } from './helpers/results';
+import { ALPHA, BRAVO, CHARLIE, identityResults, laterBody, plainResults, withIdentityBody } from './helpers/results';
 
 const score = (body: HarnessReportBodyV3, inventory = false): LocalResults =>
     scoreReportLocally(input(body, { inventory: inventory ? inventoryOf([fullRow(ALPHA)]) : null }));
@@ -318,6 +318,36 @@ describe('findings close only on positive evidence', () => {
             ['HARNESS_SHORTFALL', 'OPENED', null],
         ]);
         expect(diff.findings[0]).toMatchObject({ discoveredId: BRAVO, sourceRef: `SHADOW_AGENT:${BRAVO}`, title: `Shadow agent ${BRAVO}` });
+    });
+
+    it('an unregistered identity is opened as one, and closes as a shadow agent does: by being registered', () => {
+        const score = (b: HarnessReportBodyV3, inventory?: unknown[]) => scoreReportLocally(input(b, inventory === undefined ? {} : { inventory: inventoryOf(inventory) }));
+        const later = (b: HarnessReportBodyV3): HarnessReportBodyV3 => ({ ...b, scan: { ...b.scan, id: 'acme-20261104T033000Z-0a1b2c3e', asOf: '2026-11-04T03:30:00.000Z' } });
+        const forCharlie = (diff: ResultsDiff) => diff.findings.filter((f) => f.discoveredId === CHARLIE).map((f) => [f.code, f.change, f.why]);
+
+        // It appears: one finding, and none about the ladder.
+        expect(forCharlie(diffResults(plainResults(), score(later(withIdentityBody()))))).toEqual([['UNREGISTERED_IDENTITY', 'OPENED', null]]);
+        // The operator declares it, on a complete scan: closed. It is then an agent, and held to its bar.
+        const declared = forCharlie(diffResults(identityResults(), score(later(withIdentityBody()), [fullRow(CHARLIE)])));
+        expect(declared).toHaveLength(2);
+        expect(declared).toEqual(expect.arrayContaining([
+            ['UNREGISTERED_IDENTITY', 'CLOSED', null],
+            ['HARNESS_SHORTFALL', 'OPENED', null],
+        ]));
+        // Declared on a scan that was not read in full: not concluded.
+        const partial = diffResults(identityResults(), score(withSource(later(withIdentityBody()), 'mcp', 'TIME_BOX'), [fullRow(CHARLIE)]));
+        expect(partial.findings.find((f) => f.code === 'UNREGISTERED_IDENTITY')).toMatchObject({ change: 'NOT_CONCLUDED', why: 'SCAN_INCOMPLETE' });
+        // It now lists a tool: it is a shadow agent, and the finding about the identity is not closed by that.
+        const withTool = later(withIdentityBody());
+        const tool = { server: 'https://mcp.internal.example/crm', name: 'list_accounts', manifestHash: HASH, pinned: true, readOnlyHint: true };
+        withTool.agents = withTool.agents.map((a) => (a.discoveredId === CHARLIE ? { ...a, tools: [tool] } : a));
+        expect(forCharlie(diffResults(identityResults(), score(withTool)))).toEqual(
+            expect.arrayContaining([
+                ['UNREGISTERED_IDENTITY', 'NOT_CONCLUDED', 'AGENT_NOT_REGISTERED'],
+                ['SHADOW_AGENT', 'OPENED', null],
+                ['HARNESS_SHORTFALL', 'OPENED', null],
+            ]),
+        );
     });
 
     it('an agent\'s findings are not closed by the agent being gone or not seen', () => {

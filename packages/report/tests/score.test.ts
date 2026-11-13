@@ -40,7 +40,7 @@ import { renderSummaryHtml } from '../src/render/html';
 import { LocalResultsSchema } from '../src/results/schema';
 import { coverageOf, scoreReportLocally } from '../src/results/score';
 import { RESULTS_SCHEMA, type LocalAgentResult, type LocalResults } from '../src/results/types';
-import { ALPHA, AS_OF, BRAVO, fullRow, input, INVENTORY_SHA, inventoryOf, META, standaloneBody, TEST_READERS, withSource } from './helpers/fixtures';
+import { ALPHA, AS_OF, BRAVO, fullRow, HASH, input, INVENTORY_SHA, inventoryOf, META, standaloneBody, TEST_READERS, withSource } from './helpers/fixtures';
 
 const REGISTERED = 'entra:sp:registered-1';
 const SHADOW = 'entra:sp:shadow-1';
@@ -101,21 +101,47 @@ describe('1. the contract decides', () => {
         }
     });
 
-    it.each(bodies)('%s: the findings are the planner\'s, in its order', (_label, make) => {
+    /**
+     * The planner's findings as the local results state them: unchanged, but
+     * for a principal nothing names and nothing shows to run a model. Its
+     * SHADOW_AGENT is an UNREGISTERED_IDENTITY, and it has no HARNESS_SHORTFALL.
+     * Written from the plan alone, without the scorer's own helper.
+     */
+    function expectedLocally(plan: ReturnType<typeof planHarnessScan>): [string, string, string, string, string][] {
+        const identities = new Set(
+            plan.agents
+                .filter(
+                    (a) =>
+                        a.linkBasis === null
+                        && !(a.discoveredVia as readonly string[]).some((kind) => ['code', 'runtime', 'mcp'].includes(kind))
+                        && a.tools.length === 0
+                        && (a.models === null || a.models.length === 0),
+                )
+                .map((a) => a.discoveredId),
+        );
+        return plan.assert.flatMap((f): [string, string, string, string, string][] => {
+            const id = [...identities].find((identity) => f.sourceRef === `SHADOW_AGENT:${identity}` || f.sourceRef === `HARNESS_SHORTFALL:${identity}`);
+            if (id === undefined) return [[f.sourceRef, f.code, f.severity, f.type, f.title]];
+            if (f.code === 'HARNESS_SHORTFALL') return [];
+            return [[`UNREGISTERED_IDENTITY:${id}`, 'UNREGISTERED_IDENTITY', 'MEDIUM', 'OBSERVATION', `Unregistered automated identity ${id}`]];
+        });
+    }
+
+    it.each(bodies)('%s: the findings are the planner\'s, in its order, but for an unregistered identity', (_label, make) => {
         const body = make();
         const results = scoreReportLocally(input(body));
         const plan = planHarnessScan(body, standalonePrior(body));
-        expect(results.findings.map((f) => f.sourceRef)).toEqual(plan.assert.map((f) => f.sourceRef));
-        expect(results.findings.map((f) => [f.code, f.severity, f.type, f.title])).toEqual(
-            plan.assert.map((f) => [f.code, f.severity, f.type, f.title]),
-        );
+        expect(results.findings.map((f) => [f.sourceRef, f.code, f.severity, f.type, f.title])).toEqual(expectedLocally(plan));
     });
 
     it('states the estate a register reads as the planner words it', () => {
         const body = validV3ReportBody();
         const results = scoreReportLocally(input(body));
         const plan = planHarnessScan(body, standalonePrior(body));
-        expect(results.findings.map((f) => f.description)).toEqual(plan.assert.map((f) => f.description));
+        const theirs = new Map(plan.assert.map((f) => [f.sourceRef, f.description]));
+        const kept = results.findings.filter((f) => f.code !== 'UNREGISTERED_IDENTITY');
+        expect(kept.length).toBeGreaterThan(0);
+        for (const f of kept) expect(f.description).toBe(theirs.get(f.sourceRef));
     });
 
     it('derives the bar and the shortfall from the level and the reach', () => {
@@ -142,7 +168,9 @@ describe('1. the contract decides', () => {
         const results = scoreReportLocally(input(validV3ReportBody()));
         expect(agentOf(results, REGISTERED).registration).toEqual({ basis: 'OBSERVED_REGISTER', ref: 'agt_registered_1' });
         expect(agentOf(results, SHADOW).registration).toEqual({ basis: 'NONE', ref: null });
-        expect(results.estate.shadowAgents).toEqual([SHADOW, GCP_SA_ID].sort());
+        // SHADOW lists a tool, which is a sign of a model. The service account shows none.
+        expect(results.estate.shadowAgents).toEqual([SHADOW]);
+        expect(results.estate.unregisteredIdentities).toEqual([GCP_SA_ID]);
         expect(results.estate.registrationBasis).toBe('INFLECT_REGISTER');
         expect(results.estate.registrationConflicts).toEqual([]);
     });
@@ -864,6 +892,161 @@ describe('8. the result', () => {
             ['an agent is listed twice', (r: ReturnType<typeof valid>) => { r.agents[1].discoveredId = r.agents[0].discoveredId; }],
             ['the scan time is not a time', (r: ReturnType<typeof valid>) => { r.scan.asOf = 'yesterday'; }],
         ])('%s', (_label, change) => {
+            const results = valid();
+            change(results);
+            expect(LocalResultsSchema.safeParse(results).success).toBe(false);
+        });
+    });
+});
+
+describe('9. an unregistered identity is not called an agent', () => {
+    // One principal of each kind, none of them registered: an estate with a register that names nobody here.
+    const IDENTITY = 'gcp:sa:build-1';
+    const body = (over: Partial<HarnessReportBody['agents'][number]> = {}, via: readonly string[] = ['gcp-sa']): HarnessReportBody => {
+        const base = standaloneBody();
+        return {
+            ...base,
+            population: {
+                sources: [
+                    { kind: 'entra-sp', status: 'COMPLETE', rows: 2 },
+                    { kind: 'mcp', status: 'COMPLETE', rows: 1 },
+                    { kind: 'gcp-sa', status: 'COMPLETE', rows: 1 },
+                    { kind: 'code', status: 'COMPLETE', rows: 1 },
+                    { kind: 'runtime', status: 'COMPLETE', rows: 1 },
+                ],
+            },
+            agents: [
+                ...base.agents,
+                {
+                    discoveredId: IDENTITY,
+                    discoveredVia: via,
+                    registeredAgentId: null,
+                    owner: null,
+                    credentials: [{ ref: 'gcp://sa/build-1/keys/1', ageDays: 400, expires: false, boundToAgent: true, grant: 'unknown' }],
+                    tools: [],
+                    skills: [],
+                    verdicts: [],
+                    ...over,
+                },
+            ],
+        } as HarnessReportBody;
+    };
+    const tool = { server: 'https://mcp.internal.example/crm', name: 'list_accounts', manifestHash: HASH, pinned: true, readOnlyHint: true };
+
+    it('a principal nothing names and nothing shows to run a model: one MEDIUM finding, and none about the ladder', () => {
+        const results = scoreReportLocally(input(body()));
+        expect(agentOf(results, IDENTITY).modelSigns).toEqual([]);
+        expect(results.estate.unregisteredIdentities).toEqual([IDENTITY]);
+        expect(results.estate.shadowAgents).not.toContain(IDENTITY);
+        expect(results.findings.filter((f) => f.discoveredId === IDENTITY)).toEqual([
+            {
+                code: 'UNREGISTERED_IDENTITY',
+                sourceRef: `UNREGISTERED_IDENTITY:${IDENTITY}`,
+                severity: 'MEDIUM',
+                type: 'OBSERVATION',
+                discoveredId: IDENTITY,
+                title: `Unregistered automated identity ${IDENTITY}`,
+                description: expect.stringContaining('The scan cannot show that it runs no model.') as unknown as string,
+            },
+        ]);
+        expect(LocalResultsSchema.safeParse(results).success).toBe(true);
+    });
+
+    it('it does not leave the results: it is listed, with the level that was observed, and counted', () => {
+        const results = scoreReportLocally(input(body()));
+        const identity = agentOf(results, IDENTITY);
+        expect(identity.judgement).toMatchObject({ state: 'JUDGED', level: 'H0', shortfall: true });
+        expect(results.estate.agentCount).toBe(3);
+        expect(results.estate.byLevel.H0).toBe(results.agents.filter((a) => a.judgement.state === 'JUDGED' && a.judgement.level === 'H0').length);
+        // It is held to no bar, so the count of agents below theirs leaves it out.
+        const below = results.agents.filter((a) => a.judgement.state === 'JUDGED' && a.judgement.shortfall);
+        expect(below.map((a) => a.discoveredId)).toContain(IDENTITY);
+        expect(results.estate.shortfallCount).toBe(below.length - 1);
+    });
+
+    it.each([
+        ['it was found in agent code', {}, ['code'], ['FOUND_IN_CODE']],
+        ['it was found in a tracing system', {}, ['runtime'], ['FOUND_IN_RUNTIME']],
+        ['it was found on an MCP server', {}, ['gcp-sa', 'mcp'], ['FOUND_ON_MCP_SERVER']],
+        ['it lists a tool', { tools: [tool] }, ['gcp-sa'], ['LISTS_A_TOOL']],
+        ['it lists a model endpoint', { models: [{ endpoint: 'https://api.model.example', model: 'm-1' }] }, ['gcp-sa'], ['LISTS_A_MODEL']],
+        ['it shows two signs', { tools: [tool] }, ['code'], ['FOUND_IN_CODE', 'LISTS_A_TOOL']],
+    ] as const)('with a sign of a model it is a shadow agent, held to the bar: %s', (_label, over, via, signs) => {
+        const results = scoreReportLocally(input(body(over as Partial<HarnessReportBody['agents'][number]>, via)));
+        expect(agentOf(results, IDENTITY).modelSigns).toEqual(signs);
+        expect(results.estate.shadowAgents).toContain(IDENTITY);
+        expect(results.estate.unregisteredIdentities).not.toContain(IDENTITY);
+        expect(codesFor(results, IDENTITY)).toEqual(expect.arrayContaining(['HARNESS_SHORTFALL', 'SHADOW_AGENT']));
+        expect(codesFor(results, IDENTITY)).not.toContain('UNREGISTERED_IDENTITY');
+        expect(LocalResultsSchema.safeParse(results).success).toBe(true);
+    });
+
+    it('a model list the report gave as empty, or did not give, is no sign; nor is the name of a credential', () => {
+        for (const over of [{ models: [] }, {}, { credentials: [{ ref: 'github://acme/app/secrets/ANTHROPIC_API_KEY', ageDays: 1, expires: false, boundToAgent: true, grant: 'unknown' as const }] }]) {
+            const results = scoreReportLocally(input(body(over as Partial<HarnessReportBody['agents'][number]>)));
+            expect(agentOf(results, IDENTITY).modelSigns).toEqual([]);
+            expect(results.estate.unregisteredIdentities).toEqual([IDENTITY]);
+        }
+    });
+
+    it('a registered principal with no sign of a model is an agent: the register or the inventory said so', () => {
+        const registered = scoreReportLocally(input(body({ registeredAgentId: 'agt_registered_9' })));
+        expect(agentOf(registered, IDENTITY).modelSigns).toEqual([]);
+        expect(registered.estate.unregisteredIdentities).toEqual([]);
+        expect(codesFor(registered, IDENTITY)).toEqual(['HARNESS_SHORTFALL']);
+
+        const declared = scoreReportLocally(input(body(), { inventory: inventoryOf([fullRow(IDENTITY)]) }));
+        expect(agentOf(declared, IDENTITY).registration.basis).toBe('DECLARED_INVENTORY');
+        expect(declared.estate.unregisteredIdentities).not.toContain(IDENTITY);
+        expect(codesFor(declared, IDENTITY)).not.toContain('UNREGISTERED_IDENTITY');
+    });
+
+    it('says which list it was not in', () => {
+        const none = scoreReportLocally(input(body())).findings.find((f) => f.discoveredId === IDENTITY)!;
+        expect(none.description).toContain('It is not in any register or inventory this run read.');
+        const inventory = scoreReportLocally(input(body(), { inventory: inventoryOf([fullRow(ALPHA)]) })).findings.find((f) => f.discoveredId === IDENTITY)!;
+        expect(inventory.description).toContain('It is not in the operator\'s inventory.');
+        const withRegister = body();
+        withRegister.population.sources.push({ kind: 'inflect-register', status: 'COMPLETE', rows: 1 });
+        const register = scoreReportLocally(input(withRegister)).findings.find((f) => f.discoveredId === IDENTITY)!;
+        expect(register.description).toContain('It is not in the register.');
+    });
+
+    it('an agent that was not judged is still classified, and still has its one finding', () => {
+        const results = scoreReportLocally(input(withSource(body(), 'gcp-sa', 'RATE_LIMITED')));
+        expect(agentOf(results, IDENTITY).judgement.state).toBe('NOT_JUDGED');
+        expect(results.estate.unregisteredIdentities).toEqual([IDENTITY]);
+        expect(codesFor(results, IDENTITY)).toEqual(['UNREGISTERED_IDENTITY']);
+    });
+
+    describe('the schema holds the file to what it lists', () => {
+        const valid = () => JSON.parse(JSON.stringify(scoreReportLocally(input(body())))) as {
+            estate: { unregisteredIdentities?: string[]; shadowAgents: string[]; shortfallCount: number };
+            agents: { discoveredId: string; modelSigns?: string[]; registration: { basis: string; ref: string | null } }[];
+        };
+        const identity = (r: ReturnType<typeof valid>) => r.agents.find((a) => a.discoveredId === IDENTITY)!;
+
+        it('accepts what the scorer wrote, and a file written before either member existed', () => {
+            expect(LocalResultsSchema.safeParse(valid()).success).toBe(true);
+            const older = valid();
+            // As an earlier version wrote it: no signs, no second list, every unregistered principal a shadow agent, all counted.
+            delete older.estate.unregisteredIdentities;
+            for (const a of older.agents) delete a.modelSigns;
+            older.estate.shadowAgents = [...older.estate.shadowAgents, IDENTITY].sort();
+            older.estate.shortfallCount += 1;
+            expect(LocalResultsSchema.safeParse(older).success).toBe(true);
+        });
+
+        it.each([
+            ['an identity that is not a listed agent', (r: ReturnType<typeof valid>) => { r.estate.unregisteredIdentities = ['gcp:sa:nobody']; }],
+            ['an identity that shows a sign of a model', (r: ReturnType<typeof valid>) => { identity(r).modelSigns = ['LISTS_A_TOOL']; }],
+            ['an identity with no signs stated at all', (r: ReturnType<typeof valid>) => { delete identity(r).modelSigns; }],
+            ['an identity that is registered', (r: ReturnType<typeof valid>) => { identity(r).registration = { basis: 'OBSERVED_REGISTER', ref: 'agt_1' }; }],
+            ['a principal in both lists', (r: ReturnType<typeof valid>) => { r.estate.shadowAgents = [...r.estate.shadowAgents, IDENTITY]; }],
+            ['a sign stated twice', (r: ReturnType<typeof valid>) => { r.agents.find((a) => a.discoveredId === BRAVO)!.modelSigns = ['LISTS_A_TOOL', 'LISTS_A_TOOL']; }],
+            ['a sign it does not know', (r: ReturnType<typeof valid>) => { r.agents.find((a) => a.discoveredId === BRAVO)!.modelSigns = ['HOLDS_A_MODEL_KEY']; }],
+            ['an identity counted as below a bar', (r: ReturnType<typeof valid>) => { r.estate.shortfallCount += 1; }],
+        ])('refuses %s', (_label, change) => {
             const results = valid();
             change(results);
             expect(LocalResultsSchema.safeParse(results).success).toBe(false);

@@ -73,6 +73,7 @@ import {
     type LocalResults,
     type ReaderKind,
     type RegistrationBasis,
+    type ModelSign,
     type ScoreInput,
 } from './types';
 
@@ -106,6 +107,45 @@ export function coverageOf(
         readers: [...table[criterion].metBy],
     }));
     return { readable, coverage: { reachableLevel, unreadable } };
+}
+
+/** What the report says of one principal that suggests it runs a model. In the order of `MODEL_SIGNS`. */
+export function modelSignsOf(agent: Pick<PlannedAgent, 'discoveredVia' | 'tools' | 'models'>): ModelSign[] {
+    const via = agent.discoveredVia as readonly string[];
+    const signs: ModelSign[] = [];
+    if (via.includes('code')) signs.push('FOUND_IN_CODE');
+    if (via.includes('runtime')) signs.push('FOUND_IN_RUNTIME');
+    if (via.includes('mcp')) signs.push('FOUND_ON_MCP_SERVER');
+    if (agent.tools.length > 0) signs.push('LISTS_A_TOOL');
+    if (agent.models !== null && agent.models.length > 0) signs.push('LISTS_A_MODEL');
+    return signs;
+}
+
+export function unregisteredIdentityRefOf(discoveredId: string): string {
+    return `UNREGISTERED_IDENTITY:${discoveredId}`;
+}
+
+/**
+ * The finding for a principal nothing names and nothing shows to run a model,
+ * in place of the planner's SHADOW_AGENT. It is still a finding: an identity
+ * nobody has classified does not leave the results.
+ */
+function unregisteredIdentityFinding(agent: PlannedAgent, where: string, registerRead: boolean, inventorySupplied: boolean): Omit<LocalFinding, 'discoveredId'> {
+    const names = registerRead && inventorySupplied ? 'the register or the operator\'s inventory' : registerRead ? 'the register' : inventorySupplied ? 'the operator\'s inventory' : 'any register or inventory this run read';
+    return {
+        code: 'UNREGISTERED_IDENTITY',
+        sourceRef: unregisteredIdentityRefOf(agent.discoveredId),
+        severity: 'MEDIUM',
+        type: 'OBSERVATION',
+        title: `Unregistered automated identity ${agent.discoveredId}`,
+        description:
+            `A scan (${where}) found ${agent.discoveredId} via ${agent.discoveredVia.join(', ')}. It is not in ${names}. `
+            + 'Nothing the scan read shows that it runs a model: it was not found in agent code, in a tracing system or on an MCP server, '
+            + 'and its report lists no tool and no model endpoint. So it is reported as an automated identity and not as an agent, '
+            + 'and it is not held to the agent bar. The scan cannot show that it runs no model. '
+            + 'If it is an agent, register it or add it to the inventory, and it is then scored as one. '
+            + 'If it is not, it still needs an owner on record; or retire the principal.',
+    };
 }
 
 /** The SHADOW_AGENT text for a run whose registrations do not come from a register. */
@@ -214,6 +254,7 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
                 ref: planned.registeredAgentId,
             },
             judgement,
+            modelSigns: modelSignsOf(planned),
             reach: planned.reach,
             criteria,
             counts: {
@@ -237,10 +278,25 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
     }
     const where = `scan ${body.scan.id}, scanner ${scanner}`;
     const levelOf = new Map(agents.map((a) => [a.discoveredId, a.judgement]));
+    // Named by nothing, and showing no sign of a model: an automated identity, not a shadow agent.
+    const unregisteredIdentities = new Set(
+        agents.filter((a) => a.registration.basis === 'NONE' && (a.modelSigns ?? []).length === 0).map((a) => a.discoveredId),
+    );
     const findings: LocalFinding[] = [];
     for (const planned of plan.assert) {
         const discoveredId = agentOfRef.get(planned.sourceRef) ?? null;
         let finding = planned;
+        if (discoveredId !== null && unregisteredIdentities.has(discoveredId)) {
+            // It is not held to the agent bar, so no finding says it is below one.
+            if (planned.code === 'HARNESS_SHORTFALL') continue;
+            if (planned.code === 'SHADOW_AGENT') {
+                findings.push({
+                    ...unregisteredIdentityFinding(plannedById.get(discoveredId) as PlannedAgent, where, registerRead, inventory !== null),
+                    discoveredId,
+                });
+                continue;
+            }
+        }
         if (planned.code === 'HARNESS_SHORTFALL' && discoveredId !== null) {
             // Its title states a level, and none may be stated for this agent.
             if (notJudged.has(discoveredId)) continue;
@@ -289,7 +345,7 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
     for (const a of agents) {
         if (a.judgement.state !== 'JUDGED') continue;
         byLevel[a.judgement.level] += 1;
-        if (a.judgement.shortfall) shortfallCount += 1;
+        if (a.judgement.shortfall && !unregisteredIdentities.has(a.discoveredId)) shortfallCount += 1;
     }
     const registrationBasis: EstateRegistrationBasis =
         registerRead && inventory !== null ? 'BOTH' : registerRead ? 'INFLECT_REGISTER' : inventory !== null ? 'INVENTORY' : 'NONE';
@@ -358,6 +414,9 @@ export function scoreReportLocally(input: ScoreInput): LocalResults {
             shortfallCount,
             registrationBasis,
             shadowAgents: findings.flatMap((f) => (f.code === 'SHADOW_AGENT' && f.discoveredId !== null ? [f.discoveredId] : [])).sort(byCodeUnit),
+            unregisteredIdentities: findings
+                .flatMap((f) => (f.code === 'UNREGISTERED_IDENTITY' && f.discoveredId !== null ? [f.discoveredId] : []))
+                .sort(byCodeUnit),
             orphanCredentials,
             unboundNotConcluded,
             // Every intake claim here is an inventory row, whose id (`inventory:row-<n>`)

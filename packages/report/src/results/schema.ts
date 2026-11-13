@@ -23,7 +23,7 @@ import { HARNESS_FINDING_CODES } from '@rodnapamet/scanent-contract/harness-find
 import { SOURCE_KINDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import { ALL_HARNESS_CRITERIA, HARNESS_LEVELS, isHarnessCriterionId, type HarnessCriterionId } from '@rodnapamet/scanent-contract/harness-ladder';
 
-import { RESULTS_SCHEMA, type LocalResults } from './types';
+import { LOCAL_FINDING_CODES, MODEL_SIGNS, RESULTS_SCHEMA, type LocalResults } from './types';
 
 const MAX_TEXT = 4_096;
 const id = z.string().min(1).max(256);
@@ -80,6 +80,8 @@ const AgentSchema = z
         observedOwner: z.object({ kind: z.enum(['user', 'group']), ref: id }).strict().nullable(),
         registration: z.object({ basis: z.enum(['NONE', 'DECLARED_INVENTORY', 'OBSERVED_REGISTER']), ref: id.nullable() }).strict(),
         judgement: JudgementSchema,
+        // Added in 0.13.0, and optional: a results file written before it carries none.
+        modelSigns: z.array(z.enum(MODEL_SIGNS)).max(MODEL_SIGNS.length).optional(),
         reach: z.enum(['READ_ONLY', 'WRITE_OR_EXTERNAL', 'UNKNOWN']),
         criteria: z.array(CellSchema).length(ALL_HARNESS_CRITERIA.length),
         counts: z
@@ -107,7 +109,7 @@ const AgentSchema = z
 
 const FindingSchema = z
     .object({
-        code: z.enum(HARNESS_FINDING_CODES),
+        code: z.enum([...HARNESS_FINDING_CODES, ...LOCAL_FINDING_CODES]),
         sourceRef: z.string().min(1).max(1_024),
         severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
         type: z.enum(['NONCONFORMITY', 'OBSERVATION']),
@@ -201,6 +203,8 @@ export const LocalResultsSchema: z.ZodType<LocalResults> = z
                 shortfallCount: count,
                 registrationBasis: z.enum(['NONE', 'INVENTORY', 'INFLECT_REGISTER', 'BOTH']),
                 shadowAgents: z.array(id),
+                // Added in 0.13.0, and optional, as `modelSigns` is.
+                unregisteredIdentities: z.array(id).optional(),
                 orphanCredentials: z.array(z.object(credentialSeen).strict()),
                 unboundNotConcluded: z.array(
                     z.object({ ...credentialSeen, why: z.enum(['OWN_SOURCE_INCOMPLETE', 'IDENTITY_SOURCE_INCOMPLETE']) }).strict(),
@@ -224,12 +228,33 @@ export const LocalResultsSchema: z.ZodType<LocalResults> = z
         if (r.scan.complete !== (r.sources.length > 0 && r.sources.every((s) => s.status === 'COMPLETE'))) {
             ctx.addIssue({ code: 'custom', message: 'complete means every listed source was read in full, and only that', path: ['scan', 'complete'] });
         }
+        // An unregistered automated identity is the file's own statement about an agent it
+        // lists: unregistered, and with no sign of a model. It is in one list or the other.
+        const identities = new Set(r.estate.unregisteredIdentities ?? []);
+        const byId = new Map(r.agents.map((a) => [a.discoveredId, a]));
+        for (const identity of identities) {
+            const agent = byId.get(identity);
+            if (agent === undefined || agent.registration.basis !== 'NONE' || agent.modelSigns === undefined || agent.modelSigns.length > 0) {
+                ctx.addIssue({
+                    code: 'custom',
+                    message: 'an unregistered identity is a listed agent with no registration and no sign of a model',
+                    path: ['estate', 'unregisteredIdentities'],
+                });
+            }
+        }
+        if (r.estate.shadowAgents.some((shadow) => identities.has(shadow))) {
+            ctx.addIssue({ code: 'custom', message: 'a principal is a shadow agent or an unregistered identity, not both', path: ['estate', 'shadowAgents'] });
+        }
+        if (r.agents.some((a) => a.modelSigns !== undefined && new Set(a.modelSigns).size !== a.modelSigns.length)) {
+            ctx.addIssue({ code: 'custom', message: 'a model sign appears once', path: ['agents'] });
+        }
         const tally = Object.fromEntries(HARNESS_LEVELS.map((l) => [l, 0])) as Record<(typeof HARNESS_LEVELS)[number], number>;
         let shortfalls = 0;
         for (const a of r.agents) {
             if (a.judgement.state !== 'JUDGED') continue;
             tally[a.judgement.level] += 1;
-            if (a.judgement.shortfall) shortfalls += 1;
+            // An unregistered identity is held to no bar.
+            if (a.judgement.shortfall && !identities.has(a.discoveredId)) shortfalls += 1;
         }
         if (HARNESS_LEVELS.some((l) => r.estate.byLevel[l] !== tally[l])) {
             ctx.addIssue({ code: 'custom', message: 'the agents per level are the judged agents listed', path: ['estate', 'byLevel'] });

@@ -56,7 +56,7 @@ Each kind is read from one product today:
 | `cicd` | GitHub Actions | Any other CI system |
 | `vault` | Azure Key Vault | Any other secret store |
 | `runtime` | LangSmith | Any other tracing or agent runtime (OpenShell: see above) |
-| `code` | LangChain, LangGraph and the Claude Agent SDK, in Python, JavaScript and TypeScript | Any other agent framework or language. An agent written with another framework is not found |
+| `code` | LangChain, LangGraph and the Claude Agent SDK, in Python, JavaScript and TypeScript | Any other agent framework or language. An agent written with another framework, or directly on a model provider's SDK, is not found. The first pilot's estate builds its agents that way: they were found through its register, not in its code |
 
 ## Levels the scanner cannot evidence
 
@@ -103,6 +103,16 @@ to add sources that evidence H4 and H5 is an open product decision (issue 15).
 
 ## Known gaps in what a scan reports
 
+- **The scanner cannot tell which automated identities run a model.** On the
+  first pilot's estate 34 of 40 principals were on no list: CI workflows that
+  hold a credential, service accounts and service principals. Since 0.13.0 a
+  principal that shows no sign of a model is reported as an unregistered
+  automated identity, at MEDIUM, and is not held to the agent bar (issue 25).
+  The signs are where it was found and whether it lists a tool or a model.
+  A workflow that calls a model through a key it holds shows none of them,
+  and is reported as an identity. There is no way yet for an operator to
+  record "this is automation, not an agent, and this is its owner": the only
+  way to clear the finding is to declare it an agent in the inventory.
 - **Okta API tokens of other users may not be seen**, and the report does not
   say so. Unconfirmed against a live Okta organisation (issue 16; threat
   model, residual risk 3).
@@ -143,8 +153,9 @@ first tag (issue 20, item 4).
 Not features, but the largest open items. They need people or time, not
 code (issue 21):
 
-- pilots on real estates, with false positives and false negatives recorded
-  per source;
+- pilots at clients, and on the providers the first pilot did not cover
+  (Okta, Azure Key Vault, LangSmith, MCP), with false positives and false
+  negatives recorded per source;
 - a 72-hour soak;
 - an external penetration test and code review;
 - a first signed release, and the verification commands run against it.

@@ -89,7 +89,8 @@ says "Ready" or the only remaining items are understood and written down.
 ### 5. Scan
 
 - [ ] The operator runs one scan (quick start, step 4). The offline example
-      takes a few seconds. How long a real estate takes has not been measured.
+      takes a few seconds. The one real estate scanned so far (four systems, 40
+      agents) took 14 seconds; a larger one has not been measured.
       The whole scan is given ten minutes unless the set-up changes it.
       Systems are read side by side, and one that is not finished by then is
       marked incomplete, with the reason `TIME_BOX`.

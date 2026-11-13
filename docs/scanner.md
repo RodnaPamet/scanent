@@ -677,7 +677,8 @@ and `scan` exits 0 only when every output was delivered.
 ### The inventory
 
 Optional. An estate with no register has nothing that says an agent is known or
-who owns it, so every agent the scanner finds would read as a shadow agent. The
+who owns it, so every agent the scanner finds would read as a shadow agent or
+an unregistered identity. The
 inventory is the operator's own list:
 
 ```json
@@ -1398,6 +1399,22 @@ What the results say, and do not:
 - **Declared is not observed.** What the inventory supplies is labelled
   "declared by the operator" in every file, and `observedLevel` is the level
   with the declarations removed.
+- **An unregistered identity is not called an agent.** Each agent carries
+  `modelSigns`: what the scan read that suggests it runs a model
+  (`FOUND_IN_CODE`, `FOUND_IN_RUNTIME`, `FOUND_ON_MCP_SERVER`, `LISTS_A_TOOL`,
+  `LISTS_A_MODEL`). A principal that no register or inventory names and that
+  shows none of them is an unregistered automated identity: a CI workflow
+  that holds a credential, a service account. In place of `SHADOW_AGENT` it
+  has one finding, `UNREGISTERED_IDENTITY`, at MEDIUM; it has no
+  `HARNESS_SHORTFALL`, because it is held to no bar; it is in
+  `estate.unregisteredIdentities` and not in `estate.shadowAgents`; and
+  `estate.shortfallCount` leaves it out. It keeps its row, its level and its
+  criteria in every file. The name of a credential is not a sign: a secret
+  called after a model provider is a guess about what holds it. The scan
+  cannot show that such a principal runs no model, and the finding says so.
+  This is the local results' own reading. The signed report is the
+  contract's and does not change, and a system that ingests it applies its
+  own rules.
 - **An empty scan is a finding** (`EMPTY_SCAN`), never a clean result.
 
 `summary.html` is one self-contained file: no script, no image, no font, no
@@ -1407,7 +1424,7 @@ light or dark setting.
 
 The page is capped so that it opens on a large estate; the other files are
 never shortened. The matrix shows at most 500 agents, each list of shadow
-agents, orphan credentials and declared agents not found at most 500 rows, and
+agents, unregistered identities, orphan credentials and declared agents not found at most 500 rows, and
 the findings at most 2,500. A list over its cap says how many it shows, how
 many the run holds and which file holds the rest (`agents.csv`,
 `findings.csv` or `results.json`). Above its cap the matrix shows the agents
