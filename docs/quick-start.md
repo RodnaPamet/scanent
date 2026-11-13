@@ -2,8 +2,7 @@
 
 Six steps, each one command, from nothing to a page you can open. Once you
 have the image you need a container runtime (Docker or Podman) and nothing
-else: no Node and no `openssl`. Until the first release is published, getting
-the image takes a checkout (step 0).
+else: no Node and no `openssl`.
 
 Nothing here writes to your systems. scanent reads, and what it may request is
 declared in one file whose hash is in every report. No step asks you to type a
@@ -16,22 +15,20 @@ follow.
 
 ## 0. Get the image
 
-No image is published yet, so today this step is a build from a checkout:
-
 ```bash
 export IMAGE=ghcr.io/rodnapamet/scanent:0.13.2
-git clone https://github.com/RodnaPamet/scanent.git && cd scanent
-docker build -f deploy/Dockerfile -t "$IMAGE" .
+docker pull "$IMAGE"
 ```
 
-Behind a proxy that inspects TLS the build needs that proxy's certificate
-authority: add `--secret id=ca,src=/path/to/ca.pem` (the
-[README](../README.md#quick-start-container) says what it is used for).
+The image is public: the pull needs no account and no login.
+[Verify a release](verify-a-release.md) checks its signature before you run
+it. A site with no internet loads the image from the air-gapped bundle
+(`./load.sh`, see [below](#a-site-with-no-internet)).
 
-From the first release on, this step is `docker pull "$IMAGE"` and needs no
-checkout. The image is public: the pull needs no account and no login. A site
-with no internet loads the image from the air-gapped bundle (`./load.sh`, see
-[below](#a-site-with-no-internet)).
+To build it from a checkout instead, `docker build -f deploy/Dockerfile -t
+"$IMAGE" .` in a clone of this repository; behind a proxy that inspects TLS
+add `--secret id=ca,src=/path/to/ca.pem` (the
+[README](../README.md#quick-start-container) says what it is used for).
 
 Every command below runs the container the same way. Put it in a shell
 function once:

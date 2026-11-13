@@ -115,7 +115,7 @@ goes to the table of threats and mitigations for that boundary.
 | 5 | [The egress proxy](../threat-model.md#5-the-egress-proxy) | The proxy's own code | Its clients |
 | 6 | [The output directory](../threat-model.md#6-the-output-directory) | The directory's owner | Other local users |
 | 7 | [Scanner to a tenant](../threat-model.md#7-scanner-to-a-tenant) | The tenant's answer, as a status only | Anything else in the answer |
-| 8 | [Release pipeline to client](../threat-model.md#8-release-pipeline-to-client) | Established by signature | Assumed nothing. No release exists yet: see [Assurance status](assurance-status.md) |
+| 8 | [Release pipeline to client](../threat-model.md#8-release-pipeline-to-client) | Established by signature | Assumed nothing. First exercised for 0.13.2: see [Assurance status](assurance-status.md) |
 
 ## Where the secrets are
 

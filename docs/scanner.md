@@ -1602,9 +1602,8 @@ time. A name that does not resolve is a 502.
 docker build -f deploy/Dockerfile -t scanent .
 ```
 
-The image is built and checked in CI. No release exists, so it is not
-published anywhere yet; a release publishes it, public, as
-`ghcr.io/rodnapamet/scanent:<version>` ([deployment.md](deployment.md#releases)). Its build
+The image is built and checked in CI. A release publishes it, public, as
+`ghcr.io/rodnapamet/scanent:<version>`; 0.13.2 is the first ([deployment.md](deployment.md#releases)). Its build
 stage compiles the packages with `tsc`; its runtime stage holds the
 compiled JavaScript, the package manifests and the production dependencies
 (`zod`, `js-yaml` with `argparse`, and `typescript`, whose parser the `code`

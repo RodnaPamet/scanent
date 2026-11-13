@@ -74,12 +74,11 @@ third-party package travels with its own licence file.
 
 ## How the SBOM is produced
 
-**No SBOM has been produced by the release pipeline yet, because no release
-exists.** What follows describes what `.github/workflows/release.yml` is
-written to do on the first version tag. It has never run for a tag. A
-person's manual run, which publishes nothing, has made an SBOM of each image and
-checked that it lists the scanner's dependencies; those files were kept only
-as that run's artefacts. See
+**The release pipeline first produced SBOMs for 0.13.2** (2026-11-13): one
+per image, attached to the release and attested to each image, and checked
+with `cosign verify-attestation` from outside GitHub (1,307 and 1,306
+components). What follows describes what `.github/workflows/release.yml` does
+for a version tag. See
 [Assurance status](assurance-status.md).
 
 At a release, for each architecture (amd64 and arm64):

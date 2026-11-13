@@ -360,11 +360,10 @@ The code this page is written from is one npm package,
 on it verifies and reads a report with the functions named above, and keeps
 no copy of its own that can drift.
 
-> **Status: not published yet.** No release of scanent exists, so no version
-> of the package is in any registry. The release workflow publishes it at the
-> first version tag. Until then nothing in this section has been run against
-> the registry, and the package can only be taken from a checkout of this
-> repository. What can be checked without a registry is checked on every
+> **Status: published from 0.13.2.** The release workflow published
+> `@rodnapamet/scanent-contract@0.13.2` to GitHub Packages on 2026-11-13, with
+> build provenance. An install of it from the registry, with a person's token
+> or a workflow's, has not been tried yet. What can be checked without a registry is checked on every
 > change (`packages/scanner/tests/contract-package.test.ts`): what `npm pack`
 > puts in the package, that it loads and type-checks where a consumer
 > installs it, and that this section names its modules.

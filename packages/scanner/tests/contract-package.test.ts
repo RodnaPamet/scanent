@@ -670,16 +670,20 @@ describe('what the documents say about the package and the image', () => {
         expect(contractDoc).toContain(`scope: "${scope}"`);
     });
 
-    it('say why the scope is the owner\'s, and that nothing is published yet', () => {
+    it('say why the scope is the owner\'s, and which release first published it', () => {
         expect(flat(contractDoc)).toContain('This repository belongs to `RodnaPamet`, so the scope is `@rodnapamet`');
-        expect(flat(contractDoc)).toContain('**Status: not published yet.** No release of scanent exists');
-        expect(flat(read('docs/EXTRACTION.md'))).toContain('**Nothing is published yet.**');
+        expect(flat(contractDoc)).toContain('**Status: published from 0.13.2.**');
+        // Installing it has not been tried, and the page says so rather than implying it works.
+        expect(flat(contractDoc)).toContain('has not been tried yet.');
+        expect(flat(read('docs/EXTRACTION.md'))).toContain('**Published from 0.13.2** (2026-11-13).');
         expect(flat(read('docs/EXTRACTION.md'))).toContain('`@scanent/contract` could not be published from a repository of `RodnaPamet`');
-        // No release: the repository's own record of versions holds one fixture directory, for a version never tagged.
-        for (const doc of ['docs/verify-a-release.md', 'docs/deployment.md', 'docs/release-checklist.md', 'docs/roadmap.md', 'docs/security-pack/assurance-status.md', 'docs/security-pack/support-and-maintenance.md']) {
-            expect([doc, /no release (has been|exists)|No release\.|No release has been/i.test(flat(read(doc)))]).toEqual([doc, true]);
+        // One release exists, and no page still says there is none.
+        for (const doc of ['docs/verify-a-release.md', 'docs/deployment.md', 'docs/release-checklist.md', 'docs/roadmap.md', 'docs/security-pack/assurance-status.md', 'docs/security-pack/support-and-maintenance.md', 'docs/guide/run-it.md', 'docs/guide/faq.md', 'docs/scanner.md', 'docs/threat-model.md']) {
+            expect([doc, /no release (has been|exists)|No release\.|No release has been|No finished release/i.test(flat(read(doc)))]).toEqual([doc, false]);
         }
-        expect(flat(read('docs/guide/run-it.md'))).toContain('No finished release has been published yet');
+        for (const doc of ['docs/deployment.md', 'docs/release-checklist.md', 'docs/security-pack/assurance-status.md']) {
+            expect([doc, flat(read(doc)).includes('0.13.2')]).toEqual([doc, true]);
+        }
     });
 
     it('name every module of the package, and only modules and exports it has', () => {
@@ -721,7 +725,7 @@ describe('what the documents say about the package and the image', () => {
         expect(flat(read('docs/quick-start.md'))).toContain('The image is public: the pull needs no account and no login.');
         expect(flat(read('docs/guide/run-it.md'))).toContain('The download is public: it needs no account with us or with GitHub, and no password.');
         expect(flat(read('docs/security-pack/support-and-maintenance.md'))).toContain('Public: a pull needs no login.');
-        expect(flat(read('docs/roadmap.md'))).toContain('The image is to be public (owner decision, 2026-11-12, issue 19)');
+        expect(flat(read('docs/roadmap.md'))).toContain('The image is public (owner decision, 2026-11-12, issue 19)');
         // No document tells a client to log in to the registry, and the chart ships no pull secret.
         for (const doc of ['docs/verify-a-release.md', 'docs/deployment.md', 'docs/quick-start.md', 'docs/guide/run-it.md', 'docs/scanner.md', 'README.md']) {
             expect([doc, /docker login ghcr\.io|podman login ghcr\.io/.test(read(doc))]).toEqual([doc, false]);
@@ -736,13 +740,14 @@ describe('what the documents say about the package and the image', () => {
     it('the release checklist has the step that makes the image public, after the first push, and says it cannot be undone', () => {
         const checklist = read('docs/release-checklist.md');
         const after = checklist.slice(checklist.indexOf('## After the tag'), checklist.indexOf('## What has never been run'));
-        expect(flat(after)).toContain('**Make the image public.** GitHub creates a package private');
+        expect(flat(after)).toContain('**Make the image public** (done 2026-11-13, after 0.13.1 created the package). The organisation must allow public packages first');
+        expect(flat(after)).toContain('GitHub creates a package private');
         for (const control of ['**Packages** tab', '**Package settings**', '"Danger Zone"', '**Change visibility**', '**Public**']) expect(flat(after)).toContain(control);
         expect(flat(after)).toContain('It cannot be made private again.');
         expect(flat(after)).toContain('**With no login** (`docker logout ghcr.io` first): `docker pull ghcr.io/rodnapamet/scanent:<version>` succeeds.');
         // And it has the package: published, attested, installable.
         expect(flat(after)).toContain(`gh attestation verify rodnapamet-scanent-contract-<version>.tgz --repo RodnaPamet/scanent`);
-        expect(flat(checklist)).toContain('**No release has been made yet.**');
+        expect(flat(checklist)).toContain('**0.13.2 is the first complete release** (2026-11-13).');
         const never = checklist.slice(checklist.indexOf('## What has never been run'));
         expect(flat(never)).toContain('`npm publish` to GitHub Packages');
         expect(flat(never)).toContain('A pull of the image with no login');

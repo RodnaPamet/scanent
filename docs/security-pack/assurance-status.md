@@ -116,22 +116,44 @@ soak of at least one hour.
 The longest run so far: a 75-minute soak was run on 2026-11-13 at commit `7437554`: 75 scans, one a minute, none failed and none started late (the latest by 64 ms), and resident memory was 110 MiB after the first scan and 110 MiB after the last. It soaks the `code` source and the file
 output only, and reaches no network.
 
-### No signed release
+### One signed release, checked once, by its maker
 
-No version tag exists and no release exists. So:
+0.13.2, released on 2026-11-13, is the only complete release, and only its
+maker has checked it as a client would. It is the first complete release
+(https://github.com/RodnaPamet/scanent/releases/tag/v0.13.2). Its tag was made
+by `.github/workflows/auto-release.yml` and every job of the release workflow
+passed. Two tags before it were cut from the same scanner code and stopped
+part way, and a version is never released twice:
 
-- Keyless signing, the SBOM attestations and the provenance attestations have
-  never run.
-- The release workflow (`.github/workflows/release.yml`) has never run for a
-  tag. Its signing, publishing and release jobs, and its check that a tagged
-  commit is on `main`, have never run.
-- Nobody tags a release by hand (owner decision, 2026-11-13): when CI passes
-  on `main` and the version in the code has no tag, has its release notes
-  and is main's head, `.github/workflows/auto-release.yml` makes the tag as
-  GitHub Actions and starts the release workflow on it. That workflow has
-  never run on GitHub; its script has been run against local repositories
-  and a stand-in for `gh` only.
-- It has been run by hand, which signs and publishes nothing: twice on
+- `v0.13.0` published nothing: the image push failed (the registry refused
+  layers mounted from another organisation's image). The images are now
+  pushed with `skopeo` from the tested archives.
+- `v0.13.1` pushed and signed its images, then failed to publish the
+  contract package (npm read the tarball's path as a GitHub shorthand). It
+  has no contract package and no GitHub release.
+
+What was checked on 0.13.2 as a client would, from outside GitHub Actions,
+on 2026-11-13, with `cosign` 3.1.4 and the commands of
+[Verify a release](../verify-a-release.md):
+
+- The image was read from the registry with no login, under `0.13.2` and
+  `0.13`, and no `latest` tag exists.
+- `cosign verify` passed, with the documented identity, for the tag and for
+  the amd64 and arm64 images by digest; `cosign verify-attestation --type
+  cyclonedx` returned an SBOM for each (1,307 and 1,306 components).
+- The ten release files are attached; the bundle matched its SHA-256, and
+  `cosign verify-blob` passed for its signed list of checksums.
+- `gh attestation verify` passed for the bundle and the image manifest, and
+  named `release.yml` at `refs/tags/v0.13.2`.
+- Unpacked, `verify.sh` passed with networking off given a trusted root file,
+  `load.sh` loaded both images, and the loaded image ran with
+  `--network none`.
+- The contract package's publish step reported
+  `+ @rodnapamet/scanent-contract@0.13.2`. Installing it was not tried from
+  outside: that needs a token with read access to GitHub Packages.
+
+Before the first tag, the release workflow was run by hand, which signs and
+publishes nothing: twice on
   2026-11-12, where the first run failed at the SBOM step and the second
   passed, and once on 2026-11-13 at commit `8388ff0`, which passed
   (https://github.com/RodnaPamet/scanent/actions/runs/43356838356). Such a run builds
@@ -139,17 +161,10 @@ No version tag exists and no release exists. So:
   builds the air-gapped bundle, loads it and scans with what it loaded, and
   packs the contract package. Before the first of them, the arm64 image had
   never been started and no SBOM had been made by the pipeline.
-- No command in [Verify a release](../verify-a-release.md) has been run
-  against a real signature. `deploy/airgap/verify.sh` and
-  `deploy/airgap/sign-bundle.sh` have been run against a stand-in for
-  `cosign` only.
-- Nobody can obtain a verified binary today. The only way to run scanent is
-  to build it from source.
 
-The image is to be public (owner decision, 2026-11-12, issue 19): once a
-release exists, pulling it will need no login. The contract package is to be
-published to GitHub Packages by the same workflow (issue 7). Neither has
-happened: no version tag exists.
+The image is public (owner decision, 2026-11-12, issue 19): the organisation
+first had to allow public packages, then the package was made public by hand
+after 0.13.1 created it.
 
 ### Repository settings that are not on
 

@@ -231,8 +231,8 @@ copy. This repository's half is done and is described in
 `@rodnapamet/scanent-contract`, the release workflow packs, checks, attests
 and publishes it at a version tag, and its version is the scanner's.
 
-**Nothing is published yet.** The first three steps below wait for the first
-release of this repository; none of them can be done before it.
+**Published from 0.13.2** (2026-11-13). The steps below can now be taken; none
+has been yet.
 
 The name changed with that decision. GitHub Packages takes the scope of an npm
 package to be the account that owns it, so `@scanent/contract` could not be

@@ -145,9 +145,8 @@ Detail: [../data-protection.md](../data-protection.md).
 - **Any other system:** the scanner must reach that system, and only that
   system.
 - **A site with no internet access:** the scanner can be carried in as a
-  package and loaded without a download. A released package is signed. No
-  release has been published yet, so today the package would be one you build
-  yourself.
+  package and loaded without a download: the air-gapped bundle attached to
+  each release, which is signed and checks itself before it loads.
 
 Detail: [../deployment.md](../deployment.md#a-site-with-no-internet).
 
@@ -155,16 +154,12 @@ Detail: [../deployment.md](../deployment.md#a-site-with-no-internet).
 
 "The image" is the packaged scanner that Docker runs.
 
-**Today there is nothing published to verify.** No release exists. You build
-the image yourself from the source code, which you can read first.
-[run-it.md](run-it.md#1-get-the-scanner) shows the build.
-
-**From the first release on**, the release process is built to give each
+**Since 0.13.2** (the first release), the release process gives each
 image a signature, a list of every component inside it, and a signed
 statement of which source code it was built from. You check them with a free
-tool called `cosign`. The commands are written down. They have not yet been
-run against a real release, because there is none: the page that holds them
-says so too.
+tool called `cosign`. The commands are written down, and they were run
+against 0.13.2 from outside the build system, including on a machine with no
+network.
 
 Detail: [../verify-a-release.md](../verify-a-release.md).
 

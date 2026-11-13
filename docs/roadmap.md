@@ -82,17 +82,12 @@ to add sources that evidence H4 and H5 is an open product decision (issue 15).
 
 ## Packaging and distribution
 
-- **No release.** No tag, no published image, no signed artefact. The release
-  workflow is written and has run by hand, which publishes nothing; it has never run for a tag. The image is to be public (owner
-  decision, 2026-11-12, issue 19): a pull will need no login. GitHub creates
-  a package private, so making it public is a step somebody takes by hand
-  after the first release (`docs/release-checklist.md`).
-- **The contract package is not published.** It is to be published to GitHub
-  Packages as `@rodnapamet/scanent-contract` (owner decision, 2026-11-12,
-  issue 7), by the release workflow, at the first version tag. Until then a
-  consumer that wants to verify reports with the reference implementation
-  has to take it from this repository. Installing it from GitHub Packages
-  needs a token, even when the package is public (`docs/contract.md`).
+- **One release.** The image is public (owner decision, 2026-11-12, issue 19).
+  0.13.2 is the first complete release: a public, signed
+  image with SBOM and provenance, a signed air-gapped bundle, and the
+  contract package on GitHub Packages as `@rodnapamet/scanent-contract`
+  (issue 7). Installing that package needs a token, even when the package is
+  public (`docs/contract.md`).
   `@scanent/report` and `@scanent/scanner` are private workspace packages and
   are not published.
 - **The originating application carries its own copy of the contract.** The
@@ -146,8 +141,8 @@ were acted on in 0.13.0. What is left of each:
 - The grant of each token exchange is inside the hashed request surface.
   Nothing is left of that one.
 
-Still open: the provenance files of a release can be checked only on the
-first tag (issue 20, item 4).
+The provenance of a release was checked on 0.13.2: `gh attestation verify`
+passed for the bundle and the image manifest (issue 20, item 4).
 
 ## Assurance work
 
@@ -159,7 +154,9 @@ code (issue 21):
   negatives recorded per source;
 - a 72-hour soak, required before 1.0 (a 75-minute one has been run);
 - an external penetration test and code review;
-- a first signed release, and the verification commands run against it.
+- the verification commands run by somebody other than the maker, against a
+  release they downloaded themselves (0.13.2 has been checked once, by its
+  maker).
 
 [Assurance status](security-pack/assurance-status.md) has the detail.
 

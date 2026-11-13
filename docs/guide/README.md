@@ -80,9 +80,9 @@ page here points to the one that has the detail.
 
 These are true today and are stated here so nobody has to find them out later.
 
-- **No finished release exists yet.** There is no published, signed download.
-  Today the program is built from its source code. [run-it.md](run-it.md)
-  shows how.
+- **One release so far.** 0.13.2 is the first published, signed download
+  (November 2026). Its signatures have been checked once, by its maker, as
+  you would check them; nobody else has yet.
 - **It has not yet been run at a client.** It has been run once against a
   real organisation's systems: those of Inflect Ltd., the company that makes
   it, for four of the nine kinds of system. The other readers are tested only

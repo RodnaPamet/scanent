@@ -264,9 +264,9 @@ describe('docs/security-pack/sbom-and-licences.md', () => {
         expect(text).toContain('**Inflect Ltd.**');
     });
 
-    it('says the licence is not open source, that no SBOM has been produced, and where commercial terms come from', () => {
+    it('says the licence is not open source, which release first produced the SBOMs, and where commercial terms come from', () => {
         expect(text).toContain('**It is not an open-source licence.**');
-        expect(text).toContain('No SBOM has been produced by the release pipeline yet');
+        expect(text).toContain('**The release pipeline first produced SBOMs for 0.13.2**');
         expect(text).toContain('Commercial terms come from the\nlicensor, Inflect Ltd., and from nobody else.');
     });
 });
@@ -278,16 +278,16 @@ describe('docs/security-pack/assurance-status.md', () => {
     it('says what has not been done before what has, and names each item', () => {
         expect(text.indexOf('## What has not been done')).toBeGreaterThan(0);
         expect(text.indexOf('## What has not been done')).toBeLessThan(text.indexOf('## What has been done'));
-        for (const heading of ['### One pilot, on the maker\'s own estate, and none at a client', '### No external penetration test, no independent review', '### No long soak', '### No signed release']) {
+        for (const heading of ['### One pilot, on the maker\'s own estate, and none at a client', '### No external penetration test, no independent review', '### No long soak', '### One signed release, checked once, by its maker']) {
             expect(notDone).toContain(heading);
         }
-        for (const phrase of ['False positives and false negatives are not measured', '72-hour', 'has never run for a\n  tag', 'never run']) expect(notDone).toContain(phrase);
+        for (const phrase of ['False positives and false negatives are not measured', '72-hour', 'is the only complete release', 'never run']) expect(notDone).toContain(phrase);
     });
 
     it('agrees with the threat model, which still lists the same four', () => {
         const threat = read('docs/threat-model.md');
         const theirs = threat.slice(threat.indexOf('## What has not been done'));
-        for (const topic of ['penetration test', 'real estate', '72-hour soak', 'No release exists']) expect(theirs).toContain(topic);
+        for (const topic of ['penetration test', 'real estate', '72-hour soak', '0.13.2 is the first release']) expect(theirs).toContain(topic);
     });
 
     it('claims nothing the repository cannot show: no release directory of fixtures beyond the two it names', () => {
@@ -386,8 +386,8 @@ describe('docs/roadmap.md', () => {
         expect(unread.every((l) => l === 'H4' || l === 'H5')).toBe(true);
     });
 
-    it('says the packages are unpublished, as their manifests have it', () => {
-        expect(text).toContain('**The contract package is not published.**');
+    it('says where the contract package is published, and that the other two cannot be, as their manifests have it', () => {
+        expect(text).toContain('contract package on GitHub Packages as `@rodnapamet/scanent-contract`');
         // Two packages cannot be published at all. The contract can, since the owner's decision on issue 7, and the
         // page says where it is to go and that it has not gone there: the manifest names that registry and that name.
         for (const pkg of ['report', 'scanner']) {
@@ -397,9 +397,9 @@ describe('docs/roadmap.md', () => {
         const contract = JSON.parse(read('packages/contract/package.json')) as { name: string; private?: boolean; publishConfig?: { registry?: string } };
         expect(contract.private).toBeUndefined();
         expect(contract.publishConfig).toEqual({ registry: 'https://npm.pkg.github.com' });
-        expect(text).toContain(`It is to be published to GitHub\n  Packages as \`${contract.name}\``);
-        // Nothing has been released, so nothing of it is in a registry: the repository holds no version tag.
-        expect(text).toContain('**No release.** No tag, no published image, no signed artefact.');
+        expect(text).toContain(`contract package on GitHub Packages as \`${contract.name}\``);
+        // One release, and the page names it.
+        expect(text).toContain('0.13.2 is the first complete release');
     });
 
     it('names the cloud platforms no source reads, and offers none as coming', () => {

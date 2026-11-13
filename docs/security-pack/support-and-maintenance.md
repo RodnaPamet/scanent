@@ -8,8 +8,8 @@ report and results formats are versioned, and what a release contains.
 - The repository states **no support contract, no service level and no
   release cadence**. Those are commercial terms and come from the licensor,
   Inflect Ltd. (see [SBOM and licences](sbom-and-licences.md#commercial-terms)).
-- **No release has been published.** The process below is written and tested
-  for its shape. It has not run. See [Assurance status](assurance-status.md).
+- **One release so far.** The process below completed for 0.13.2
+  (2026-11-13), after two tags that stopped part way. See [Assurance status](assurance-status.md).
 - The security policy's response times are a statement of intent from a small
   project, and the policy says so.
 
@@ -155,8 +155,9 @@ above is made in this repository.
 
 ## What a release contains
 
-Written in `.github/workflows/release.yml`, for a tag `v<version>`. **Never
-run: no release exists.**
+Written in `.github/workflows/release.yml`, for a tag `v<version>`. First
+completed for 0.13.2 (2026-11-13); [Assurance status](assurance-status.md)
+says what was checked.
 
 | Item | Where |
 |---|---|

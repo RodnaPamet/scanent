@@ -261,15 +261,12 @@ Stated plainly. None of these is closed by the code.
   false negatives per provider are not measured.
 - The 72-hour soak has not been run; a 75-minute one has. The 72-hour one is required before 1.0.
 - Keyless signing and the attestations run only on GitHub's runners, at a
-  tag. They are written and reviewed. No release exists, so nothing has been
-  signed and no client-side verification command has been run against a real
-  signature. The release workflow has never run for a tag: its on-main
-  check and its signing, publishing and release jobs have never run, and
-  neither has the workflow that makes the tag and starts it
-  (`.github/workflows/auto-release.yml`). It has
-  been run by hand once to the end, which signs and publishes nothing: its
-  gates, the build and smoke test on both architectures, the Syft SBOM step
-  and the bundle.
+  tag. 0.13.2 is the first release they completed for, and the client-side
+  verification commands passed against it (Assurance status). Two runs
+  before it stopped part way, once at the image push and once at the
+  contract publish, and each was fixed forward in a new version. The
+  workflow that makes the tag and starts the release
+  (`.github/workflows/auto-release.yml`) made all three tags.
 - The long-test workflow has run twice on GitHub, by hand.
 - CI first ran on GitHub in its present form on 2026-11-12, which is one day
   of history: lint, type-check, build and the tests on Node 22 and Node 24, `npm audit`, the licence

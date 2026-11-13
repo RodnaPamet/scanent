@@ -19,24 +19,18 @@ changes any of your systems.
 
 ## 1. Get the scanner
 
-No finished release has been published yet. Until one is, you build the image
-from the source code. This needs internet access, and takes a few minutes the
-first time:
+Download the finished scanner:
 
 ```bash
 export IMAGE=ghcr.io/rodnapamet/scanent:0.13.2
-git clone https://github.com/RodnaPamet/scanent.git
-docker build -f scanent/deploy/Dockerfile -t "$IMAGE" scanent
+docker pull "$IMAGE"
 ```
 
 The first line gives the image a name. The other steps use that name.
 
-If your network inspects encrypted traffic, the build needs your network's
-certificate: [../quick-start.md](../quick-start.md#0-get-the-image) says how.
-
-Once a release exists, you will download the finished scanner instead of
-building it. The download is public: it needs no account with us or with
-GitHub, and no password.
+The download is public: it needs no account with us or with GitHub, and no
+password. A site with no internet uses the air-gapped bundle instead
+([../quick-start.md](../quick-start.md#a-site-with-no-internet)).
 
 ## 2. Make a short name for "run the scanner safely"
 
@@ -272,5 +266,5 @@ the rest:
 | Every command and every setting | [../scanner.md](../scanner.md) |
 
 At a site with no internet access the scanner is loaded from a package you
-carry in. A released package is signed. No release has been published yet,
-so today that package is one you build yourself, and it carries no signature.
+carry in: the air-gapped bundle attached to each release. It is signed, and
+its own `verify.sh` checks it before `load.sh` loads anything.

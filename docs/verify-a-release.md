@@ -4,13 +4,12 @@ How to check that an image, a bundle, an SBOM or the contract package of
 scanent is the one this repository's release workflow produced, and what each
 check does and does not prove.
 
-> **Status: no release has been published yet.** There is no tag, no signed
-> image, no signed bundle and no published package. None of the `cosign`,
-> `gh`, `docker pull` or `npm` commands on this page has been run against a
-> real release, and where the page says what a command prints, that is what
-> the tool's documentation says it prints. They run for the first time at the
-> first tag; the release checklist (`docs/release-checklist.md`) has the
-> steps and records what has never been run.
+> **Status: run against 0.13.2.** On 2026-11-13 the `cosign`, `gh
+> attestation`, image pull and bundle commands on this page were run against
+> 0.13.2 from outside GitHub, with `cosign` 3.1.4, and passed
+> ([Assurance status](security-pack/assurance-status.md) lists them). The
+> `npm` install of the contract package has not been run: it needs a token
+> with read access to GitHub Packages.
 
 **The image is public.** Pulling it, and every check of it below, needs no
 GitHub account and no login to the registry. The contract package is
@@ -211,10 +210,12 @@ which it normally fetches and caches under the user's home directory
 Do not take the root of trust from the bundle or from the same download as the
 bundle: whoever could replace one could replace the other.
 
-Neither way has been exercised. `verify.sh` has been run against a stand-in
-`cosign` only, never against a real Sigstore bundle, on a connected machine or
-on one with no network: no release exists to verify. Both are steps of the
-release checklist (`docs/release-checklist.md`) for the first tag.
+The second way was exercised on 2026-11-13, for 0.13.2: with networking off
+(`unshare -n`), `verify.sh` refused the signature with no root of trust to
+hand, and with `SCANENT_TRUSTED_ROOT` pointing at the `trusted_root.json` that
+`cosign` had cached on a connected machine it checked the 34 files, the two
+SBOMs and the signature, and passed. The first way, carrying the cache
+directory, has not been exercised.
 
 **It proves** that the list of checksums was signed by the release workflow
 for that tag, and so that every file in the bundle is the one that release

@@ -233,10 +233,9 @@ A scheduler can act on them: retry on 6, page on 5, fail a pipeline on 3 with
 
 ## Releases
 
-> **No release has been published yet.** There is no tag, no image in the
-> registry and no bundle to download. Today the image is built from a checkout
-> ([quick-start.md](quick-start.md#0-get-the-image)). This section says what
-> the release workflow is written to do at the first version tag.
+> **0.13.2 is the first release** (2026-11-13). `v0.13.0` and `v0.13.1` were
+> tagged and stopped part way; `docs/releases/` says why. This section says
+> what the release workflow does for a version tag.
 
 A tag `v<version>` builds the image on an amd64 and an arm64 runner, runs the
 smoke test and the vulnerability gate on each, and pushes

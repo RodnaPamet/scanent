@@ -21,6 +21,8 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { SCANNER_VERSION } from '../src/scanner-surface';
+
 import { INCOMPLETE_REASONS, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 import { HARNESS_FINDING_CODES, planHarnessScan, type PriorHarnessState } from '@rodnapamet/scanent-contract/harness-findings';
 import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LEVELS, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
@@ -357,7 +359,7 @@ describe('docs/guide: the commands it shows', () => {
 
     it('starts every line of every bash block with a program the guide has introduced', () => {
         const first = new Set(PAGES.flatMap((name) => bashLines(GUIDE[name]).map((line) => words(line)[0])));
-        expect([...first].sort()).toEqual(['cat', 'cd', 'chmod', 'docker', 'export', 'git', 'mkdir', 'scanent', 'scanent()', '}'].sort());
+        expect([...first].sort()).toEqual(['cat', 'cd', 'chmod', 'docker', 'export', 'mkdir', 'scanent', 'scanent()', '}'].sort());
     });
 
     it('shows the commands of a first run: init, doctor, scan, diff and hosts', () => {
@@ -441,10 +443,10 @@ describe('docs/guide: the commands it shows', () => {
         expect(fs.readFileSync(path.join(REPO, 'docs/quick-start.md'), 'utf8').replace(/\s*\\\n\s*/g, ' ')).toContain(wrapper as string);
     });
 
-    it('builds the image from the Dockerfile the repository has, under the name the quick start uses', () => {
+    it('pulls the released image, under the name the quick start uses', () => {
         const lines = bashLines(GUIDE['run-it.md']);
-        expect(lines).toContain('docker build -f scanent/deploy/Dockerfile -t "$IMAGE" scanent');
-        expect(fs.existsSync(path.join(REPO, 'deploy/Dockerfile'))).toBe(true);
+        expect(lines).toContain('docker pull "$IMAGE"');
+        expect(lines.find((l) => l.startsWith('export IMAGE='))).toBe(`export IMAGE=ghcr.io/rodnapamet/scanent:${SCANNER_VERSION}`);
         const image = lines.find((l) => l.startsWith('export IMAGE=')) as string;
         expect(fs.readFileSync(path.join(REPO, 'docs/quick-start.md'), 'utf8')).toContain(image);
     });
@@ -482,8 +484,8 @@ describe('docs/guide: links', () => {
         expect(broken).toEqual([]);
     });
 
-    it('links to no web address but the one the first run clones from', () => {
-        expect([...new Set([...ALL.matchAll(/https?:\/\/[^\s)"`]+/g)].map((m) => m[0]))]).toEqual(['https://github.com/RodnaPamet/scanent.git']);
+    it('links to no web address: the first run pulls the image, and clones nothing', () => {
+        expect([...new Set([...ALL.matchAll(/https?:\/\/[^\s)"`]+/g)].map((m) => m[0]))]).toEqual([]);
     });
 });
 
@@ -505,10 +507,10 @@ describe('docs/guide: written for a reader who is not an engineer', () => {
 
     it('says, on its first page and in its questions, what has not been done', () => {
         const flat = (text: string): string => text.replace(/\n\s*/g, ' ');
-        for (const said of ['No finished release exists yet', 'has not yet been run at a client', 'no independent security test', 'the planned 72-hour run has not']) {
+        for (const said of ['One release so far.', 'Its signatures have been checked once, by its maker', 'has not yet been run at a client', 'no independent security test', 'the planned 72-hour run has not']) {
             expect(flat(GUIDE['README.md'])).toContain(said);
         }
-        expect(flat(GUIDE['faq.md'])).toContain('No release exists');
+        expect(flat(GUIDE['faq.md'])).toContain('they were run against 0.13.2 from outside the build system');
         expect(flat(GUIDE['faq.md'])).toContain('no outside firm has tested it');
         // The technical page the guide points to for this still says the same.
         const notDone = fs.readFileSync(path.join(REPO, 'docs/threat-model.md'), 'utf8');

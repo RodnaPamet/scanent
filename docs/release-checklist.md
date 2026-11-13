@@ -10,8 +10,9 @@ before the tag are what the session raising the version checks; the person's
 steps left are the repository settings below and, after the first release,
 making the image public.
 
-**No release has been made yet.** No version tag exists, so no image, bundle
-or package is published, and neither package named below exists on GitHub.
+**0.13.2 is the first complete release** (2026-11-13). `v0.13.0` and
+`v0.13.1` were tagged and stopped part way; their notes in `docs/releases/`
+say why.
 
 ## Settings that must be on
 
@@ -159,7 +160,10 @@ publishes nothing, so it is never the recovery.
 
 First, at the first release only:
 
-- [ ] **Make the image public.** GitHub creates a package private, and the
+- [x] **Make the image public** (done 2026-11-13, after 0.13.1 created the
+      package). The organisation must allow public packages first
+      (organisation settings, Packages, Package creation: Public). GitHub
+      creates a package private, and the
       image is meant to be pulled with no login. On GitHub: the
       organisation's **Packages** tab, the package `scanent`, **Package
       settings**, then under "Danger Zone" **Change visibility**, and
@@ -217,26 +221,27 @@ Then verify what was published, as a client would, with the commands of
 Listed here so that the first release does them deliberately. Strike a line
 when it has happened once, and say in which release.
 
-- Keyless signing, the SBOM attestations and the provenance attestations
+- ~~Keyless signing, the SBOM attestations and the provenance attestations
   (the manifest, each image, the bundle), and keeping each attestation as a
-  file for the release: they run only on GitHub's runners, at a tag.
-- `verify.sh` against a real Sigstore bundle and a real `cosign`, with and
-  without network. It has been run against a stand-in `cosign` only.
-- `sign-bundle.sh` with a real `cosign`: run against a stand-in only.
-- `auto-release.yml` and `scripts/auto-release.sh` on GitHub: the tag made
-  and pushed with the workflow's token, the tag ruleset letting GitHub
-  Actions create it, and the dispatch of `release.yml` on the tag. The
-  script has been run against local repositories and a stand-in `gh` only.
-- The release workflow by tag, and with it the jobs a manual run skips:
+  file for the release.~~ 0.13.2.
+- ~~`verify.sh` against a real Sigstore bundle and a real `cosign`, with and
+  without network.~~ 0.13.2, without network given `SCANENT_TRUSTED_ROOT`;
+  carrying the `cosign` cache instead has not been tried.
+- ~~`sign-bundle.sh` with a real `cosign`.~~ 0.13.0.
+- ~~`auto-release.yml` and `scripts/auto-release.sh` on GitHub: the tag made
+  and pushed with the workflow's token, and the dispatch of `release.yml` on
+  the tag.~~ 0.13.0. A tag ruleset letting GitHub Actions create tags has not
+  been made, so that half has not been tried.
+- ~~The release workflow by tag, and with it the jobs a manual run skips:
   `sign-bundle`, `publish`, `publish-contract` and `release`, and the `gates`
-  job's two tag-only steps (the tagged commit is on main; the release has its
-  notes). Each of those two scripts has been run against a local repository.
-- The provenance attestation of the contract package's tarball, and
-  `npm publish` to GitHub Packages.
+  job's two tag-only steps.~~ 0.13.2, after 0.13.0 stopped at `publish` and
+  0.13.1 at `publish-contract`.
+- ~~The provenance attestation of the contract package's tarball, and
+  `npm publish` to GitHub Packages.~~ 0.13.2.
 - An install of the contract package from GitHub Packages, with a person's
   token or a workflow's.
-- A pull of the image with no login, and the `publish` job's step that tries
-  one.
+- ~~A pull of the image with no login, and the `publish` job's step that
+  tries one.~~ 0.13.2 (a pull with no login, from outside GitHub).
 - The last step of the smoke test under rootless Podman: the `image-podman`
   job leaves the egress overlay out.
 
