@@ -206,7 +206,7 @@ console.log(JSON.stringify({
 '
 node_pod read-out "" "scanent-out:/out" "$READ" > "$WORK/out.json"
 jq -e '
-    .files == ["agents.csv", "findings.csv", "manifest.json", "report.signed.json", "results.json", "summary.html"]
+    .files == ["agents.csv", "findings.csv", "manifest.json", "report.pdf", "report.signed.json", "results.json", "summary.html"]
     and .owners == [1000]
     and .schema == "scanent-results/1"
     and .agents == 1
