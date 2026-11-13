@@ -1,0 +1,36 @@
+{
+  "estate": "acme-delivery",
+  "scanner": {
+    "agentId": "scanent-acme-delivery",
+    "signingKeyEnv": "SCANNER_SIGNING_KEY"
+  },
+  "outputs": [
+    {
+      "kind": "file",
+      "dir": "/out",
+      "retainRuns": 90
+    }
+  ],
+  "schedule": {
+    "everyHours": 24
+  },
+  "sources": [
+    {
+      "kind": "cicd",
+      "product": "github-actions",
+      "repositories": [
+        "acme/payments-api",
+        "acme/support-bot"
+      ],
+      "tokenEnv": "GITHUB_READ_TOKEN"
+    },
+    {
+      "kind": "gcp-sa",
+      "product": "gcp-iam",
+      "projects": [
+        "acme-prod-204"
+      ],
+      "keyEnv": "GCP_SCANNER_KEY"
+    }
+  ]
+}
