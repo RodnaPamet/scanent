@@ -198,10 +198,12 @@ function textShownBy(content: string): string[] {
 }
 
 /** The JSON a `summary.html` carries for its script, parsed. */
-export function pageDataOf(html: string): unknown {
-    const m = /<script type="application\/json" id="scan-data">([^<]*)<\/script>/.exec(html);
-    if (m === null) throw new Error('the page carries no data block');
-    return JSON.parse(m[1]) as unknown;
+export function pageDataOf(html: string, id: 'scan-data' | 'integrations-data' = 'scan-data'): unknown {
+    const open = `<script type="application/json" id="${id}">`;
+    const start = html.indexOf(open);
+    const end = start < 0 ? -1 : html.indexOf('</script>', start + open.length);
+    if (start < 0 || end < 0) throw new Error('the page carries no data block');
+    return JSON.parse(html.slice(start + open.length, end)) as unknown;
 }
 
 /** Every string in a value, keys included. */

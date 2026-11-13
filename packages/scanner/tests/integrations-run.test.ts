@@ -44,7 +44,7 @@ import { loadSigningKey, runScan, type ScanResult } from '../src/scan';
 import { ENTRA, ENTRA_DIRECTORY_ID, graphFixture } from './helpers/agent-harness-source-fakes';
 import { SIGNING_PEM } from './helpers/doctor-world';
 import { createEstateWorld, ESTATE_SOURCES, estateConfig, estateEnv, INTEGRATIONS_ESTATE_SOURCE, PUBLIC_RESOLVER } from './helpers/estate-world';
-import { CANARIES, capturedLog, pdfTextOf, stringsOf } from './helpers/output-fixtures';
+import { CANARIES, capturedLog, pageDataOf, pdfTextOf, stringsOf } from './helpers/output-fixtures';
 import { agentsOf } from './helpers/run-scan';
 
 const NOW = Date.parse('2026-10-19T03:00:00.000Z');
@@ -211,7 +211,7 @@ describe('3. the outputs', () => {
         expect(pageCsp(true)).toContain(cspHashSource(INTEGRATIONS_STYLE_TEXT));
         expect(html).toContain(`<style>${INTEGRATIONS_STYLE_TEXT}</style>`);
         expect(html).toContain(`<script>${INTEGRATIONS_SCRIPT}</script>`);
-        const data = JSON.parse(/<script type="application\/json" id="integrations-data">([^<]*)<\/script>/.exec(html)?.[1] ?? 'null') as ReturnType<typeof integrationsPageData>;
+        const data = pageDataOf(html, 'integrations-data') as ReturnType<typeof integrationsPageData>;
         expect(data).toEqual(JSON.parse(JSON.stringify(integrationsPageData(r.integrations as NonNullable<typeof r.integrations>))));
         // Worst first (a HIGH finding, then by id), and every cell decided before the script sees it.
         expect(data.rows.map((row) => [row.id.slice(-36), row.rank])).toEqual([[ENTRA.spReporting, 1], [ENTRA.spThirdParty, 1], [ENTRA.spSupport, 9]]);
