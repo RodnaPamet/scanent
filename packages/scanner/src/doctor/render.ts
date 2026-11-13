@@ -39,18 +39,36 @@ function detailOf(check: Check): string {
     return `${CAUSE_WORDS[check.cause]}: ${check.detail}`;
 }
 
-/** The table. Scopes in the order their first check appears. */
+const SCANNER_HEADING: Readonly<Record<DoctorReport['scanners'][number]['scanner'], string>> = {
+    agents: 'The agent scanner',
+    integrations: 'The integrations scanner',
+};
+
+/**
+ * The table, grouped by scanner: the platform's own checks first (the
+ * configuration, the key, the output, the network), then one group per
+ * scanner whose sources are configured. Within a group, scopes in the order
+ * their first check appears.
+ */
 export function renderDoctorText(report: DoctorReport): string {
     const out: string[] = [`scanent doctor  estate ${terminalLine(report.estate ?? '(configuration not read)')}  ${report.at}`, ''];
     const scopes: string[] = [];
     for (const c of report.checks) if (!scopes.includes(c.scope)) scopes.push(c.scope);
     const width = Math.max(...report.checks.map((c) => c.id.length), 0);
-    for (const scope of scopes) {
-        out.push(terminalLine(scope));
-        for (const c of report.checks.filter((x) => x.scope === scope)) {
-            out.push(`  ${c.status.padEnd(8)} ${terminalLine(c.id).padEnd(width)}  ${terminalLine(detailOf(c))}`.trimEnd());
-            if (c.status === 'WARN' || c.status === 'FAIL') out.push(`  ${' '.repeat(8)} fix: ${terminalLine(c.fix)}`);
-        }
+    const grouped = new Set(report.scanners.flatMap((g) => g.scopes));
+    const scopeLines = (scope: string): string[] => [
+        terminalLine(scope),
+        ...report.checks
+            .filter((x) => x.scope === scope)
+            .flatMap((c) => [
+                `  ${c.status.padEnd(8)} ${terminalLine(c.id).padEnd(width)}  ${terminalLine(detailOf(c))}`.trimEnd(),
+                ...(c.status === 'WARN' || c.status === 'FAIL' ? [`  ${' '.repeat(8)} fix: ${terminalLine(c.fix)}`] : []),
+            ]),
+    ];
+    for (const scope of scopes.filter((s) => !grouped.has(s))) out.push(...scopeLines(scope));
+    for (const group of report.scanners) {
+        out.push('', `== ${SCANNER_HEADING[group.scanner]} ==`);
+        for (const scope of group.scopes) out.push(...scopeLines(scope));
     }
     out.push('', summaryLine(report), '');
     return out.join('\n');

@@ -339,6 +339,36 @@ Every finding, most severe first. Click a title to open its explanation.
 "No finding was raised" on an incomplete scan is followed by "The scan is
 incomplete, so this is not a clean result."
 
+### Integrations
+
+Only when the integrations scanner is set up
+([what-it-reads.md](what-it-reads.md#microsoft-entra-id-for-integrations)).
+It opens with its own completeness: whether the directory's applications,
+their grants and, if asked for, their sign-ins were read in full. Then the
+counts, the integration findings ([findings.md](findings.md#integration-findings)),
+the questions that could not be concluded and why, and one row per
+application: its publisher, its owners, its grants, whether any is
+high-privilege, and when it last signed in. "Not read" in a cell means the
+scan did not read that part, not that it is empty. Permissions the scanner's
+list does not know are listed last, for you to judge.
+
+The same section is in `report.pdf`, and the same rows are in
+`integrations.csv` and `integration-findings.csv`. The signed report it comes
+from is `report.integrations.signed.json`, beside `report.signed.json`.
+
+It ends with "Since the previous run": the applications new, gone and not
+seen, and the integration findings opened, closed and "no longer raised, not
+concluded", by the same rules as the agent comparison. A finding is closed
+only when this scan answered its question; when, say, the sign-in read failed,
+an "unused" finding that is no longer raised is not concluded, with the
+reason.
+
+**When only the integrations scanner ran** (you configured no agent source),
+the page and the PDF are titled "Integrations scan results", say first that
+the agent scanner did not run, and hold only this section, the provenance and
+the limits. Nothing on them is an agent result: there is no estate, no
+matrix, no agent finding, and no `agents.csv`.
+
 ### Inventory
 
 Shown only when you gave an inventory. How many lines it has, how many

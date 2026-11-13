@@ -52,7 +52,7 @@ import { publicKeyFingerprint, rawPublicKeyHex } from './report';
 import { loadSigningKey } from './scan';
 import { runOnSchedule } from './schedule';
 import { resolveSecretEnv, SecretFileError } from './secrets';
-import type { SourceKind } from './source';
+import type { ScannerSourceKind } from './scanners';
 import { buildSupportBundle, renderSupportBundle } from './support-bundle';
 
 /** The value of `--name <value>` or `--name=<value>`; null when the flag is absent or has no value. */
@@ -494,7 +494,7 @@ async function runSupportBundle(argv: readonly string[], file: string, env: Node
 
 const TLS_OFF = 'NODE_TLS_REJECT_UNAUTHORIZED=0 turns certificate verification off; scanent does not send credentials over an unverified connection. Remove it; add your CA with NODE_EXTRA_CA_CERTS.\n';
 
-const DOCTOR_KINDS: readonly SourceKind[] = ['entra-sp', 'okta-app', 'vault', 'mcp', 'runtime', 'cicd', 'code', 'inflect-register', 'gcp-sa'];
+const DOCTOR_KINDS: readonly ScannerSourceKind[] = ['entra-sp', 'okta-app', 'vault', 'mcp', 'runtime', 'cicd', 'code', 'inflect-register', 'gcp-sa', 'entra-integrations'];
 
 export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: CliIo = {}): Promise<number> {
     const log = jsonLineLog();
@@ -556,7 +556,7 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: 
                 return EXIT.USAGE;
             }
         }
-        const report = await runDoctor({ configPath: file, env, out, only: only as SourceKind[] });
+        const report = await runDoctor({ configPath: file, env, out, only: only as ScannerSourceKind[] });
         process.stdout.write(argv.includes('--json') ? renderDoctorJson(report) : renderDoctorText(report));
         return report.exitCode;
     }
@@ -615,9 +615,15 @@ export async function main(argv: readonly string[], env: NodeJS.ProcessEnv, io: 
             const result = await scanAndDeliver({ config, env: secrets, log, outputs });
             if (!result.ok) return EXIT.FAILED;
             if (argv.includes('--strict')) {
-                // Delivered, and not everything could be established: zero agents is never complete.
-                const { body } = result.scan;
-                if (body.agents.length === 0 || body.population.sources.some((s) => s.status === 'INCOMPLETE')) return EXIT.INCOMPLETE;
+                // Delivered, and not everything could be established, for any scanner that ran: zero is never complete.
+                const { agents, integrations } = result.scan;
+                if (agents !== null && (agents.body.agents.length === 0 || agents.body.population.sources.some((s) => s.status === 'INCOMPLETE'))) return EXIT.INCOMPLETE;
+                if (
+                    integrations !== null &&
+                    (integrations.body.applications.length === 0 || integrations.body.sources.some((s) => s.status === 'INCOMPLETE' || s.signInActivity.status === 'INCOMPLETE'))
+                ) {
+                    return EXIT.INCOMPLETE;
+                }
             }
             return EXIT.OK;
         }

@@ -26,6 +26,9 @@ import { HARNESS_FINDING_CODES } from '../src/harness-findings';
 import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LEVELS, shortfallBarFor } from '../src/harness-ladder';
 import { HARNESS_MATRIX_CELL_STATES } from '../src/harness-matrix-model';
 import { validV3ReportBody } from './helpers/agent-harness-fake-scanner';
+import * as integrationsRules from '../src/integrations-contract-rules';
+import { INTEGRATION_FINDING_CODES, INTEGRATION_FINDING_SEVERITY, INTEGRATION_NOT_CONCLUDED_WHY } from '../src/integrations-findings';
+import { PERMISSION_CLASSES } from '../src/integrations-scopes';
 
 const DOC = readFileSync(resolve(__dirname, '..', '..', '..', 'docs', 'contract.md'), 'utf8');
 
@@ -150,6 +153,46 @@ describe('docs/contract.md', () => {
         const exported = new Set(modules.flatMap((m) => Object.keys(m)));
         const referred = ['verifyAndParseHarnessReport', 'isScanComplete', 'looksLikeSecret', 'containsCardNumber', 'firstSecretShapedMember', 'firstSecretShapedPath', 'canonicalJson', 'scoreHarness', 'collapseVerdicts', 'levelAtLeast', 'shortfallBarFor', 'planHarnessScan', 'toolEvidenceSourcesOf', 'LADDER_VERSION', 'buildHarnessMatrix', 'harnessJudgementOf', 'compareHarnessMatrixRows'];
         for (const name of referred) {
+            expect(DOC).toContain(`\`${name}\``);
+            expect(exported.has(name)).toBe(true);
+        }
+    });
+
+    it('lists the integrations contract ids, apart from the agent report\'s', () => {
+        const table = rows('integrations-ids');
+        expect(table.map((r) => code(r[0]))).toEqual([...integrationsRules.INTEGRATIONS_CONTRACT_IDS]);
+        expect(table.every((r) => r[1].startsWith('Accepted'))).toBe(true);
+        // Not among the agent report's ids, and never read by its verifier.
+        for (const id of integrationsRules.INTEGRATIONS_CONTRACT_IDS) expect(rows('ids').map((r) => code(r[0]))).not.toContain(id);
+    });
+
+    it('lists the integrations source kinds, and every limit that contract exports, with its value', () => {
+        expect(rows('integrations-source-kinds').map((r) => code(r[0]))).toEqual([...integrationsRules.INTEGRATIONS_SOURCE_KINDS]);
+        const exported = Object.entries(integrationsRules)
+            .filter(([name, value]) => name.startsWith('MAX_') && typeof value === 'number')
+            .map(([name, value]) => [name, (value as number).toLocaleString('en-US')]);
+        expect(exported.length).toBeGreaterThanOrEqual(9);
+        expect([...rows('integrations-limits').map((r) => [code(r[0]), r[1]])].sort()).toEqual([...exported].sort());
+    });
+
+    it('lists the integration finding codes with the planner\'s severities, why a question is not concluded, and the permission classes', () => {
+        const findings = rows('integrations-finding-codes');
+        expect(findings.map((r) => code(r[0]))).toEqual([...INTEGRATION_FINDING_CODES]);
+        for (const [c, severity] of findings) expect([c, severity]).toEqual([c, INTEGRATION_FINDING_SEVERITY[code(c) as (typeof INTEGRATION_FINDING_CODES)[number]]]);
+        expect(rows('integrations-not-concluded').map((r) => code(r[0]))).toEqual([...INTEGRATION_NOT_CONCLUDED_WHY]);
+        expect(codesIn(block('integrations-permission-classes'))).toEqual([...PERMISSION_CLASSES]);
+    });
+
+    it('names the integrations functions it refers to, and each is one the package exports', async () => {
+        const modules = [
+            integrationsRules,
+            await import('../src/integrations-contract'),
+            await import('../src/integrations-findings'),
+            await import('../src/integrations-scopes'),
+            contract,
+        ];
+        const exported = new Set(modules.flatMap((m) => Object.keys(m)));
+        for (const name of ['verifySignedEnvelope', 'verifyAndParseIntegrationsReport', 'planIntegrationsScan', 'isIntegrationsScanComplete', 'GRAPH_PERMISSION_CLASSES', 'classifyPermission']) {
             expect(DOC).toContain(`\`${name}\``);
             expect(exported.has(name)).toBe(true);
         }

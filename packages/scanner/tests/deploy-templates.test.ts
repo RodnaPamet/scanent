@@ -86,8 +86,8 @@ describe('deploy/examples', () => {
         .map((f) => f.slice(0, -'.answers.json'.length))
         .sort();
 
-    it('holds the four shapes, each as an answers file, a configuration and an env template, and nothing else', () => {
-        expect(names).toEqual(['ci-and-cloud', 'cloud-identities', 'code-only', 'everything']);
+    it('holds the six shapes, each as an answers file, a configuration and an env template, and nothing else', () => {
+        expect(names).toEqual(['ci-and-cloud', 'cloud-identities', 'code-only', 'everything', 'integrations', 'integrations-only']);
         expect(fs.readdirSync(abs(dir)).sort()).toEqual(
             ['README.md', ...names.flatMap((n) => [`${n}.answers.json`, `${n}.env`, `${n}.json`])].sort(),
         );
@@ -103,7 +103,8 @@ describe('deploy/examples', () => {
     it.each(names)('%s: the configuration parses under the strict schema, and the env template names exactly its credentials', (name) => {
         const config = parseScannerConfig(JSON.parse(read(`${dir}/${name}.json`)));
         expect(config.sources.length).toBeGreaterThan(0);
-        expect(envTemplateNames(read(`${dir}/${name}.env`)).sort()).toEqual([...credentialEnvNames(config)].sort());
+        // Two sources may name one variable (the two Entra sources, one application): the template names it once.
+        expect(envTemplateNames(read(`${dir}/${name}.env`)).sort()).toEqual([...new Set(credentialEnvNames(config))].sort());
     });
 
     it.each(names)('%s: every line of the env template is a comment, blank, or a NAME with nothing or a path after it', (name) => {
@@ -115,8 +116,14 @@ describe('deploy/examples', () => {
 
     it('covers every source a person can choose in the everything example, and no tenant in any', () => {
         const kinds = (name: string) => parseScannerConfig(JSON.parse(read(`${dir}/${name}.json`))).sources.map((s) => s.kind);
-        expect(kinds('everything').sort()).toEqual(['cicd', 'code', 'entra-sp', 'gcp-sa', 'mcp', 'okta-app', 'runtime', 'vault']);
+        expect(kinds('everything').sort()).toEqual(['cicd', 'code', 'entra-integrations', 'entra-sp', 'gcp-sa', 'mcp', 'okta-app', 'runtime', 'vault']);
         expect(kinds('code-only')).toEqual(['code']);
+        // Both scanners on one directory with one application: one secret, named once in the template.
+        expect(kinds('integrations')).toEqual(['entra-sp', 'entra-integrations']);
+        expect(envTemplateNames(read(`${dir}/integrations.env`))).toEqual(['SCANNER_SIGNING_KEY', 'ENTRA_CLIENT_SECRET']);
+        // The integrations scanner on its own: no agent source, so the agent scanner does not run.
+        expect(kinds('integrations-only')).toEqual(['entra-integrations']);
+        expect(envTemplateNames(read(`${dir}/integrations-only.env`))).toEqual(['SCANNER_SIGNING_KEY', 'ENTRA_INTEGRATIONS_CLIENT_SECRET']);
         for (const name of names) {
             const config = parseScannerConfig(JSON.parse(read(`${dir}/${name}.json`)));
             expect(config.inflect).toBeUndefined();
@@ -384,7 +391,7 @@ describe('the chart, without rendering it', () => {
         const readme = read(`${CHART}/README.md`);
         const block = readme.slice(readme.indexOf('<!-- hosts:begin -->') + '<!-- hosts:begin -->'.length, readme.indexOf('<!-- hosts:end -->'));
         expect(block.trim().split('\n')).toEqual(expected);
-        expect(expected.length).toBe(2 + 8);
+        expect(expected.length).toBe(2 + 9);
     });
 
     it('says, in the README and the notes, what a NetworkPolicy does not give', () => {

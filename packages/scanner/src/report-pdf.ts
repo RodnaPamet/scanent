@@ -37,9 +37,11 @@ import PDFDocument from 'pdfkit';
 
 import type { HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 import { MATRIX_MAX_AGENTS } from '@scanent/report/render/html';
-import { findingRef, summaryPageData, type AgentRecord, type SummaryContext, type SummaryPageData } from '@scanent/report/render/page-data';
-import { criterionWords } from '@scanent/report/render/words';
-import type { LocalResults } from '@scanent/report/results/types';
+import { INTEGRATION_RUN_FILE_NAMES, INTEGRATIONS_ONLY_RUN_FILE_NAMES } from '@scanent/report/render/files';
+import { applicationsByConcern, INTEGRATIONS_COLUMNS, integrationCells, NOT_CONCLUDED_TEXT, NOT_SEEN_TEXT } from '@scanent/report/render/integrations-page';
+import { findingRef, summaryPageData, type AgentRecord, type IntegrationsPreviousRun, type SummaryContext, type SummaryPageData } from '@scanent/report/render/page-data';
+import { criterionWords, PREVIOUS_NOT_COMPARED_TEXT } from '@scanent/report/render/words';
+import type { IntegrationsOnlyResults, LocalIntegrationsResults, LocalResults } from '@scanent/report/results/types';
 
 /** The most agents the levels table and the matrix list: the page's own matrix cap. */
 export const PDF_AGENTS_MAX = MATRIX_MAX_AGENTS;
@@ -590,13 +592,128 @@ function comparison(w: Writer, d: SummaryPageData): void {
     part('Findings', c.findings, (f) => `${f.code} ${f.change === 'NOT_CONCLUDED' ? `no longer reported, not concluded (${f.why ?? 'UNKNOWN'})` : f.change.toLowerCase()} ${f.ref}`, 'No finding opened or closed.');
 }
 
+/**
+ * The integrations scanner's section, only for a run that configured it: its
+ * sources' completeness first, then its findings, what it could not conclude,
+ * and its applications, those with the most severe findings first.
+ */
+function integrationsSection(w: Writer, i: LocalIntegrationsResults, opts: { readonly previous?: IntegrationsPreviousRun | null; readonly alone?: boolean } = {}): void {
+    if (opts.alone !== true) w.page();
+    w.heading('Integrations', 2);
+    w.para(
+        `What the directories this run read have granted to applications, and whether anybody owns those grants: the report ${i.report.file}, contract ${i.contract}, ${opts.alone === true ? "signed with the scanner's key" : 'signed with the same key as the agent report'}.`,
+    );
+    w.para(i.complete ? 'Complete. Every integrations source was read in full.' : 'Incomplete: not everything the integrations sources hold was read. A finding below is real; an absence is not a clean result.', {
+        font: BOLD,
+        color: i.complete ? INK : BAD,
+    });
+    w.facts([['Integrations report SHA-256', i.report.sha256]], ['Integrations report SHA-256']);
+    w.table(
+        [
+            { title: 'Source', width: 120, mono: true },
+            { title: 'Status', width: 70 },
+            { title: 'Reason', width: 100, mono: true },
+            { title: 'Rows read', width: 60 },
+            { title: 'Applications', width: 70 },
+            { title: 'Sign-in activity', width: 79 },
+        ],
+        i.sources.map((s) => [s.kind, s.status === 'COMPLETE' ? 'Complete' : 'Incomplete', s.reason ?? '', String(s.rows), String(s.applications), `${s.signInActivity.status}${s.signInActivity.reason === null ? '' : ` ${s.signInActivity.reason}`}`]),
+    );
+    for (const s of i.sources) if (s.detail !== undefined) w.para(`${s.kind} was not read in full: ${s.detail}.`, { size: 9 });
+    w.facts([
+        ['Applications', String(i.counts.applications)],
+        ['High-privilege grant', String(i.counts.highPrivilege)],
+        ['Unverified publisher', String(i.counts.unverifiedPublisher)],
+        ['No owner', String(i.counts.noOwner)],
+        [`Unused for ${i.unusedDays} days`, String(i.counts.unused)],
+    ]);
+    w.heading('Integration findings', 3);
+    const order: Readonly<Record<string, number>> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+    const findings = i.findings.map((f, k): [typeof f, number] => [f, k]).sort(([a, x], [b, y]) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9) || x - y).map(([f]) => f);
+    if (findings.length === 0) w.para(i.complete ? 'No integration finding was raised.' : 'No integration finding was raised. The integrations scan is incomplete, so this is not a clean result.');
+    const shown = findings.slice(0, PDF_FINDINGS_MAX);
+    w.capped(shown.length, findings.length, 'integration findings, most severe first', INTEGRATION_RUN_FILE_NAMES.findings);
+    for (const f of shown) {
+        w.ensure(40);
+        w.para(`${f.severity}  ${f.code}  ${f.applicationId ?? 'A source'}`, { font: BOLD, size: 9, gap: 1 });
+        w.para(f.title, { size: 9, gap: 1 });
+        w.para(f.description, { size: 8.5, color: MUTED, gap: 1 });
+        w.para(`Reference ${f.sourceRef}`, { font: MONO, size: 7.5, color: MUTED, gap: 6 });
+    }
+    if (i.notConcluded.length > 0) {
+        w.heading('Not concluded', 3);
+        const grouped = new Map<string, number>();
+        for (const n of i.notConcluded) grouped.set(`${n.code} ${n.why}`, (grouped.get(`${n.code} ${n.why}`) ?? 0) + 1);
+        for (const [key, n] of grouped) {
+            const [code, why] = key.split(' ');
+            w.bullet(`${code}: ${word(NOT_CONCLUDED_TEXT, why, 'see the code')} (${why}), ${plural(n, 'time', 'times')}.`, { size: 8.5 });
+        }
+    }
+    w.heading('Applications', 3);
+    const apps = applicationsByConcern(i);
+    const listed = apps.slice(0, PDF_LIST_MAX);
+    w.capped(listed.length, apps.length, 'applications', INTEGRATION_RUN_FILE_NAMES.applications);
+    if (apps.length === 0) w.para(i.complete ? 'No application was reported. A directory read in full that holds none is a finding, not a clean result.' : 'No application was reported, and the read was not complete.');
+    else {
+        w.table(
+            INTEGRATIONS_COLUMNS.map((title, k) => ({ title, width: [110, 65, 45, 85, 70, 65, 59][k], mono: k === 0 })),
+            listed.map(({ app, findings: own }) => integrationCells(app, own)),
+            7,
+        );
+    }
+    if (i.unknownPermissions.length > 0) {
+        w.heading(`Permissions the classification does not know (${i.unknownPermissions.length})`, 3);
+        w.para('Not called high and not called low: a person judges them.', { size: 9 });
+        for (const u of i.unknownPermissions.slice(0, PDF_LIST_MAX)) w.bullet(`${u.name} on ${u.resourceAppId ?? 'an API the read did not find'}`, { font: MONO, size: 8 });
+        w.capped(Math.min(PDF_LIST_MAX, i.unknownPermissions.length), i.unknownPermissions.length, 'unknown permissions', 'results.json');
+    }
+    if (opts.previous !== undefined) integrationsComparison(w, opts.previous);
+}
+
+/** The integrations compared with the previous run, by the same rules as the page: nothing not concluded is worded as a change. */
+function integrationsComparison(w: Writer, previous: IntegrationsPreviousRun | null): void {
+    w.heading('Integrations since the previous run', 3);
+    if (previous === null) {
+        w.para('This output directory held no earlier run, so there is nothing to compare with.', { size: 9 });
+        return;
+    }
+    if (previous.kind === 'NOT_COMPARED') {
+        w.para(`Not compared with ${previous.scanId ?? 'the previous run'}: ${word(PREVIOUS_NOT_COMPARED_TEXT, previous.reason, 'not compared')}.`, { size: 9 });
+        return;
+    }
+    const d = previous.diff;
+    const outcome =
+        d.outcome === 'DIFFERENT'
+            ? 'The integrations differ.'
+            : d.outcome === 'SAME'
+                ? 'No difference, and every comparison could be made.'
+                : 'No difference was found, but not every comparison could be made. This is not a statement that nothing changed.';
+    w.para(`Compared with ${d.old.scanId}, as of ${d.old.asOf} UTC (${d.old.complete ? 'complete' : 'incomplete'}, ${plural(d.old.applicationCount, 'application', 'applications')}). ${outcome}`, { size: 9 });
+    w.para(`${plural(d.summary.differences, 'difference', 'differences')}; ${plural(d.summary.notConcluded, 'comparison', 'comparisons')} not concluded. The full comparison is scanent diff on the two results files.`, { size: 9 });
+    const part = <T>(title: string, all: readonly T[], line: (x: T) => string, empty: string): void => {
+        w.para(`${title} (${all.length})`, { font: BOLD, size: 9, gap: 2 });
+        if (all.length === 0) w.para(empty, { size: 8.5 });
+        for (const x of all.slice(0, PDF_LIST_MAX)) w.bullet(line(x), { size: 8.5 });
+        if (all.length > PDF_LIST_MAX) w.para(`The first ${PDF_LIST_MAX} of ${all.length}.`, { size: 8.5, color: MUTED });
+    };
+    part('New applications', d.applications.added, (id) => id, 'None.');
+    part('Gone', d.applications.gone, (id) => `${id} (its source was read in full)`, 'None concluded gone.');
+    part('Not seen, not concluded', d.applications.notSeen, (x) => `${x.id}: ${word(NOT_SEEN_TEXT, x.why, x.why)}`, 'None.');
+    part(
+        'Findings',
+        d.findings,
+        (f) => `${f.code} ${f.change === 'NOT_CONCLUDED' ? `no longer raised, not concluded (${f.why ?? 'UNKNOWN'})` : f.change.toLowerCase()} ${f.sourceRef}`,
+        'No finding opened or closed.',
+    );
+}
+
 function limits(w: Writer, d: SummaryPageData): void {
     w.heading('What this document does not say', 2);
     for (const c of d.text.caveats) w.bullet(c, { size: 9 });
     w.para(`The files of this run: ${Object.values(d.files).join(', ')}.`, { size: 9, color: MUTED });
 }
 
-function footers(w: Writer, d: SummaryPageData): void {
+function footers(w: Writer, d: { readonly scan: { readonly id: string; readonly asOf: string } }): void {
     const range = w.doc.bufferedPageRange();
     for (let i = 0; i < range.count; i++) {
         w.doc.switchToPage(range.start + i);
@@ -610,12 +727,9 @@ function footers(w: Writer, d: SummaryPageData): void {
     }
 }
 
-/** The document, from the results and what the run knew of the run before it. */
-export function renderReportPdf(results: LocalResults, context: SummaryContext = {}): RenderedPdf {
-    const d = summaryPageData(results, context);
-    const when = new Date(results.scan.asOf);
-    const title = results.scan.estate === null ? `scanent results: ${results.scan.id}` : `scanent results: ${results.scan.estate}, ${results.scan.id}`;
-    const doc = new PDFDocument({
+function newDocument(title: string, asOf: string, subject: string): PDFDocument {
+    const when = new Date(asOf);
+    return new PDFDocument({
         size: 'A4',
         margins: { top: MARGIN, bottom: MARGIN, left: MARGIN, right: MARGIN },
         bufferPages: true,
@@ -625,14 +739,27 @@ export function renderReportPdf(results: LocalResults, context: SummaryContext =
         info: {
             Title: pdfText(title),
             Author: 'scanent, the Agent Estate Scanner',
-            Subject: 'Agent estate scan results',
+            Subject: subject,
             Creator: 'scanent',
             Producer: 'scanent',
             CreationDate: when,
             ModDate: when,
         },
     });
-    const w = new Writer(doc);
+}
+
+function finish(w: Writer): RenderedPdf {
+    w.doc.end();
+    const chunks: Buffer[] = [];
+    for (let chunk = w.doc.read(); chunk !== null; chunk = w.doc.read()) chunks.push(chunk);
+    return { bytes: new Uint8Array(Buffer.concat(chunks)), text: `${w.lines.join('\n')}\n` };
+}
+
+/** The document, from the results and what the run knew of the run before it. */
+export function renderReportPdf(results: LocalResults, context: SummaryContext = {}): RenderedPdf {
+    const d = summaryPageData(results, context);
+    const title = results.scan.estate === null ? `scanent results: ${results.scan.id}` : `scanent results: ${results.scan.estate}, ${results.scan.id}`;
+    const w = new Writer(newDocument(title, results.scan.asOf, 'Agent estate scan results'));
     w.lines.push(pdfText(title));
     cover(w, d, results);
     estate(w, d);
@@ -647,10 +774,62 @@ export function renderReportPdf(results: LocalResults, context: SummaryContext =
         lists(w, d);
     }
     comparison(w, d);
+    if (results.integrations !== undefined) {
+        integrationsSection(w, results.integrations, context.integrationsPrevious === undefined ? {} : { previous: context.integrationsPrevious });
+    }
     limits(w, d);
     footers(w, d);
-    doc.end();
-    const chunks: Buffer[] = [];
-    for (let chunk = doc.read(); chunk !== null; chunk = doc.read()) chunks.push(chunk);
-    return { bytes: new Uint8Array(Buffer.concat(chunks)), text: `${w.lines.join('\n')}\n` };
+    return finish(w);
+}
+
+/** What the document of an integrations-only run says first, and again in its limits. */
+export const PDF_NO_AGENT_SCAN_TEXT =
+    'The agent scanner did not run: this configuration names no agent source. This document says nothing about agents, and nothing in it is an agent result, clean or otherwise.';
+
+/**
+ * The document of a run in which only the integrations scanner ran: a cover
+ * that names the scanners that ran, the integrations section, and its limits.
+ * No agent section, so no reader takes an absent agent scan for a clean one.
+ */
+export function renderIntegrationsOnlyPdf(results: IntegrationsOnlyResults, context: Pick<SummaryContext, 'integrationsPrevious'> = {}): RenderedPdf {
+    const r = results;
+    const i = r.integrations;
+    const title = r.scan.estate === null ? `scanent results: ${r.scan.id}` : `scanent results: ${r.scan.estate}, ${r.scan.id}`;
+    const w = new Writer(newDocument(title, r.scan.asOf, 'Integrations scan results'));
+    w.lines.push(pdfText(title));
+    w.para('scanent, the Agent Estate Scanner', { color: MUTED, size: 10 });
+    w.heading('Integrations scan results', 1);
+    w.para(i.complete ? 'Integrations: complete. Every integrations source was read in full.' : 'Integrations: incomplete. Read the integrations section\'s completeness first.', {
+        font: BOLD,
+        color: i.complete ? INK : BAD,
+        gap: 6,
+    });
+    w.para(`No agent scan. ${PDF_NO_AGENT_SCAN_TEXT}`, { font: BOLD, gap: 10 });
+    w.facts(
+        [
+            ['Estate', r.scan.estate ?? 'Not stated (scored from a bare report)'],
+            ['Scan', r.scan.id],
+            ['As of (UTC)', r.scan.asOf],
+            ['Scanners that ran', 'The integrations scanner only'],
+            ['Scanner', `${r.scan.scanner.agentId}, version ${r.scan.scanner.version}`],
+            ['Scanner manifest', r.scan.scanner.manifestHash],
+            ['Report contract', i.contract],
+            ['Signed report SHA-256', i.report.sha256],
+            ['Signer', r.signer.pinned ? 'Pinned: verified against a key supplied apart from the report' : 'Not pinned: verified against the key the report itself carries'],
+        ],
+        ['Scan', 'Scanner manifest', 'Signed report SHA-256'],
+    );
+    integrationsSection(w, i, { alone: true, ...(context.integrationsPrevious === undefined ? {} : { previous: context.integrationsPrevious }) });
+    w.heading('What this document does not say', 2);
+    for (const c of [
+        PDF_NO_AGENT_SCAN_TEXT,
+        'An application absent from this document is not concluded gone, unused or clean: only what a source read in full concludes an absence.',
+        'A permission the classification does not know is neither high nor low. A person judges it.',
+        'Whether an application should hold a grant is your organisation\'s decision. The scan shows what is held, and who owns it.',
+    ]) {
+        w.bullet(c, { size: 9 });
+    }
+    w.para(`The files of this run: ${Object.values(INTEGRATIONS_ONLY_RUN_FILE_NAMES).join(', ')}.`, { size: 9, color: MUTED });
+    footers(w, { scan: { id: r.scan.id, asOf: r.scan.asOf } });
+    return finish(w);
 }

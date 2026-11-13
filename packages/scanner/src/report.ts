@@ -304,14 +304,24 @@ export function signReport(body: HarnessReportBodyV4, keys: { privateKey: KeyObj
     if (!parsed.success) {
         throw new ReportRefusedLocally(parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.code}`));
     }
-    const secretAt = firstSecretShapedMember(parsed.data);
+    return signCheckedBody(parsed.data, keys);
+}
+
+/**
+ * Sign a body that already passed its contract's schema, after the walk for a
+ * secret's shape every contract shares: what every scanner's report is signed
+ * by, so the integrations report is held to the agent report's rules (the
+ * shape, the wire bytes, the byte cap) by the same code.
+ */
+export function signCheckedBody(data: unknown, keys: { privateKey: KeyObject; publicKey: KeyObject }): string {
+    const secretAt = firstSecretShapedMember(data);
     if (secretAt !== null) throw new ReportRefusedLocally([`${secretAt}: secret-shaped`]);
 
     // Sign what the WIRE will carry, not the in-memory object: a key holding
     // `undefined` canonicalises as `null` but is dropped by JSON.stringify, so
     // the two can differ. Round-tripping first makes the signed message the one
     // the verifier recomputes from the bytes it receives.
-    const wireBody = JSON.parse(JSON.stringify(parsed.data)) as Record<string, unknown>;
+    const wireBody = JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
     const signature = {
         alg: 'ed25519' as const,
         signerKey: rawPublicKeyHex(keys.publicKey),

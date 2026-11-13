@@ -16,7 +16,7 @@ import { resolve } from 'path';
 import { ACCESS_GUIDE, GUIDE_ORDER } from '../src/init/access-guide';
 import { isDeclaredRequest, SCANNER_SURFACE, scannerManifestHash, SCANNER_VERSION } from '../src/scanner-surface';
 import { NEVER_REQUESTED, renderNetworkAndPermissionsMarkdown, WHAT_IS_READ } from '../src/surface-doc';
-import { SOURCE_KINDS_V3 } from '@rodnapamet/scanent-contract/harness-contract';
+import { ALL_SOURCE_KINDS, SCANNER_OF_SOURCE, SCANNER_TITLE, SCANNERS } from '../src/scanners';
 
 const COMMITTED = resolve(__dirname, '..', '..', '..', 'docs', 'network-and-permissions.md');
 const rendered = renderNetworkAndPermissionsMarkdown();
@@ -67,7 +67,7 @@ describe('docs/network-and-permissions.md', () => {
     });
 
     it('gives every source kind its grant, and what must not be granted', () => {
-        expect([...GUIDE_ORDER].sort()).toEqual([...SOURCE_KINDS_V3].sort());
+        expect([...GUIDE_ORDER].sort()).toEqual([...ALL_SOURCE_KINDS].sort());
         for (const kind of GUIDE_ORDER) {
             expect(rendered).toContain(`**Grant asked for.** ${ACCESS_GUIDE[kind].grant}.`);
             for (const item of ACCESS_GUIDE[kind].notNeeded) expect(rendered).toContain(`- ${item}`);
@@ -90,6 +90,7 @@ describe('docs/network-and-permissions.md', () => {
             cicd: 'https://api.github.com',
             'gcp-sa': 'https://iam.googleapis.com',
             runtime: 'https://api.smith.langchain.com',
+            'entra-integrations': 'https://graph.microsoft.com',
         };
         let checked = 0;
         for (const [kind, entries] of Object.entries(NEVER_REQUESTED)) {
@@ -102,6 +103,19 @@ describe('docs/network-and-permissions.md', () => {
         expect(checked).toBeGreaterThanOrEqual(15);
         // The detector is live: a declared read is accepted by the same check.
         expect(isDeclaredRequest('GET', 'https://acme.okta.com/api/v1/apps')).toBe(true);
+    });
+
+    it('is one surface with one hash, grouped by scanner: each source under its own, in that order', () => {
+        expect(rendered.match(/^Manifest hash: /gm)).toHaveLength(1);
+        const headings = SCANNERS.map((scanner) => rendered.indexOf(`\n## ${SCANNER_TITLE[scanner]}\n`));
+        expect(headings.every((at) => at > 0)).toBe(true);
+        expect([...headings].sort((a, b) => a - b)).toEqual(headings);
+        for (const kind of GUIDE_ORDER) {
+            const at = rendered.indexOf(`Source kind \`${kind}\``);
+            const own = SCANNERS.indexOf(SCANNER_OF_SOURCE[kind]);
+            expect([kind, at > headings[own] && (own + 1 === headings.length || at < headings[own + 1])]).toEqual([kind, true]);
+        }
+        expect(SCANNER_SURFACE.scanners.flatMap((s) => s.sources).sort()).toEqual([...ALL_SOURCE_KINDS].sort());
     });
 
     it('holds no client name, no credential-shaped text and no absolute path', () => {

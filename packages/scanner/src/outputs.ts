@@ -13,15 +13,19 @@
  * Delivery order is file, stdout, inflect: what stays in the estate is
  * written before anything leaves it. Each output is attempted whatever
  * happened to the others, and a run is delivered only when every one was.
+ *
+ * Which scanners run follows from the sources configured. The file and stdout
+ * outputs carry every report the run made; the `inflect` output posts the
+ * agent report only, and the configuration refuses it where no agent source
+ * is configured.
  */
-import type { HarnessReportBodyV4 } from '@rodnapamet/scanent-contract/harness-contract';
 import type { ParsedInventory } from '@scanent/report/results/inventory';
 
 import type { OutputConfig, ScannerConfig } from './config';
 import { OutputRefusedLocally, PointerNotUpdated, writeRun, type FileOutputDeps } from './file-output';
-import { loadConfiguredInventory, scoreScanLocally } from './local-results';
-import { previousRunOf } from './previous-run';
-import { ingestTarget, postSignedReport, runScan, type ScanDeps } from './scan';
+import { loadConfiguredInventory, scoreIntegrationsOnlyLocally, scoreScanLocally } from './local-results';
+import { previousIntegrationsOf, previousRunOf } from './previous-run';
+import { ingestTarget, postSignedReport, runScanAll, type RunScan, type ScanDeps } from './scan';
 
 export type OutputKind = OutputConfig['kind'];
 
@@ -82,7 +86,8 @@ export interface DeliveryResult {
     /** True only when every output in effect was delivered. */
     readonly ok: boolean;
     readonly delivered: readonly { readonly kind: OutputKind; readonly ok: boolean }[];
-    readonly scan: { readonly raw: string; readonly body: HarnessReportBodyV4 };
+    /** Each scanner's part of the run; null for a scanner that did not run. */
+    readonly scan: RunScan;
 }
 
 /** What a failed output is logged as: our own refusals in full (they hold paths only), anything else by its name and code. */
@@ -111,27 +116,70 @@ export async function scanAndDeliver(deps: DeliverDeps): Promise<DeliveryResult>
     // first run and not on the day somebody adds the file output.
     const inventory = (deps.loadInventory ?? loadConfiguredInventory)(config);
 
-    const scan = await runScan(deps);
+    const scan = await runScanAll(deps);
+    const agents = scan.agents;
     const delivered: { kind: OutputKind; ok: boolean }[] = [];
     for (const output of [...deps.outputs].sort((a, b) => DELIVERY_ORDER.indexOf(a.kind) - DELIVERY_ORDER.indexOf(b.kind))) {
         let ok = false;
         try {
             if (output.kind === 'file') {
-                const results = scoreScanLocally({ config, raw: scan.raw, body: scan.body, inventory, sourceNotes: scan.sourceNotes });
-                // The run the directory names as its latest, read before this one replaces the pointer.
-                const previous = previousRunOf(output.dir, results);
-                const written = writeRun(output, { raw: scan.raw, results, previous }, deps.file);
-                log.info('results written', { scan: written.scanId, dir: written.dir, files: written.files.length, removedRuns: written.removedRuns.length });
+                const integrations = scan.integrations;
+                if (agents !== null) {
+                    const results = scoreScanLocally({
+                        config,
+                        raw: agents.raw,
+                        body: agents.body,
+                        inventory,
+                        sourceNotes: agents.sourceNotes,
+                        ...(integrations === null ? {} : { integrations }),
+                    });
+                    // The run the directory names as its latest, read before this one replaces the pointer.
+                    const previous = previousRunOf(output.dir, results);
+                    const integrationsPrevious =
+                        results.integrations === undefined
+                            ? undefined
+                            : previousIntegrationsOf(output.dir, {
+                                  scan: { id: results.scan.id, asOf: results.scan.asOf, estate: results.scan.estate, scannerAgentId: results.scan.scanner.agentId },
+                                  integrations: results.integrations,
+                              });
+                    const written = writeRun(
+                        output,
+                        {
+                            raw: agents.raw,
+                            results,
+                            previous,
+                            ...(integrations === null ? {} : { integrationsRaw: integrations.raw }),
+                            ...(integrationsPrevious === undefined ? {} : { integrationsPrevious }),
+                        },
+                        deps.file,
+                    );
+                    log.info('results written', { scan: written.scanId, dir: written.dir, files: written.files.length, removedRuns: written.removedRuns.length });
+                } else if (integrations !== null) {
+                    const results = scoreIntegrationsOnlyLocally({ config, integrations });
+                    const integrationsPrevious = previousIntegrationsOf(output.dir, {
+                        scan: { id: results.scan.id, asOf: results.scan.asOf, estate: results.scan.estate, scannerAgentId: results.scan.scanner.agentId },
+                        integrations: results.integrations,
+                    });
+                    const written = writeRun(output, { results, integrationsRaw: integrations.raw, integrationsPrevious }, deps.file);
+                    log.info('results written', { scan: written.scanId, dir: written.dir, files: written.files.length, removedRuns: written.removedRuns.length });
+                }
                 ok = true;
             } else if (output.kind === 'stdout') {
-                (deps.stdout ?? ((text) => void process.stdout.write(text)))(`${scan.raw}\n`);
+                // One signed report per line: the agent report first, as it has always been printed.
+                const print = deps.stdout ?? ((text) => void process.stdout.write(text));
+                if (agents !== null) print(`${agents.raw}\n`);
+                if (scan.integrations !== null) print(`${scan.integrations.raw}\n`);
                 ok = true;
             } else {
+                // The configuration refuses this output without an agent source; a run with no agent report has nothing to post.
+                if (agents === null) throw new Error('the inflect output posts the agent report, and the agent scanner did not run');
                 // `target` is set whenever this output is in effect.
-                ok = (await postSignedReport(deps, target ?? ingestTarget(config, env), scan)).ok;
+                ok = (await postSignedReport(deps, target ?? ingestTarget(config, env), agents)).ok;
+                // The tenant has no ingest for the integrations report yet: it is kept, and said not to be sent.
+                if (scan.integrations !== null) log.info('integrations report not posted', { scan: scan.scanId, reason: 'the tenant has no ingest for it yet' });
             }
         } catch (err) {
-            log.error('output failed', { output: output.kind, scan: scan.body.scan.id, error: failureOf(err) });
+            log.error('output failed', { output: output.kind, scan: scan.scanId, error: failureOf(err) });
         }
         delivered.push({ kind: output.kind, ok });
     }

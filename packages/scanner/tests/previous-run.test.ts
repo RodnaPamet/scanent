@@ -143,18 +143,18 @@ describe('3. a second run says what changed since the first', () => {
         const runOf = (id: string) => path.join(dir, 'runs', id);
 
         // The first run had no earlier one, and says so.
-        const firstPage = fs.readFileSync(path.join(runOf(first.scan.body.scan.id), 'summary.html'), 'utf8');
+        const firstPage = fs.readFileSync(path.join(runOf(first.scan.scanId), 'summary.html'), 'utf8');
         expect((pageDataOf(firstPage) as { drift: unknown }).drift).toEqual({ kind: 'FIRST' });
         expect(firstPage).toContain('This output directory held no earlier run, so there is nothing to compare with.');
 
-        const page = fs.readFileSync(path.join(runOf(second.scan.body.scan.id), 'summary.html'), 'utf8');
+        const page = fs.readFileSync(path.join(runOf(second.scan.scanId), 'summary.html'), 'utf8');
         const drift = (pageDataOf(page) as { drift: { kind: string; old: { scanId: string }; outcomeText: string } }).drift;
-        expect(drift).toMatchObject({ kind: 'COMPARED', old: { scanId: first.scan.body.scan.id } });
-        expect(page).toContain(`Compared with <code class="id">${first.scan.body.scan.id}</code>`);
+        expect(drift).toMatchObject({ kind: 'COMPARED', old: { scanId: first.scan.scanId } });
+        expect(page).toContain(`Compared with <code class="id">${first.scan.scanId}</code>`);
         expect(page).toContain(drift.outcomeText);
 
-        const pdf = pdfTextOf(fs.readFileSync(path.join(runOf(second.scan.body.scan.id), 'report.pdf')));
+        const pdf = pdfTextOf(fs.readFileSync(path.join(runOf(second.scan.scanId), 'report.pdf')));
         expect(pdf.lines).toContain('7. Since the previous run');
-        expect(pdf.joined).toContain(`Compared with ${first.scan.body.scan.id}`);
+        expect(pdf.joined).toContain(`Compared with ${first.scan.scanId}`);
     });
 });

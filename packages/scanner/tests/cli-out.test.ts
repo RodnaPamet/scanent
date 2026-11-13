@@ -24,6 +24,7 @@ import { resolveOutputs, scanAndDeliver } from '../src/outputs';
 import { DIFF_USAGE } from '../src/diff-command';
 import * as schedule from '../src/schedule';
 import { configJson, ENV, EXAMPLE_AGENT, PUBLIC_HEX, REPO } from './helpers/output-fixtures';
+import { agentsOf } from './helpers/run-scan';
 
 const LOCAL_ENV = { SCANNER_SIGNING_KEY: ENV.SCANNER_SIGNING_KEY };
 
@@ -226,7 +227,7 @@ describe('the committed examples', () => {
         });
         expect(result.ok).toBe(true);
         expect(fetched).not.toHaveBeenCalled();
-        const results = resultsOf(result.scan.body.scan.id);
+        const results = resultsOf(agentsOf(result).body.scan.id);
         expect(results.agents[0]).toMatchObject({
             discoveredId: EXAMPLE_AGENT,
             declared: { name: 'Support order lookup', owner: 'support-operations', row: 1 },

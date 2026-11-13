@@ -25,6 +25,7 @@ import { SCANNER_VERSION } from '../src/scanner-surface';
 
 import { INCOMPLETE_REASONS, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 import { HARNESS_FINDING_CODES, planHarnessScan, type PriorHarnessState } from '@rodnapamet/scanent-contract/harness-findings';
+import { INTEGRATION_FINDING_CODES, INTEGRATION_FINDING_SEVERITY } from '@rodnapamet/scanent-contract/integrations-findings';
 import { ALL_HARNESS_CRITERIA, HARNESS_CRITERIA, HARNESS_LEVEL_NAMES, HARNESS_LEVELS, type HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 import { AGENTS_CSV_LEADING_COLUMNS, csvCriterionState, FINDINGS_CSV_COLUMNS } from '@scanent/report/render/csv';
 import { RUN_FILE_NAMES } from '@scanent/report/render/files';
@@ -241,13 +242,14 @@ describe('docs/guide/findings.md: the findings', () => {
     it('has one section for every finding code the planner has, and a row for each', () => {
         // The planner's: the local results raise no code of their own.
         const codes = [...HARNESS_FINDING_CODES];
-        const sections = [...text.matchAll(/^## `([A-Z_]+)`$/gm)].map((m) => m[1]);
+        const agentPart = text.slice(0, text.indexOf('\n## Integration findings\n'));
+        const sections = [...agentPart.matchAll(/^## `([A-Z_]+)`$/gm)].map((m) => m[1]);
         expect([...sections].sort()).toEqual([...codes].sort());
         expect(tableRows(text, 'findings').map((r) => r[0]).sort()).toEqual(codes.map((c) => `\`${c}\``).sort());
         expect(text).toContain('There are\nnine kinds.');
         expect(codes.length).toBe(9);
         // Each section answers the same five questions.
-        for (const section of text.split(/^## `/m).slice(1)) {
+        for (const section of agentPart.split(/^## `/m).slice(1)) {
             for (const part of ['**What it means.**', '**Why it matters.**', '**What to do.**', '**When it closes.**', '**Who usually owns it.**']) expect(section).toContain(part);
         }
     });
@@ -282,6 +284,27 @@ describe('docs/guide/findings.md: the findings', () => {
         const rows = tableRows(text, 'findings');
         expect(rows.filter((r) => r[2].startsWith('Yes')).map((r) => r[0].replace(/`/g, '')).sort()).toEqual([...raised].sort());
         expect(rows.filter((r) => r[2].startsWith('No')).map((r) => r[0])).toEqual(['`LEVEL_DROP`']);
+    });
+});
+
+describe('docs/guide/findings.md: the integration findings', () => {
+    const text = GUIDE['findings.md'];
+    const part = text.slice(text.indexOf('\n## Integration findings\n'), text.indexOf('\n## Where the detail is\n'));
+
+    it('explains every code the integrations planner has, in a section and a row each, after the agent findings', () => {
+        expect(text.indexOf('\n## Integration findings\n')).toBeGreaterThan(text.indexOf('## `LEVEL_DROP`'));
+        expect([...part.matchAll(/^## `([A-Z_]+)`$/gm)].map((m) => m[1])).toEqual([...INTEGRATION_FINDING_CODES]);
+        expect(tableRows(text, 'integration-findings').map((r) => r[0])).toEqual(INTEGRATION_FINDING_CODES.map((c) => `\`${c}\``));
+        for (const section of part.split(/^## `/m).slice(1)) {
+            for (const question of ['**What it means.**', '**Why it matters.**', '**What to do.**', '**When it closes.**', '**Who usually owns it.**']) expect(section).toContain(question);
+        }
+    });
+
+    it('gives each integration finding the severity the planner gives it', () => {
+        for (const [code, severity] of tableRows(text, 'integration-findings')) {
+            const stated = SEVERITIES.filter((s) => new RegExp(`\\b${s}\\b`).test(severity));
+            expect({ code, stated }).toEqual({ code, stated: [INTEGRATION_FINDING_SEVERITY[code.replace(/`/g, '') as (typeof INTEGRATION_FINDING_CODES)[number]]] });
+        }
     });
 });
 

@@ -21,8 +21,14 @@ hands the values in.
 | `render/page-script` | The page's script, as text |
 | `render/escape` | The `html` template every string enters the page through. There is no exported way to mark text as safe |
 | `render/files` | The names of the files one run writes |
+| `results/integrations` | `scoreIntegrationsLocally(input)`: the integrations scanner's signed report body to its section of the results, by the contract's planner |
+| `render/integrations-csv` | `renderIntegrationsCsv`, `renderIntegrationFindingsCsv`: one row per application, and per integration finding |
+| `render/integrations-page` | The page's and the PDF's integrations section: its static tables, its data block, its own script and style, and its comparison with the previous run |
 | `diff/diff` | `diffResults(old, new)`: what changed between two runs, and what could not be compared |
+| `diff/integrations-diff` | `diffIntegrations(old, new)`: the same for the integrations scanner, by the same rule |
+| `diff/run-diff` | `diffRuns(old, new)`: two runs scanner by scanner. Two runs of the agent scanner alone give `diffResults`' answer, unchanged |
 | `render/diff-text` | `renderDiffText`: a diff for a terminal |
+| `render/run-diff-text` | `renderRunDiffText`: a run diff for a terminal, one heading per scanner |
 
 Three rules the results keep:
 

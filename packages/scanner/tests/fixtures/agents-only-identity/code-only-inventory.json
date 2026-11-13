@@ -1,0 +1,25 @@
+{
+  "manifestHash": "sha256:556517197b8ae0345ac1831add9fef60ea426827712d46ae75734d4e27fba53b",
+  "raw": "{\"contract\":\"inflect-agent-harness/4\",\"scan\":{\"id\":\"example-code-20261114T030000Z-5ca1ab1e\",\"asOf\":\"2026-11-14T03:00:00.000Z\",\"scanner\":{\"agentId\":\"agt_example\",\"version\":\"0.14.0\",\"manifestHash\":\"sha256:556517197b8ae0345ac1831add9fef60ea426827712d46ae75734d4e27fba53b\"}},\"population\":{\"sources\":[{\"kind\":\"code\",\"status\":\"COMPLETE\",\"rows\":1}]},\"agents\":[{\"discoveredId\":\"code:example/support/agent.py#support_executor\",\"discoveredVia\":[\"code\"],\"registeredAgentId\":null,\"owner\":null,\"credentials\":[{\"ref\":\"env://OPENAI_API_KEY\",\"ageDays\":null,\"expires\":null,\"boundToAgent\":false,\"grant\":\"unknown\"}],\"tools\":[{\"server\":\"code://example/support/agent.py#L7\",\"name\":\"lookup_order\",\"manifestHash\":null,\"pinned\":false,\"readOnlyHint\":null}],\"skills\":[],\"verdicts\":[],\"models\":[{\"endpoint\":\"https://api.openai.com/v1\",\"model\":\"gpt-4o\"}],\"paymentCapabilities\":[]}],\"findings\":[],\"unboundCredentials\":[],\"signature\":{\"alg\":\"ed25519\",\"signerKey\":\"ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c\",\"sig\":\"0a47634d8d0ba8a315839b4253aeb1e96fd6a1282eebb30c5769c94b0729957cce071432f9ab388ba3af75c56f92b2a1bb83fd4dd712ad6c59298766eae26e03\"}}",
+  "files": {
+    "first/report.signed.json": "561e540bf2aa12398f23ebc1ef9c0a0713b61dda20bf025abf30fd35c67c293d",
+    "first/results.json": "8a061ff0f4dc37aee6a79e7ed3b8f0fc8fcd9af1fe7915126e6210fa193fb647",
+    "first/agents.csv": "cbadb9c8989cdeebcbb25c9901dab42552294f860e16d4ba547ea7e676c14826",
+    "first/findings.csv": "4d46c6f3b67d006d814c45124f1c18c8044a9e9bd7be051b2762079afa769a00",
+    "first/summary.html": "4f418e2d82a45dcbb2fcc557aaebc47086e3cb9a9b2030dcb68ad6c7fafcce37",
+    "first/report.pdf": "3d38ea9607dc45c38f2673a1c7e19f44ad7c23645a2ef4b026d1b34152cab8b4",
+    "second/report.signed.json": "25ad6cc754efd511fe20b42d50b412d99ebe05f27785c6bf1a79e028e4d73e0d",
+    "second/results.json": "221663de334ad8a12ae84b589c2c3be1829381383b9b75399f0329abdf8a78ea",
+    "second/agents.csv": "cbadb9c8989cdeebcbb25c9901dab42552294f860e16d4ba547ea7e676c14826",
+    "second/findings.csv": "b03ea2a0fbb1e5fb60662a359471cdb7a8617640d354e56793f442374a004a75",
+    "second/summary.html": "f9ce1f686f1837451f123a612039492dfe6e1687c9d6bd012e20bd51fc4f65e8",
+    "second/report.pdf": "f05695444f0f9affaf926a636d56927cd5333f176314f2a1bca87a07361ded25",
+    "written/agents.csv": "cbadb9c8989cdeebcbb25c9901dab42552294f860e16d4ba547ea7e676c14826",
+    "written/findings.csv": "4d46c6f3b67d006d814c45124f1c18c8044a9e9bd7be051b2762079afa769a00",
+    "written/manifest.json": "624f9aad176b883b70b95ba5bb82a5f53fe5ae67a33be7da5ad8039f2e63cd1f",
+    "written/report.pdf": "3d38ea9607dc45c38f2673a1c7e19f44ad7c23645a2ef4b026d1b34152cab8b4",
+    "written/report.signed.json": "561e540bf2aa12398f23ebc1ef9c0a0713b61dda20bf025abf30fd35c67c293d",
+    "written/results.json": "8a061ff0f4dc37aee6a79e7ed3b8f0fc8fcd9af1fe7915126e6210fa193fb647",
+    "written/summary.html": "4f418e2d82a45dcbb2fcc557aaebc47086e3cb9a9b2030dcb68ad6c7fafcce37"
+  }
+}

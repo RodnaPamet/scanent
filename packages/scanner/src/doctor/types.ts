@@ -43,6 +43,12 @@ export interface DoctorReport {
     readonly ready: boolean;
     readonly counts: Readonly<Record<CheckStatus, number>>;
     readonly exitCode: number;
+    /**
+     * Which scopes belong to which scanner, for each scanner whose sources the
+     * configuration names (the `inflect` output is the agent scanner's: it
+     * posts the agent report). A scope in none is the platform's (`local`).
+     */
+    readonly scanners: readonly { readonly scanner: 'agents' | 'integrations'; readonly scopes: readonly string[] }[];
     readonly checks: readonly Check[];
 }
 

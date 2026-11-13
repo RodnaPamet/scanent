@@ -39,6 +39,7 @@ files in a directory you choose.
 | Azure Key Vault (`vault`) | One tag of a secret or certificate (`owner` by default) | Whatever your estate wrote there to name the accountable person | `owner.id`: the value as written |
 | The tenant's register (`inflect-register`) | A registered agent's owner | The tenant's own user id for the owner | `owner.id`: a user id |
 | The operator's inventory (a file you write) | `name`, `owner`, `purpose` per agent | What you declared. `owner` may be a person's name, a team, or an address | In `results.json`, `agents.csv` and `summary.html`, labelled as declared. Never in the signed report |
+| Microsoft Entra ID, for integrations (`entra-integrations`) | The owners of an application's service principal and, for the directory's own applications, of its registration; the people a delegated grant was made for | Directory object ids of owners. For a grant made for named people, the object ids of those people | `owners[]`: object ids (GUIDs), at most 20 per application, with their kind. The people a grant was made for are counted (`principalCount`) and their ids dropped: no consenting person is ever in an output. An application's display name is kept as the directory holds it; it is a name its publisher or your administrator chose |
 | GitHub Actions (`cicd`), Google Cloud (`gcp-sa`), LangSmith (`runtime`), MCP servers (`mcp`), code (`code`) | None | These sources yield no owner. A Google service account's e-mail address is read to tell the scanner's own account apart and is not reported | Nothing |
 
 A user's object id or user id is a pseudonymous identifier: on its own it
@@ -139,6 +140,7 @@ criminal convictions are not read.
 |---|---|---|
 | The signed report (`report.signed.json`, or stdout, or posted to a tenant) | Your output directory; a tenant only if you configure one | Owner ids, as above. No declared inventory fields |
 | `results.json`, `agents.csv`, `summary.html`, `report.pdf` | Your output directory | Owner ids, and the inventory's declared `name`, `owner` and `purpose` |
+| `report.integrations.signed.json`, `integrations.csv`, `integration-findings.csv`, and the integrations section of `results.json`, `summary.html` and `report.pdf` | Your output directory, only when an integrations source is configured. The integrations report is not posted to a tenant | Application owners' object ids, application display names, and counts of people a grant was made for. No consenting person's id |
 | `findings.csv` | Your output directory | Agent ids and credential references. A finding names an agent or a credential by its id; for the sources listed under "Indirectly" above, that id holds names your estate chose (a secret's name, a workflow file, a path), and a person's name written there is carried |
 | The log (stderr) | Wherever your platform sends a container's stderr | None by design: kinds, counts, scan ids, host names. No owner, no agent id (`docs/operations.md`) |
 | A support bundle | Where you write it, if you run the command | None by default: every name and id is replaced by a token. With `--include-identifiers`: agent ids, the estate's name, the tenant's host and slug, configured hosts, labels, paths, and the text of each doctor check |
@@ -192,7 +194,7 @@ is true of the scanner; change it only where your deployment differs.
 |---|---|---|
 | What is done? | A scheduled, read-only inventory of non-human identities and AI agents, with a per-agent control level and findings | |
 | Why? (purpose) | To know which agents and service identities exist, who owns each, and whether the controls expected of them are in place | *(your stated purpose)* |
-| Which sources? | Those you configure, of: Entra ID, Okta, Azure Key Vault, GitHub Actions, Google Cloud IAM, LangSmith, MCP servers, code repositories, a tenant's register | |
+| Which sources? | Those you configure, of: Entra ID (for agents, and for the applications it has granted access to), Okta, Azure Key Vault, GitHub Actions, Google Cloud IAM, LangSmith, MCP servers, code repositories, a tenant's register | |
 | How often? | `schedule.everyHours` in the configuration | |
 | Who runs it, where? | A container in your estate | *(team, cluster or host)* |
 | Who has access to the outputs? | Whoever can read the output directory | *(roles)* |

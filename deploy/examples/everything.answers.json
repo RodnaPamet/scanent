@@ -19,6 +19,12 @@
     { "kind": "gcp-sa", "projects": ["acme-prod-204"] },
     { "kind": "runtime", "endpoint": { "cloud": "eu" } },
     { "kind": "mcp", "servers": [{ "label": "crm", "url": "https://mcp.acme.example/crm/mcp", "readToken": true }] },
-    { "kind": "code", "roots": [{ "label": "agents", "path": "/estate" }] }
+    { "kind": "code", "roots": [{ "label": "agents", "path": "/estate" }] },
+    {
+      "kind": "entra-integrations",
+      "directoryId": "11111111-2222-4333-8444-555555555555",
+      "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+      "readSignInActivity": true
+    }
   ]
 }

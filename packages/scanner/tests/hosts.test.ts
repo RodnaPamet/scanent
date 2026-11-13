@@ -13,6 +13,7 @@ import { hostNames, hostsFor, renderHosts } from '../src/hosts';
 import { jsonLineLog } from '../src/log';
 import { scanAndDeliver } from '../src/outputs';
 import { createDoctorWorld, fullEstateConfig, fullEstateEnv } from './helpers/doctor-world';
+import { agentsOf } from './helpers/run-scan';
 
 let dir: string;
 beforeEach(() => {
@@ -47,7 +48,7 @@ describe('hostsFor', () => {
         const eu = parseScannerConfig({ ...base, outputs: [{ kind: 'stdout' }], sources: [{ kind: 'runtime', product: 'langsmith', endpoint: { cloud: 'eu' }, apiKeyEnv: 'L' }] });
         expect(hostNames(hostsFor(eu))).toEqual(['eu.api.smith.langchain.com']);
         const own = parseScannerConfig({ ...base, outputs: [{ kind: 'stdout' }], sources: [{ kind: 'runtime', product: 'langsmith', endpoint: { selfHosted: 'https://langsmith.acme.example' }, apiKeyEnv: 'L' }] });
-        expect(hostsFor(own)).toEqual([{ host: 'langsmith.acme.example', port: 443, source: 'runtime', purpose: 'read', named: 'configured' }]);
+        expect(hostsFor(own)).toEqual([{ scanner: 'agents', host: 'langsmith.acme.example', port: 443, source: 'runtime', purpose: 'read', named: 'configured' }]);
         const inflect = { baseUrl: 'https://tenant.example.com', tenantSlug: 't', apiKeyEnv: 'I' };
         const code = [{ kind: 'code', product: 'langchain', roots: [{ label: 'r', path: '/srv/code' }] }];
         // An inflect block with no outputs posts, as it always has; one with only a file output does not.
@@ -68,14 +69,39 @@ describe('hostsFor', () => {
             now: () => Date.parse('2026-10-19T03:00:00.000Z'),
         });
         expect(result.ok).toBe(true);
-        expect(result.scan.body.population.sources.filter((s) => s.status !== 'COMPLETE')).toEqual([]);
+        expect(agentsOf(result).body.population.sources.filter((s) => s.status !== 'COMPLETE')).toEqual([]);
         expect([...new Set(world.log.map((r) => r.host))].sort()).toEqual(hostNames(hostsFor(config)));
     });
 });
 
 describe('the three formats', () => {
-    it('lines: host:443, sorted, one per line', () => {
-        expect(renderHosts(hostsFor(full()), 'lines').split('\n').filter(Boolean)).toEqual(hostNames(hostsFor(full())).map((h) => `${h}:443`));
+    /** The full estate with the integrations scanner's source beside the agent scanner's. */
+    const both = () => {
+        const c = fullEstateConfig('/out');
+        const integrations = { kind: 'entra-integrations', directoryId: '11111111-2222-4333-8444-555555555555', clientId: '11111111-2222-4333-8444-555555555555', clientSecretEnv: 'X' };
+        return parseScannerConfig({ ...c, sources: [...(c.sources as unknown[]), integrations] });
+    };
+
+    it('lines: grouped by scanner, each group under its heading, host:443, sorted, one per line', () => {
+        const entries = hostsFor(both());
+        const of = (scanner: string) => hostNames(entries.filter((e) => e.scanner === scanner)).map((h) => `${h}:443`);
+        expect(renderHosts(entries, 'lines').split('\n').filter(Boolean)).toEqual(['# agent scanner', ...of('agents'), '# integrations scanner', ...of('integrations')]);
+        // A host two scanners reach is listed under each: here, the identity platform and Graph.
+        expect(of('integrations')).toEqual(['graph.microsoft.com:443', 'login.microsoftonline.com:443']);
+        expect(of('agents')).toEqual(expect.arrayContaining(of('integrations')));
+        // Every host, once the headings are set aside.
+        expect([...new Set(renderHosts(entries, 'lines').split('\n').filter((l) => l !== '' && !l.startsWith('#')))].sort()).toEqual(hostNames(entries).map((h) => `${h}:443`));
+        // A scanner that reaches no host has no heading.
+        const integrationsOnly = hostsFor(parseScannerConfig({ estate: 'a', scanner: { agentId: 'a', signingKeyEnv: 'K' }, schedule: { everyHours: 1 }, outputs: [{ kind: 'stdout' }], sources: [{ kind: 'entra-integrations', directoryId: '11111111-2222-4333-8444-555555555555', clientId: '11111111-2222-4333-8444-555555555555', clientSecretEnv: 'X' }] }));
+        expect(renderHosts(integrationsOnly, 'lines')).toBe('# integrations scanner\ngraph.microsoft.com:443\nlogin.microsoftonline.com:443\n');
+    });
+
+    it('json: each entry names its scanner, the agent scanner\'s first; the ingest is the agent scanner\'s', () => {
+        const entries = hostsFor(both());
+        const scanners = entries.map((e) => e.scanner);
+        expect(scanners).toEqual([...scanners].sort((a, b) => (a === b ? 0 : a === 'agents' ? -1 : 1)));
+        expect(entries.find((e) => e.source === 'inflect')?.scanner).toBe('agents');
+        expect(entries.filter((e) => e.scanner === 'integrations').map((e) => e.source)).toEqual(['entra-integrations', 'entra-integrations']);
     });
 
     it('egress-allow: the value the bundled proxy\'s EGRESS_ALLOW takes', () => {

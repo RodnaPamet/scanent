@@ -18,15 +18,23 @@ export const DEFAULT_OUTPUT_DIR = '/out';
 export const DEFAULT_EVERY_HOURS = 24;
 export const DEFAULT_SIGNING_KEY_ENV = 'SCANNER_SIGNING_KEY';
 export const DEFAULT_INGEST_KEY_ENV = 'INFLECT_INGEST_KEY';
+/** The `entra-sp` source's secret variable: the integrations source names it too when it reads with the same application. */
+export const DEFAULT_ENTRA_SECRET_ENV = 'ENTRA_CLIENT_SECRET';
 
 /** Each kind's product (where the configuration has the field) and the default name of its credential's variable. */
 const SOURCE_DEFAULTS: Readonly<Record<Exclude<SourceAnswer['kind'], 'mcp' | 'code'>, { product?: string; envField: string; envName: string; file: boolean; what: string }>> = {
-    'entra-sp': { envField: 'clientSecretEnv', envName: 'ENTRA_CLIENT_SECRET', file: false, what: 'Entra: client secret of the application holding Application.Read.All.' },
+    'entra-sp': { envField: 'clientSecretEnv', envName: DEFAULT_ENTRA_SECRET_ENV, file: false, what: 'Entra: client secret of the application holding Application.Read.All.' },
     vault: { product: 'azure-key-vault', envField: 'clientSecretEnv', envName: 'AZURE_CLIENT_SECRET', file: false, what: 'Azure Key Vault: client secret of the application holding Key Vault Reader.' },
     'okta-app': { envField: 'apiTokenEnv', envName: 'OKTA_API_TOKEN', file: false, what: 'Okta: SSWS API token of a Read-only Administrator.' },
     cicd: { product: 'github-actions', envField: 'tokenEnv', envName: 'GITHUB_READ_TOKEN', file: false, what: 'GitHub: fine-grained token with Contents: Read-only and Secrets: Read-only.' },
     'gcp-sa': { product: 'gcp-iam', envField: 'keyEnv', envName: 'GCP_SCANNER_KEY', file: true, what: 'Google Cloud: the service-account key file (JSON). A file, because the key has line breaks.' },
     runtime: { product: 'langsmith', envField: 'apiKeyEnv', envName: 'LANGSMITH_API_KEY', file: false, what: 'LangSmith: service key holding the workspace Viewer role.' },
+    'entra-integrations': {
+        envField: 'clientSecretEnv',
+        envName: 'ENTRA_INTEGRATIONS_CLIENT_SECRET',
+        file: false,
+        what: 'Entra integrations: client secret of the application holding Application.Read.All and Directory.Read.All (and AuditLog.Read.All for sign-in activity). It may be the entra-sp application.',
+    },
 };
 
 /** `MCP_<LABEL>_TOKEN`: the label upper-cased, `-` to `_`. */
@@ -79,7 +87,10 @@ function sourceConfigOf(answer: SourceAnswer): Record<string, unknown> {
 function credentialNamesOf(config: ScannerConfig): CredentialName[] {
     const out: CredentialName[] = [];
     const add = (name: string, file: boolean, what: string) => {
-        if (!out.some((c) => c.name === name)) out.push({ name, file, for: what });
+        const at = out.findIndex((c) => c.name === name);
+        if (at < 0) out.push({ name, file, for: what });
+        // One variable two sources share (the two Entra sources, one application): it says what both need.
+        else if (!out[at].for.includes(what)) out[at] = { ...out[at], for: `${out[at].for} ${what}` };
     };
     add(config.scanner.signingKeyEnv, true, 'The Ed25519 signing key (PKCS#8 PEM). A file, because a PEM has line breaks.');
     if (config.inflect !== undefined) add(config.inflect.apiKeyEnv, false, 'Inflect: API key with admin:harness_ingest (and mcp:read when the register is read).');

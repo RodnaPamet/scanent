@@ -36,7 +36,7 @@ import { HARNESS_CONTRACT_IDS } from '@rodnapamet/scanent-contract/harness-contr
 import { LADDER_VERSION } from '@rodnapamet/scanent-contract/harness-contract';
 import { stableJson } from '@scanent/report/render/results-json';
 import { INVENTORY_SCHEMA_ID } from '@scanent/report/results/inventory';
-import { RESULTS_SCHEMA } from '@scanent/report/results/types';
+import { INTEGRATIONS_ONLY_RESULTS_SCHEMA, RESULTS_SCHEMA } from '@scanent/report/results/types';
 
 import { ConfigError, parseScannerConfig, sourceCredentialEnv, type ScannerConfig } from './config';
 import { PROXY_CHECKS_ADDRESSES_ENV } from './customer-host';
@@ -381,7 +381,7 @@ function lastRunSection(fs: SupportFs, dir: string, ids: Identifiers): SupportLa
     const results = rec(read.value);
     const schema = str(results.schema);
     // A results file of another schema is named and not read further: its members may mean something else.
-    if (schema !== RESULTS_SCHEMA) return { ...base, ...none, resultsSchema: schema === null ? null : schema.slice(0, 64), resultsProblem: 'UNKNOWN_SCHEMA' };
+    if (schema !== RESULTS_SCHEMA && schema !== INTEGRATIONS_ONLY_RESULTS_SCHEMA) return { ...base, ...none, resultsSchema: schema === null ? null : schema.slice(0, 64), resultsProblem: 'UNKNOWN_SCHEMA' };
 
     const scan = rec(results.scan);
     const scanner = rec(scan.scanner);
@@ -396,6 +396,23 @@ function lastRunSection(fs: SupportFs, dir: string, ids: Identifiers): SupportLa
         const s = str(v);
         return s !== null && /^[A-Za-z0-9_.:/-]{1,128}$/.test(s) ? s : null;
     };
+    // A run in which only the integrations scanner ran: its scanner and its sources, and no agent member, since no agent scan ran.
+    if (schema === INTEGRATIONS_ONLY_RESULTS_SCHEMA) {
+        const integrations = rec(results.integrations);
+        return {
+            ...base,
+            ...none,
+            agentCount: null,
+            resultsProblem: null,
+            resultsSchema: schema,
+            scanner: { version: code(scanner.version) ?? 'unknown', manifestHash: code(scanner.manifestHash) ?? 'unknown' },
+            contract: code(integrations.contract),
+            sources: list(integrations.sources).map((x) => {
+                const source = rec(x);
+                return { kind: code(source.kind) ?? 'unknown', status: code(source.status) ?? 'unknown', reason: code(source.reason), rows: num(source.rows), agents: null };
+            }),
+        };
+    }
     return {
         ...base,
         resultsProblem: null,

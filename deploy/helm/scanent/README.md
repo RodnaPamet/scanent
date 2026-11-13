@@ -114,6 +114,7 @@ each on port 443. For the `everything` example they are:
 | `runtime` | `eu.api.smith.langchain.com` |
 | `mcp` | `mcp.acme.example` |
 | `code` | none |
+| `entra-integrations` | `graph.microsoft.com`, `login.microsoftonline.com` |
 <!-- hosts:end -->
 
 ### `networkPolicy.flavor: kubernetes` (default)

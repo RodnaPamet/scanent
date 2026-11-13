@@ -35,7 +35,8 @@
  */
 import { z } from 'zod';
 
-import { looksLikeSecret, SOURCE_KINDS } from '@rodnapamet/scanent-contract/harness-contract';
+import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract';
+import { DEFAULT_UNUSED_DAYS, MAX_UNUSED_DAYS, MIN_UNUSED_DAYS } from '@rodnapamet/scanent-contract/integrations-findings';
 
 import { customerOriginProblem, parsePrivateCidrAllowlist } from './customer-host';
 import { httpsOrigin } from './http';
@@ -48,6 +49,7 @@ import {
     LANGSMITH_MAX_WINDOW_DAYS,
 } from './sources/langsmith';
 import { OKTA_HOST_SUFFIXES } from './sources/okta';
+import { ALL_SOURCE_KINDS, isAgentSourceKind } from './scanners';
 
 const envName = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/, 'an environment variable NAME, never a value');
 const slug = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/);
@@ -104,6 +106,32 @@ const EntraSourceConfigSchema = z
          * reported.
          */
         includeThirdPartyApplications: z.boolean().default(false),
+    })
+    .strict();
+
+/**
+ * The integrations scanner's Entra reader: what the directory has granted to
+ * applications. Its own kind beside `entra-sp`, which may name the same
+ * directory, client and secret variable: the agent scanner and the
+ * integrations scanner read one product with one credential, and each reports
+ * it under its own contract.
+ */
+const EntraIntegrationsSourceConfigSchema = z
+    .object({
+        kind: z.literal('entra-integrations'),
+        directoryId: guidString,
+        /** An application holding `Application.Read.All` and `Directory.Read.All`, and nothing that writes. */
+        clientId: guidString,
+        clientSecretEnv: envName,
+        /**
+         * Also read each application's last sign-in (the beta report
+         * `servicePrincipalSignInActivities`), which needs `AuditLog.Read.All`
+         * and a directory licence that records it. Off, "unused" is never
+         * concluded, and the results say why.
+         */
+        readSignInActivity: z.boolean().default(false),
+        /** An application with no sign-in within this many days is unused. The owner's default is 90. */
+        unusedDays: z.number().int().min(MIN_UNUSED_DAYS).max(MAX_UNUSED_DAYS).default(DEFAULT_UNUSED_DAYS),
     })
     .strict();
 
@@ -318,6 +346,7 @@ export const SourceConfigSchema = z.discriminatedUnion('kind', [
     InflectRegisterSourceConfigSchema,
     GitHubActionsSourceConfigSchema,
     GcpServiceAccountSourceConfigSchema,
+    EntraIntegrationsSourceConfigSchema,
 ]);
 
 const OutputConfigSchema = z.discriminatedUnion('kind', [
@@ -413,7 +442,7 @@ export const ScannerConfigSchema = z
             })
             .strict()
             .optional(),
-        sources: z.array(SourceConfigSchema).min(1).max(SOURCE_KINDS.length),
+        sources: z.array(SourceConfigSchema).min(1).max(ALL_SOURCE_KINDS.length),
     })
     .strict()
     .superRefine((c, ctx) => {
@@ -424,6 +453,18 @@ export const ScannerConfigSchema = z
         const outputKinds = (c.outputs ?? []).map((o) => o.kind);
         if (new Set(outputKinds).size !== outputKinds.length) {
             ctx.addIssue({ code: 'custom', message: 'each output kind appears once', path: ['outputs'] });
+        }
+        // Which scanners run follows from the sources configured. The tenant's ingest
+        // takes the agent report only, so posting needs an agent source: an
+        // `inflect` output in effect (named, or meant by an `inflect` block with
+        // no `outputs`) over integrations sources alone would send nothing.
+        const inflectOutput = c.outputs !== undefined ? outputKinds.includes('inflect') : c.inflect !== undefined;
+        if (inflectOutput && !kinds.some(isAgentSourceKind)) {
+            ctx.addIssue({
+                code: 'custom',
+                message: 'the inflect output posts the agent report, and no agent source is configured: name the file or stdout output',
+                path: ['outputs'],
+            });
         }
         if (c.inflect === undefined && (outputKinds.includes('inflect') || kinds.includes('inflect-register') || c.egress !== undefined)) {
             ctx.addIssue({
@@ -520,6 +561,8 @@ export function sourceCredentialEnv(source: Exclude<SourceConfig, { kind: 'code'
             return source.tokenEnv;
         case 'gcp-sa':
             return source.keyEnv;
+        case 'entra-integrations':
+            return source.clientSecretEnv;
     }
 }
 

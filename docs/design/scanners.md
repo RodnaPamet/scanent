@@ -1,10 +1,19 @@
 # Several scanners in one scanent
 
-> **Status: decided, not built (2026-11-13).** The owner decided the shape:
-> one scanent with several scanners, the integrations scanner first, then a
-> vulnerability scanner, then a static, model-assisted adversarial reviewer
-> that sends nothing to a client's agents. The owner's answers to this page's
-> questions are under "Decisions" at the end. Nothing here is built.
+> **Status: decided; step 1 of the integrations scanner built (Entra), not
+> released (2026-11-13).** The owner decided the shape: one scanent with several
+> scanners, the integrations scanner first, then a vulnerability scanner, then
+> a static, model-assisted adversarial reviewer that sends nothing to a
+> client's agents. The owner's answers to this page's questions are under
+> "Decisions" at the end. Built so far: the platform split (scanners, one
+> declared surface grouped by scanner, one signed report per scanner), the
+> contract `scanent-integrations/1` with its planner, and its Entra reader
+> (`entra-integrations`) with the four decided findings and the empty
+> inventory, run with the agent scanner or on its own, compared run to run and
+> by `scanent diff`, with `doctor` and `hosts` grouped by scanner
+> ([scanner.md](../scanner.md#the-integrations-scanner)). Not built: the Okta
+> and GitHub readers, Inflect's ingest for the integrations report, the
+> vulnerability scanner and the adversarial reviewer.
 
 ## What exists today
 
@@ -151,3 +160,17 @@ Taken by the owner on 2026-11-13:
    default; a model the client hosts, or a named external provider the client
    opts in to (Anthropic, Azure OpenAI or Bedrock). Its host is declared in
    the network statement and named in the report.
+6. **Chat, calendar and site content is high-privilege** (2026-11-13). A
+   Microsoft Graph permission that reads chat, calendar or SharePoint site
+   content counts as a high-privilege grant, as mail and files do: for example
+   `Chat.Read.All`, `ChatMessage.Read.All`, `Calendars.Read`,
+   `Calendars.ReadBasic.All`, `Sites.Read.All`, and their delegated and `.All`
+   variants that read others' content. `User.Read.All` and `AuditLog.Read.All`
+   stay below the bar (profiles and logs, not content), and are classified as
+   such rather than left unknown
+   (`packages/contract/src/integrations-scopes.ts`).
+7. **An integrations-only configuration runs on its own** (2026-11-13). Which
+   scanners run follows from the sources configured, with no agent source
+   required; a run of the integrations scanner alone writes no agent report
+   and no agent section, and says on its page and in its PDF which scanners
+   ran.

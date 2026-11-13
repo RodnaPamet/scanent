@@ -50,6 +50,10 @@ Each module is imported by its own path. There is no index module.
 | `@rodnapamet/scanent-contract/receipt-verification` | Agent-action receipts: the schema and `verifyReceiptSignature` |
 | `@rodnapamet/scanent-contract/audit-redact` | `redactSensitiveFields` |
 | `@rodnapamet/scanent-contract/cidr` | `parseCidr`, `parseAddress`, `inCidr` |
+| `@rodnapamet/scanent-contract/integrations-contract` | The integrations scanner's report: `IntegrationsReportBodyV1Schema`, `verifyAndParseIntegrationsReport` |
+| `@rodnapamet/scanent-contract/integrations-contract-rules` | Its contract id, source kinds and limits: `INTEGRATIONS_CONTRACT_V1`, `INTEGRATIONS_SOURCE_KINDS`, `isIntegrationsScanComplete` |
+| `@rodnapamet/scanent-contract/integrations-scopes` | Which Microsoft Graph permissions are high-privilege: `GRAPH_PERMISSION_CLASSES`, `classifyPermission` |
+| `@rodnapamet/scanent-contract/integrations-findings` | `planIntegrationsScan`: the integration findings, and what is not concluded |
 
 ```ts
 import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
@@ -65,7 +69,9 @@ if (result.ok) {
 The package is CommonJS with type declarations, for Node 22 or later. It uses
 Node's `crypto`, so it runs on a server and not in a browser, except
 `harness-matrix-model` and the `harness-ladder` it imports, which import
-nothing else. Its one dependency is `zod`, at an exact version.
+nothing else, and `integrations-findings` with the `integrations-scopes` it
+imports, which import nothing else at run time. Its one dependency is `zod`,
+at an exact version.
 
 ## Licence
 
