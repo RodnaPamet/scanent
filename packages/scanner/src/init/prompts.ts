@@ -20,7 +20,7 @@
 import { ScannerConfigSchema, SourceConfigSchema } from '../config';
 import { ANSWERABLE_KINDS, INIT_ANSWERS_SCHEMA, type AnswerableKind, type InitAnswers, type SourceAnswer } from './answers';
 import { ACCESS_GUIDE, credentialVariable } from './access-guide';
-import { DEFAULT_ENTRA_SECRET_ENV, DEFAULT_EVERY_HOURS, DEFAULT_INGEST_KEY_ENV, DEFAULT_OUTPUT_DIR, mcpTokenEnvName } from './plan';
+import { DEFAULT_ENTRA_SECRET_ENV, DEFAULT_EVERY_HOURS, DEFAULT_INGEST_KEY_ENV, DEFAULT_INTEGRATIONS_INGEST_KEY_ENV, DEFAULT_OUTPUT_DIR, mcpTokenEnvName } from './plan';
 import { looksLikeBareToken, looksLikeCredential } from './secret-shapes';
 
 export interface PromptIo {
@@ -243,12 +243,14 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
     );
 
     let inflect: InitAnswers['inflect'] = null;
-    // The tenant takes the agent report only: with no agent source there is nothing to post, so the question is not asked.
-    if (agentSourceChosen && (await yes('Post results to an Inflect tenant?'))) {
+    const integrationsChosen = integrations.length > 0;
+    // Each report goes to the tenant's ingest for it, with a key of its own. With integrations sources
+    // alone there is only the integrations report, and posting it is asked about in its own words.
+    if (await yes(agentSourceChosen ? 'Post results to an Inflect tenant?' : 'Post the integrations report to an Inflect tenant?')) {
         const shape = ScannerConfigSchema.shape;
         const inflectShape = shape.inflect.unwrap().shape;
         // Said BEFORE the tenant's questions: the next three ask about the tenant, and none of them is the key.
-        io.say(`The API key is not asked for here: it goes in ${DEFAULT_INGEST_KEY_ENV}.`);
+        if (agentSourceChosen) io.say(`The API key is not asked for here: it goes in ${DEFAULT_INGEST_KEY_ENV}.`);
         const baseUrl = await ask('Tenant base URL (https origin):', (v) => (inflectShape.baseUrl.safeParse(v).success ? null : 'An https origin, with no path.'));
         const tenantSlug = await ask('Tenant slug:', (v) => (inflectShape.tenantSlug.safeParse(v).success ? null : 'Lower-case letters, digits and hyphens.'), true);
         const agentId = await ask(
@@ -256,8 +258,28 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
             (v) => (shape.scanner.shape.agentId.safeParse(v).success ? null : 'Letters, digits, hyphens and underscores, at most 64 characters.'),
             true,
         );
-        const readRegister = await yes("Also read the tenant's agent register?");
-        inflect = { baseUrl, tenantSlug, agentId, readRegister };
+        // The register is an agent source: it is offered only beside the agent scanner's.
+        const readRegister = agentSourceChosen ? await yes("Also read the tenant's agent register?") : false;
+        // The integrations report needs a second key, with admin:integrations_ingest: beside an agent
+        // report, posting it is a choice; alone, it is the reason to post at all.
+        let integrationsApiKeyEnv: string | undefined;
+        if (integrationsChosen && (!agentSourceChosen || (await yes('Also post the integrations report? It needs a second API key, with admin:integrations_ingest')))) {
+            integrationsApiKeyEnv =
+                (await ask(
+                    `The variable that will hold the integrations report's API key: a variable NAME, never the key [${DEFAULT_INTEGRATIONS_INGEST_KEY_ENV}]:`,
+                    (v) =>
+                        v === ''
+                            ? null
+                            : !inflectShape.integrationsApiKeyEnv.safeParse(v).success
+                                ? 'An environment variable name: capital letters, digits and underscores, starting with a letter.'
+                                : agentSourceChosen && v === DEFAULT_INGEST_KEY_ENV
+                                    ? `A variable of its own, not ${DEFAULT_INGEST_KEY_ENV}: a key minted for one report does not post the other.`
+                                    : null,
+                    true,
+                )) || DEFAULT_INTEGRATIONS_INGEST_KEY_ENV;
+            io.say(`The API key is not asked for here: it goes in ${integrationsApiKeyEnv}.`);
+        }
+        inflect = { baseUrl, tenantSlug, agentId, readRegister, ...(integrationsApiKeyEnv === undefined ? {} : { integrationsApiKeyEnv }) };
     }
 
     return {

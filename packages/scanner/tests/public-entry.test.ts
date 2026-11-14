@@ -34,6 +34,8 @@ describe('the public entry point', () => {
                 // Outputs and the diff (Phase 2): where a run is delivered, the file writer and its refusal, and the comparison.
                 'DIFF_USAGE', 'DiffInputError', 'NOWHERE_TO_DELIVER', 'OutputRefusedLocally', 'OutputsError', 'SCAN_ID_PATTERN', 'ingestTarget',
                 'postSignedReport', 'resolveOutputs', 'runDiff', 'scanAndDeliver', 'writeRun',
+                // The integrations report's post (0.16.0): the post itself, its logged form and its key.
+                'integrationsIngestTarget', 'postIntegrationsReport', 'postSignedIntegrationsReport',
                 // Client deployment (Phase 3): exit codes, secret files, key generation, hosts, the proxy's description,
                 // the setup wizard (answers, planner, access guide, writer) and the preflight.
                 'ACCESS_GUIDE', 'DOCTOR_SCHEMA', 'EXIT', 'EXIT_CODE_TABLE', 'INIT_ANSWERS_SCHEMA', 'InitError', 'InitRefused', 'KeygenError',
@@ -48,6 +50,8 @@ describe('the public entry point', () => {
         expect(api.parseScannerConfig).toBe(config.parseScannerConfig);
         expect(api.ConfigError).toBe(config.ConfigError);
         expect(api.postReport).toBe(post.postReport);
+        expect(api.postIntegrationsReport).toBe(post.postIntegrationsReport);
+        expect(api.postSignedIntegrationsReport).toBe(scan.postSignedIntegrationsReport);
         expect(api.signReport).toBe(report.signReport);
         expect(api.runScan).toBe(scan.runScan);
         expect(api.scanAndPost).toBe(scan.scanAndPost);

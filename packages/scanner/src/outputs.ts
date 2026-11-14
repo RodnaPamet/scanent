@@ -15,9 +15,11 @@
  * happened to the others, and a run is delivered only when every one was.
  *
  * Which scanners run follows from the sources configured. The file and stdout
- * outputs carry every report the run made; the `inflect` output posts the
- * agent report only, and the configuration refuses it where no agent source
- * is configured.
+ * outputs carry every report the run made; the `inflect` output posts each
+ * report to the tenant's ingest for it: the agent report with `apiKeyEnv`, the
+ * integrations report with `integrationsApiKeyEnv`. With no key for the
+ * integrations report it is not posted, and the log says so once. The
+ * configuration refuses an `inflect` output that would post nothing.
  */
 import type { ParsedInventory } from '@scanent/report/results/inventory';
 
@@ -25,7 +27,7 @@ import type { OutputConfig, ScannerConfig } from './config';
 import { OutputRefusedLocally, PointerNotUpdated, writeRun, type FileOutputDeps } from './file-output';
 import { loadConfiguredInventory, scoreIntegrationsOnlyLocally, scoreScanLocally } from './local-results';
 import { previousIntegrationsOf, previousRunOf } from './previous-run';
-import { ingestTarget, postSignedReport, runScanAll, type RunScan, type ScanDeps } from './scan';
+import { inflectTargets, postToInflect, runScanAll, type RunScan, type ScanDeps } from './scan';
 
 export type OutputKind = OutputConfig['kind'];
 
@@ -104,14 +106,16 @@ function failureOf(err: unknown): string {
  * One run: scan once, then deliver to every output in effect.
  *
  * What stops the run BEFORE any source is read: a missing ingest key when the
- * `inflect` output is in effect, and an inventory that is configured and
+ * `inflect` output is in effect (the agent report's when an agent source is
+ * configured; the integrations report's when its variable is named and an
+ * integrations source is configured), and an inventory that is configured and
  * cannot be loaded. After the scan, an output that fails is logged and the
  * others are still attempted.
  */
 export async function scanAndDeliver(deps: DeliverDeps): Promise<DeliveryResult> {
     const { config, env, log } = deps;
     const kinds = deps.outputs.map((o) => o.kind);
-    const target = kinds.includes('inflect') ? ingestTarget(config, env) : null;
+    const targets = kinds.includes('inflect') ? inflectTargets(config, env) : null;
     // Loaded whenever it is configured, so a broken inventory is found on the
     // first run and not on the day somebody adds the file output.
     const inventory = (deps.loadInventory ?? loadConfiguredInventory)(config);
@@ -171,12 +175,8 @@ export async function scanAndDeliver(deps: DeliverDeps): Promise<DeliveryResult>
                 if (scan.integrations !== null) print(`${scan.integrations.raw}\n`);
                 ok = true;
             } else {
-                // The configuration refuses this output without an agent source; a run with no agent report has nothing to post.
-                if (agents === null) throw new Error('the inflect output posts the agent report, and the agent scanner did not run');
-                // `target` is set whenever this output is in effect.
-                ok = (await postSignedReport(deps, target ?? ingestTarget(config, env), agents)).ok;
-                // The tenant has no ingest for the integrations report yet: it is kept, and said not to be sent.
-                if (scan.integrations !== null) log.info('integrations report not posted', { scan: scan.scanId, reason: 'the tenant has no ingest for it yet' });
+                // `targets` is set whenever this output is in effect. Each report to its own ingest, with its own key.
+                ok = (await postToInflect(deps, targets ?? inflectTargets(config, env), scan)).ok;
             }
         } catch (err) {
             log.error('output failed', { output: output.kind, scan: scan.scanId, error: failureOf(err) });

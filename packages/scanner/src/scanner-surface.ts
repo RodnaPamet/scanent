@@ -4,8 +4,9 @@
  * The contract asks a scanner for the `sha256:` manifest hash of its own tool
  * surface (`scan.scanner.manifestHash`). This scanner calls no MCP tool; its
  * surface is the requests it can make. So the manifest is that list — each
- * source's GET endpoints, the one token exchange, and the one POST to the
- * ingest — plus the local files the `code` source reads, and the hash is
+ * source's GET endpoints, the token exchanges, and the two POSTs to the
+ * tenant's ingest, one per report — plus the local files the `code` source
+ * reads, and the hash is
  * SHA-256 over its canonical JSON, the construction the report's own signature
  * uses.
  *
@@ -50,18 +51,26 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * 0.13.0: the `code` source reads agents built directly on a model provider's
  * SDK (Anthropic, OpenAI, Gemini, Bedrock), which changes what it reports and
  * no file operation, so the surface and its hash are as they were.
- * Not yet released, and the version is the release's to choose: reports under
- * `inflect-agent-harness/4`, with the `code` source's payment-capability fact.
- * The contract id is part of the surface, so the manifest hash moves with it.
- * Since then, and in no release yet: the integrations scanner, its contract
- * `scanent-integrations/1` and its Entra, Okta and GitHub readers. The surface is one for the
- * image and names every scanner's requests, so an agents-only run's report
- * carries the new hash too; nothing else in it changed.
+ * 0.14.0: reports under `inflect-agent-harness/4`, with the `code` source's
+ * payment-capability fact. The contract id is part of the surface, so the
+ * manifest hash moved with it. 0.15.0: the integrations scanner, its contract
+ * `scanent-integrations/1` and its Entra, Okta and GitHub readers. The surface
+ * is one for the image and names every scanner's requests, so an agents-only
+ * run's report carries the new hash too; nothing else in it changed. 0.16.0:
+ * the integrations report is posted to the tenant's own ingest for it, a
+ * second declared POST beside the agent report's.
  */
-export const SCANNER_VERSION = '0.15.0';
+export const SCANNER_VERSION = '0.16.0';
 
 /** The ingest route, as `docs/contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
+
+/**
+ * The integrations report's ingest route, beside the agent report's: the same
+ * tenant, the same method and body (the signed report), a key of its own.
+ * Declared from 0.16.0.
+ */
+export const INTEGRATIONS_INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/integration-scans';
 
 export const SCANNER_SURFACE = {
     name: SCANNER_NAME,
@@ -184,7 +193,12 @@ export const SCANNER_SURFACE = {
             scopes: [OPENSHELL_READ_SCOPE, OPENSHELL_PROFILE_SCOPE],
         },
     ],
-    sends: [{ method: 'POST', path: INGEST_PATH_TEMPLATE }],
+    // The two posts: each scanner's signed report to its own ingest on the
+    // configured tenant. No other path is ever posted to.
+    sends: [
+        { method: 'POST', path: INGEST_PATH_TEMPLATE, report: 'agents' },
+        { method: 'POST', path: INTEGRATIONS_INGEST_PATH_TEMPLATE, report: 'integrations' },
+    ],
     // The egress proof, only when the configuration names a
     // proxy: two CONNECTs to it — the Inflect host, which it must admit, and
     // the configured canary, which it must refuse — and one direct TCP dial to
@@ -238,11 +252,6 @@ export function scannerManifestHash(): string {
     return `sha256:${createHash('sha256').update(canonicalJson(SCANNER_SURFACE), 'utf8').digest('hex')}`;
 }
 
-/**
- * Whether one request is on the declared surface: a GET to a declared read
- * path, the token exchange, or the POST to the ingest. The request log of every
- * test is held to this.
- */
 /**
  * Whether one message to an MCP server is on the declared surface: a JSON-RPC
  * body whose method is one of `MCP_MESSAGES`. The request log of every MCP
@@ -300,9 +309,14 @@ export function isDeclaredRegisterExchange(body: string): boolean {
 function pathMatches(declared: string, pathname: string): boolean {
     const want = declared.split('/');
     const got = pathname.split('/');
-    return want.length === got.length && want.every((seg, i) => (/^\{[a-z]+\}$/.test(seg) ? got[i] !== '' : seg === got[i]));
+    return want.length === got.length && want.every((seg, i) => (/^\{[A-Za-z]+\}$/.test(seg) ? got[i] !== '' : seg === got[i]));
 }
 
+/**
+ * Whether one request is on the declared surface: a GET to a declared read
+ * path, a token exchange, the register read, a gateway call, or a POST to one
+ * of the two ingest routes. The request log of every test is held to this.
+ */
 export function isDeclaredRequest(method: string, url: string): boolean {
     const { origin, pathname } = new URL(url);
     if (method === 'GET') {
@@ -323,5 +337,6 @@ export function isDeclaredRequest(method: string, url: string): boolean {
     // A gRPC call to the client's gateway: the service and RPC decide, not the
     // host, which the estate configures.
     if (isDeclaredGatewayCall(pathname)) return true;
-    return /^\/api\/t\/[^/]+\/admin\/agents\/harness-scans$/.test(pathname);
+    // The two ingest posts, and no third path: each declared route with one tenant segment.
+    return SCANNER_SURFACE.sends.some((send) => send.method === method && pathMatches(send.path, pathname));
 }

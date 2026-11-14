@@ -789,6 +789,12 @@ export interface Fakes {
     override: Override | null;
     /** The ingest's answer; defaults to a 201. */
     ingest: (raw: string) => Answer;
+    /** Raw bodies the integrations report's ingest received, in order. */
+    readonly integrationsPosted: string[];
+    /** Authorization headers the integrations report's ingest received. */
+    readonly integrationsIngestAuth: string[];
+    /** The integrations report's ingest's answer; defaults to a 201 shaped as the tenant's. */
+    integrationsIngest: (raw: string) => Answer;
 }
 
 /**
@@ -821,6 +827,8 @@ export function createSourceFakes(opts: {
     const log: RequestLogEntry[] = [];
     const posted: string[] = [];
     const ingestAuth: string[] = [];
+    const integrationsPosted: string[] = [];
+    const integrationsIngestAuth: string[] = [];
 
     const fakes: Fakes = {
         log,
@@ -828,6 +836,10 @@ export function createSourceFakes(opts: {
         ingestAuth,
         override: null,
         ingest: () => json({ scanId: 'scan_row', complete: true, agentCount: 1 }, 201),
+        integrationsPosted,
+        integrationsIngestAuth,
+        integrationsIngest: () =>
+            json({ scanId: 'tpa_scan_row', scanRef: 'scan-ref', complete: true, applicationCount: 3, findingsOpened: 2, findingsReopened: 0, findingsResolved: 0 }, 201),
         fetchImpl: async (url: string, init: RequestInit) => {
             const u = new URL(url);
             const method = (init.method ?? 'GET').toUpperCase();
@@ -974,6 +986,11 @@ export function createSourceFakes(opts: {
                 posted.push(String(body));
                 ingestAuth.push(headers.get('authorization') ?? '');
                 return fakes.ingest(String(body));
+            }
+            if (method === 'POST' && /^\/api\/t\/[^/]+\/admin\/agents\/integration-scans$/.test(u.pathname)) {
+                integrationsPosted.push(String(body));
+                integrationsIngestAuth.push(headers.get('authorization') ?? '');
+                return fakes.integrationsIngest(String(body));
             }
             return json({ error: 'not found' }, 404);
         }

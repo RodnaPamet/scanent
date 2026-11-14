@@ -6,8 +6,9 @@
  * does not stop the scan: it is reported INCOMPLETE `AUTH_FAILED`, because the
  * estate has that source whether or not this run could read it, and a report
  * that left it out would describe a smaller estate than the one configured.
- * The signing key and the ingest key are different — without either there is
- * no report to send, so their absence stops the run.
+ * The signing key and the ingest keys are different — without the signing key
+ * there is no report, and without the key a report is posted with there is
+ * nowhere to send it, so the absence of either stops the run.
  *
  * Sources are read in parallel, each in its own time box and byte budget, so
  * one slow inventory cannot starve another of its deadline.
@@ -19,13 +20,13 @@ import type { IntegrationsReportBody } from '@rodnapamet/scanent-contract/integr
 
 import { DEFAULT_UNUSED_DAYS } from '@rodnapamet/scanent-contract/integrations-findings';
 
-import { sourceCredentialEnv, type InflectConfig, type ScannerConfig } from './config';
+import { inflectPosts, sourceCredentialEnv, type InflectConfig, type ScannerConfig } from './config';
 import { customerHostCheckFor, type CustomerHostCheck, type ResolveHost } from './customer-host';
 import { createSourceWire, type FetchLike } from './http';
 import { buildIntegrationsReportBody, signIntegrationsReport } from './integrations-report';
 import type { IntegrationsSource, IntegrationsSourceRead } from './integrations-source';
 import type { ScannerLog } from './log';
-import { postReport, type PostResult } from './post';
+import { postIntegrationsReport, postReport, type IntegrationsPostResult, type PostResult } from './post';
 import { buildReportBody, signReport } from './report';
 import { isAgentSourceKind } from './scanners';
 import type { SourceNote } from '@scanent/report/results/types';
@@ -160,7 +161,7 @@ export function buildSources(
             // Read with the ingest key, from the tenant the report is posted to.
             // The schema refuses this source without an `inflect` block.
             const inflect = config.inflect;
-            const apiKey = inflect === undefined ? undefined : env[inflect.apiKeyEnv];
+            const apiKey = inflect?.apiKeyEnv === undefined ? undefined : env[inflect.apiKeyEnv];
             if (inflect === undefined || typeof apiKey !== 'string' || apiKey.trim() === '') {
                 unreadable.push(sourceResult(s.kind, 0, [], new SourceReadError('AUTH_FAILED', 'the ingest key is not set')));
             } else {
@@ -469,16 +470,56 @@ export async function runScanAll(deps: ScanDeps): Promise<RunScan> {
     };
 }
 
-/** The `inflect` block and the ingest key it names, or a refusal that names what is missing. */
-export function ingestTarget(config: ScannerConfig, env: Env): { inflect: InflectConfig; apiKey: string } {
+/** Where one report is posted: the tenant, and the key that posts it. */
+export interface IngestTarget {
+    readonly inflect: InflectConfig;
+    readonly apiKey: string;
+}
+
+/** The `inflect` block and the agent report's ingest key, or a refusal that names what is missing. */
+export function ingestTarget(config: ScannerConfig, env: Env): IngestTarget {
     if (config.inflect === undefined) throw new Error('the configuration has no inflect block to post to');
+    if (config.inflect.apiKeyEnv === undefined) throw new Error('the configuration names no ingest API key for the agent report (inflect.apiKeyEnv)');
     return { inflect: config.inflect, apiKey: requiredEnv(env, config.inflect.apiKeyEnv, 'the ingest API key') };
+}
+
+/**
+ * The `inflect` block and the integrations report's ingest key: null when the
+ * configuration names none (the report is then not posted), a refusal when it
+ * names one that is not set.
+ */
+export function integrationsIngestTarget(config: ScannerConfig, env: Env): IngestTarget | null {
+    if (config.inflect === undefined) throw new Error('the configuration has no inflect block to post to');
+    const name = config.inflect.integrationsApiKeyEnv;
+    if (name === undefined) return null;
+    return { inflect: config.inflect, apiKey: requiredEnv(env, name, 'the integrations ingest API key') };
+}
+
+/** The keys the `inflect` output posts with: one per report it posts, null for a report it does not. */
+export interface InflectTargets {
+    readonly agents: IngestTarget | null;
+    readonly integrations: IngestTarget | null;
+}
+
+/**
+ * Every key the `inflect` output needs, asked for before any source is read:
+ * the agent report's when an agent source is configured, the integrations
+ * report's when an integrations source is and the configuration names its key.
+ * A run of integrations sources alone needs no agent key.
+ */
+export function inflectTargets(config: ScannerConfig, env: Env): InflectTargets {
+    if (config.inflect === undefined) throw new Error('the configuration has no inflect block to post to');
+    const posts = inflectPosts(config);
+    const agents = posts.agents ? ingestTarget(config, env) : null;
+    const integrations = posts.integrations ? integrationsIngestTarget(config, env) : null;
+    if (agents === null && integrations === null) throw new Error('the inflect output has no report to post: name inflect.integrationsApiKeyEnv to post the integrations report');
+    return { agents, integrations };
 }
 
 /** Post one signed report to the tenant's ingest, and log the answer. */
 export async function postSignedReport(
     deps: Pick<ScanDeps, 'fetchImpl' | 'log'>,
-    target: { readonly inflect: InflectConfig; readonly apiKey: string },
+    target: IngestTarget,
     scan: { readonly raw: string; readonly body: HarnessReportBodyV4 },
 ): Promise<PostResult> {
     const result = await postReport({
@@ -496,9 +537,94 @@ export async function postSignedReport(
     return result;
 }
 
-/** One scheduled run: scan, then post to the tenant's ingest. */
-export async function scanAndPost(deps: ScanDeps): Promise<PostResult> {
-    // The key is asked for before the scan: without it there is nowhere to send a report.
-    const target = ingestTarget(deps.config, deps.env);
-    return postSignedReport(deps, target, await runScan(deps));
+/** Post the signed integrations report to the tenant's ingest for it, and log the answer: counts and the refusal code only. */
+export async function postSignedIntegrationsReport(
+    deps: Pick<ScanDeps, 'fetchImpl' | 'log'>,
+    target: IngestTarget,
+    scan: { readonly raw: string; readonly body: IntegrationsReportBody },
+): Promise<IntegrationsPostResult> {
+    const result = await postIntegrationsReport({
+        baseUrl: target.inflect.baseUrl,
+        tenantSlug: target.inflect.tenantSlug,
+        apiKey: target.apiKey,
+        raw: scan.raw,
+        fetchImpl: deps.fetchImpl ?? ((url, init) => fetch(url, init)),
+    });
+    if (result.ok) {
+        deps.log.info('integrations report ingested', { scan: scan.body.scan.id, complete: result.complete, applications: result.applicationCount });
+    } else {
+        deps.log.error('integrations report refused', { scan: scan.body.scan.id, status: result.status, refusal: result.refusal });
+    }
+    return result;
+}
+
+/** What the `inflect` output did with one run: each report's answer, null for a report it did not post. */
+export interface InflectDelivery {
+    /** True only when every report it posted was accepted. */
+    readonly ok: boolean;
+    readonly agents: PostResult | null;
+    readonly integrations: IntegrationsPostResult | null;
+}
+
+/** A failed post, by its name and code: never its message, which can carry a URL. */
+function errorName(err: unknown): string {
+    if (err instanceof Error) {
+        const code = (err as NodeJS.ErrnoException).code;
+        return typeof code === 'string' ? `${err.name} ${code}` : err.name;
+    }
+    return 'unknown';
+}
+
+/**
+ * Post one run's reports to the tenant: the agent report, then the
+ * integrations report, each with its own key. An integrations report with no
+ * key configured is not posted, and the log says so, once.
+ *
+ * Each post is attempted whatever happened to the other. A post the wire
+ * could not make throws: the agent report's is thrown after the integrations
+ * report was attempted, as it was before there were two reports; the
+ * integrations report's is logged as `integrations post failed` and counts as
+ * not delivered.
+ */
+export async function postToInflect(deps: Pick<ScanDeps, 'fetchImpl' | 'log'>, targets: InflectTargets, run: RunScan): Promise<InflectDelivery> {
+    let agents: PostResult | null = null;
+    let integrations: IntegrationsPostResult | null = null;
+    let thrown: { readonly err: unknown } | null = null;
+    let attempted = false;
+    if (run.agents !== null && targets.agents !== null) {
+        attempted = true;
+        try {
+            agents = await postSignedReport(deps, targets.agents, run.agents);
+        } catch (err) {
+            thrown = { err };
+        }
+    }
+    let integrationsOk = true;
+    if (run.integrations !== null) {
+        if (targets.integrations === null) {
+            deps.log.info('integrations report not posted', { scan: run.scanId, reason: 'no integrations ingest key is configured (inflect.integrationsApiKeyEnv)' });
+        } else {
+            attempted = true;
+            try {
+                integrations = await postSignedIntegrationsReport(deps, targets.integrations, run.integrations);
+                integrationsOk = integrations.ok;
+            } catch (err) {
+                integrationsOk = false;
+                deps.log.error('integrations post failed', { scan: run.scanId, error: errorName(err) });
+            }
+        }
+    }
+    if (thrown !== null) throw thrown.err;
+    if (!attempted) throw new Error('the inflect output had no report to post');
+    return { ok: (agents === null || agents.ok) && integrationsOk, agents, integrations };
+}
+
+/**
+ * One scheduled run: scan, then post each report to the tenant's ingest for
+ * it. Every key is asked for before the scan: without one there is nowhere to
+ * send its report.
+ */
+export async function scanAndPost(deps: ScanDeps): Promise<InflectDelivery> {
+    const targets = inflectTargets(deps.config, deps.env);
+    return postToInflect(deps, targets, await runScanAll(deps));
 }

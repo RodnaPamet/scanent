@@ -605,9 +605,11 @@ integrations sources and no agent source runs the integrations scanner alone
 result: no agent report is built or signed, no agent file is written, and the
 results, the pointer, the page and the PDF each say that only the
 integrations scanner ran, so an absent agent scan never reads as a clean one.
-The `inflect` output posts the agent report only, so a configuration with no
-agent source may not name it (or mean it, with an `inflect` block and no
-`outputs`): name `file` or `stdout`.
+The `inflect` output posts each report to the tenant's ingest for it, each
+with a key of its own. A configuration with no agent source may name it (or
+mean it, with an `inflect` block and no `outputs`) only when it names the
+integrations report's key, `inflect.integrationsApiKeyEnv`, and then needs no
+agent key (`apiKeyEnv`). Otherwise name `file` or `stdout`.
 
 One run writes one signed report per scanner it ran, with the same key and
 the same scan id: the agent report is `report.signed.json` under
@@ -617,9 +619,14 @@ the same scan id: the agent report is `report.signed.json` under
 writes exactly what it wrote before the integrations scanner existed, apart
 from the manifest hash every report carries, which covers both scanners'
 requests (`packages/scanner/tests/agents-only-identity.test.ts`). The
-`inflect` output posts the agent report only: the tenant has no ingest for the
-integrations report yet, and the log says it was not posted. `stdout` prints
-each report the run made, one per line, the agent report first.
+`inflect` output posts the agent report to
+`/api/t/<tenant>/admin/agents/harness-scans` with the key `apiKeyEnv` names,
+and, from 0.16.0, the integrations report to
+`/api/t/<tenant>/admin/agents/integration-scans` with the key
+`integrationsApiKeyEnv` names, which holds `admin:integrations_ingest` and no
+other scope. With no `integrationsApiKeyEnv` the integrations report is not
+posted, and the log says so once (`integrations report not posted`). `stdout`
+prints each report the run made, one per line, the agent report first.
 
 ### `entra-integrations`
 
@@ -871,7 +878,15 @@ control plane.
 - `INFLECT_INGEST_KEY`: an API key bound to the scanner agent, with the
   `admin:harness_ingest` scope, and `mcp:read` when the estate reads the register
   (`inflect-register`), and no other. The scanner agent must then be granted the
-  tool `get_harness_register`.
+  tool `get_harness_register`. It posts the agent report. A configuration with
+  integrations sources alone names none.
+- `INFLECT_INTEGRATIONS_KEY`, optional, named by
+  `"integrationsApiKeyEnv": "INFLECT_INTEGRATIONS_KEY"` in the `inflect` block:
+  a second API key bound to the scanner agent, with the
+  `admin:integrations_ingest` scope and no other. It posts the integrations
+  report, and is never the agent report's key: the tenant gives the two
+  ingests different scopes, so a key minted for one does not post the other.
+  Absent, the integrations report is not posted.
 - `ENTRA_CLIENT_SECRET`: an Entra application holding the Microsoft Graph
   application permission `Application.Read.All`, which lists registrations and
   service principals and cannot change them. Add
@@ -956,7 +971,7 @@ Where one run's results go. Optional:
 |---|---|---|
 | `file` | `dir`, an absolute path; `retainRuns`, optional, 1 to 10,000 | Writes the run's files under `dir` (see "Local results") |
 | `stdout` | none | Writes the signed report and a newline to stdout |
-| `inflect` | none | Posts the signed report to the `inflect` block's tenant |
+| `inflect` | none | Posts each signed report to the `inflect` block's tenant: the agent report with `apiKeyEnv`, the integrations report with `integrationsApiKeyEnv` when it is named |
 
 One to three entries, each kind at most once. Without `outputs`, a
 configuration that has an `inflect` block posts to it, which is what every
@@ -964,9 +979,13 @@ configuration written before outputs existed means.
 
 The `inflect` block is optional. It is required, and the configuration is
 refused without it, when the `inflect` output is configured, when the
-`inflect-register` source is configured, or when `egress` is set. The ingest
+`inflect-register` source is configured, or when `egress` is set. Each ingest
 key is needed, before the scan starts, only when the `inflect` output is in
-effect for the run.
+effect for the run and posts its report: the agent key (`apiKeyEnv`) when an
+agent source is configured, the integrations key (`integrationsApiKeyEnv`)
+when it is named and an integrations source is configured. A named key whose
+variable (or its `_FILE`) is not set stops the run before any source is read.
+An `inflect` output that would post nothing is refused by the configuration.
 
 Two flags adjust the outputs for one call:
 
@@ -1175,7 +1194,9 @@ Two ways to answer:
 - **At a terminal.** `init` asks for the estate's name, then whether you have
   each kind of source and that source's facts (a directory id, an org URL, a
   repository), then the output directory, the schedule, an optional inventory
-  and whether to post to an Inflect tenant (default: no).
+  and whether to post to an Inflect tenant (default: no). With integrations
+  sources, it then asks whether to post the integrations report, and the
+  NAME of the variable its key goes in, never the key.
 - **From a file**, `--answers <file>`, for automation. Without it, and when
   stdin is not a terminal, `init` exits 2 and says so.
 
@@ -1208,8 +1229,13 @@ and without its variable name, which gets the documented default
 optional ones included, and are held to the configuration's own rules. To
 choose a variable's name, give the configuration's field (`"apiTokenEnv":
 "ACME_OKTA_TOKEN"`). `inflect` is `null`, or `{ "baseUrl", "tenantSlug",
-"agentId", "readRegister" }`; without it the configuration names no tenant and
-writes files only.
+"agentId", "readRegister" }`, with optional `apiKeyEnv` and
+`integrationsApiKeyEnv`; without it the configuration names no tenant and
+writes files only. The agent key (`apiKeyEnv`, default `INFLECT_INGEST_KEY`)
+is written only when an agent source is answered or the register is read. The
+integrations report is posted only when `integrationsApiKeyEnv` is given (at
+the prompts, the default is `INFLECT_INTEGRATIONS_KEY`), and answers of
+integrations sources alone with a tenant need it.
 
 What it will not do:
 
@@ -1309,15 +1335,19 @@ Okta's administrator role, a Key Vault role assignment and Google's
 `testIamPermissions` would each need a request the scanner does not declare
 (one of them a POST), so `doctor` does not make them and does not guess.
 
-The `inflect` output's key is used only to post, which is a write, so `doctor`
-checks that the key is present and reports whether it may post as `not
-observable`: the first `scan` shows it.
+The `inflect` output's keys are used only to post, which is a write, so
+`doctor` checks that each key the run would post with is present and reports
+whether it may post as `not observable`: the first `scan` shows it. The agent
+report's key is checked under the scope `inflect`, the integrations report's
+under `inflect-integrations`. A configuration with integrations sources, the
+`inflect` output and no `integrationsApiKeyEnv` gets one `not applicable`
+check there, saying the integrations report will not be posted.
 
 The table is grouped by scanner: the local checks first, then
-`== The agent scanner ==` with its sources' scopes and the `inflect` output
-(which posts the agent report), then `== The integrations scanner ==` with
-its sources' scopes, each group present only when the configuration names a
-source of that scanner. The JSON document carries the same grouping as
+`== The agent scanner ==` with its sources' scopes and `inflect` (the agent
+report's key), then `== The integrations scanner ==` with its sources' scopes
+and `inflect-integrations`, each group present only when the configuration
+names a source of that scanner. The JSON document carries the same grouping as
 `scanners`, a list of `{ scanner, scopes }` beside the flat `checks`.
 
 The local checks, under the scope `local`:
@@ -1350,7 +1380,7 @@ passed" only when every check did. `--json` prints one document instead:
   "doctor": "scanent-doctor/1",
   "estate": "acme-prod",
   "at": "2026-11-12T09:00:00.000Z",
-  "scanner": { "version": "0.15.0", "manifestHash": "sha256:…" },
+  "scanner": { "version": "0.16.0", "manifestHash": "sha256:…" },
   "ready": false,
   "counts": { "PASS": 14, "WARN": 2, "FAIL": 0, "SKIPPED": 5 },
   "exitCode": 3,

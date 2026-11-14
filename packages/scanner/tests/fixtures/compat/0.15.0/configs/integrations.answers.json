@@ -1,0 +1,37 @@
+{
+  "answers": "scanent-init-answers/1",
+  "estate": "acme-integrations",
+  "retainRuns": 90,
+  "sources": [
+    {
+      "kind": "entra-sp",
+      "directoryId": "11111111-2222-4333-8444-555555555555",
+      "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa"
+    },
+    {
+      "kind": "entra-integrations",
+      "directoryId": "11111111-2222-4333-8444-555555555555",
+      "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+      "clientSecretEnv": "ENTRA_CLIENT_SECRET",
+      "readSignInActivity": true
+    },
+    {
+      "kind": "okta-app",
+      "orgUrl": "https://acme.okta.com"
+    },
+    {
+      "kind": "okta-integrations",
+      "orgUrl": "https://acme.okta.com"
+    },
+    {
+      "kind": "cicd",
+      "repositories": [
+        "acme/payments-api"
+      ]
+    },
+    {
+      "kind": "github-integrations",
+      "organization": "acme"
+    }
+  ]
+}

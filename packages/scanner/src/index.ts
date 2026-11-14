@@ -42,9 +42,21 @@ export {
     type OutputKind,
 } from './outputs';
 export { jsonLineLog, type ScannerLog } from './log';
-export { postReport, ingestUrl, type PostResult } from './post';
+export { postReport, postIntegrationsReport, ingestUrl, type IngestReport, type IntegrationsPostResult, type PostResult } from './post';
 export { buildReportBody, signReport, rawPublicKeyHex, ReportRefusedLocally, type ScanIdentity } from './report';
-export { buildSources, ingestTarget, loadSigningKey, postSignedReport, runScan, scanAndPost, type Env, type ScanDeps } from './scan';
+export {
+    buildSources,
+    ingestTarget,
+    integrationsIngestTarget,
+    loadSigningKey,
+    postSignedIntegrationsReport,
+    postSignedReport,
+    runScan,
+    scanAndPost,
+    type Env,
+    type InflectDelivery,
+    type ScanDeps,
+} from './scan';
 export { isDeclaredRequest, scannerManifestHash, SCANNER_SURFACE, SCANNER_VERSION } from './scanner-surface';
 export { runOnSchedule } from './schedule';
 export {

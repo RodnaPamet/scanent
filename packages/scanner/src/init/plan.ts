@@ -11,6 +11,7 @@
  * nothing after the `=` (or a path, for a secret kept in a file).
  */
 import { ConfigError, credentialEnvNames, parseScannerConfig, type ScannerConfig } from '../config';
+import { isAgentSourceKind } from '../scanners';
 import { accessTablesFor, type AccessTable } from './access-guide';
 import { InitError, type InitAnswers, type SourceAnswer } from './answers';
 
@@ -18,6 +19,8 @@ export const DEFAULT_OUTPUT_DIR = '/out';
 export const DEFAULT_EVERY_HOURS = 24;
 export const DEFAULT_SIGNING_KEY_ENV = 'SCANNER_SIGNING_KEY';
 export const DEFAULT_INGEST_KEY_ENV = 'INFLECT_INGEST_KEY';
+/** The integrations report's ingest key: a second key, with `admin:integrations_ingest`. */
+export const DEFAULT_INTEGRATIONS_INGEST_KEY_ENV = 'INFLECT_INTEGRATIONS_KEY';
 /** The `entra-sp` source's secret variable: the integrations source names it too when it reads with the same application. */
 export const DEFAULT_ENTRA_SECRET_ENV = 'ENTRA_CLIENT_SECRET';
 
@@ -100,7 +103,10 @@ function credentialNamesOf(config: ScannerConfig): CredentialName[] {
         else if (!out[at].for.includes(what)) out[at] = { ...out[at], for: `${out[at].for} ${what}` };
     };
     add(config.scanner.signingKeyEnv, true, 'The Ed25519 signing key (PKCS#8 PEM). A file, because a PEM has line breaks.');
-    if (config.inflect !== undefined) add(config.inflect.apiKeyEnv, false, 'Inflect: API key with admin:harness_ingest (and mcp:read when the register is read).');
+    if (config.inflect?.apiKeyEnv !== undefined) add(config.inflect.apiKeyEnv, false, 'Inflect: API key with admin:harness_ingest (and mcp:read when the register is read).');
+    if (config.inflect?.integrationsApiKeyEnv !== undefined) {
+        add(config.inflect.integrationsApiKeyEnv, false, 'Inflect: a second API key, with admin:integrations_ingest and no other scope. It posts the integrations report.');
+    }
     for (const s of config.sources) {
         if (s.kind === 'code' || s.kind === 'inflect-register') continue;
         if (s.kind === 'mcp') {
@@ -143,6 +149,7 @@ export function planInit(answers: InitAnswers): InitPlan {
     const outputDir = answers.outputDir ?? DEFAULT_OUTPUT_DIR;
     const inflect = answers.inflect ?? null;
     const sources = answers.sources.map(sourceConfigOf);
+    const agentSourceAnswered = answers.sources.some((a) => isAgentSourceKind(a.kind));
     if (inflect?.readRegister === true) sources.push({ kind: 'inflect-register' });
 
     const draft: Record<string, unknown> = {
@@ -153,7 +160,16 @@ export function planInit(answers: InitAnswers): InitPlan {
         },
         ...(inflect === null
             ? {}
-            : { inflect: { baseUrl: inflect.baseUrl, tenantSlug: inflect.tenantSlug, apiKeyEnv: inflect.apiKeyEnv ?? DEFAULT_INGEST_KEY_ENV } }),
+            : {
+                  inflect: {
+                      baseUrl: inflect.baseUrl,
+                      tenantSlug: inflect.tenantSlug,
+                      // The agent report's key, when there is an agent report to post or a register to read.
+                      ...(agentSourceAnswered || inflect.readRegister === true ? { apiKeyEnv: inflect.apiKeyEnv ?? DEFAULT_INGEST_KEY_ENV } : {}),
+                      // The integrations report's key only when it was asked for: posting that report is a choice.
+                      ...(inflect.integrationsApiKeyEnv === undefined ? {} : { integrationsApiKeyEnv: inflect.integrationsApiKeyEnv }),
+                  },
+              }),
         outputs: [
             { kind: 'file', dir: outputDir, ...(answers.retainRuns === undefined ? {} : { retainRuns: answers.retainRuns }) },
             ...(inflect === null ? [] : [{ kind: 'inflect' }]),

@@ -1512,7 +1512,7 @@ done
         const quick = read('docs/quick-start.md');
         // A variable given as a prefix of one command is gone for the next: `docker compose logs` then cannot read the file.
         expect(quick).not.toMatch(/^SCANENT_VERSION=\S+ .*docker compose/m);
-        expect(quick).toContain('export SCANENT_VERSION=0.15.0 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"\ndocker compose up -d\ndocker compose logs');
+        expect(quick).toContain('export SCANENT_VERSION=0.16.0 SCANENT_UID="$(id -u)" SCANENT_GID="$(id -g)"\ndocker compose up -d\ndocker compose logs');
         expect(read('docs/deployment.md')).not.toMatch(/^SCANENT_VERSION=\S+ docker compose/m);
         // Step 6 says a code source needs its roots mounted, and what a read estate looks like in the log.
         expect(quick).toMatch(/add each\s+root under the service's `volumes:`/);

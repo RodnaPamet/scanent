@@ -48,6 +48,8 @@ export const InitAnswersSchema = z
                 agentId: z.string(),
                 readRegister: z.boolean().optional(),
                 apiKeyEnv: envName.optional(),
+                /** The variable that holds the integrations report's key. Absent, that report is not posted. */
+                integrationsApiKeyEnv: envName.optional(),
             })
             .strict()
             .nullable()

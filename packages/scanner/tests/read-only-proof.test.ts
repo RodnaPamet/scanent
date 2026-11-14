@@ -269,6 +269,21 @@ describe('the one post: a signed report to the tenant, and nothing else', () => 
         for (const request of recorder.requests) seen.push({ row: 'ingest', via: 'scan', request, cls: classifyRequest(request, hosts) });
     });
 
+    it('with an integrations source and its key, scanAndPost sends two posts, one to each ingest, and nothing else that is not a read', async () => {
+        const base = estateConfig([ESTATE_SOURCES['okta-app'], INTEGRATIONS_ESTATE_SOURCES['entra-integrations']]);
+        const config = parseScannerConfig({ ...base, inflect: { ...(base.inflect as object), integrationsApiKeyEnv: 'INFLECT_INTEGRATIONS_KEY' } });
+        const hosts = configuredHostsOf(config);
+        const world = worldFor();
+        const recorder = recordRequests(world.fetchImpl);
+        const result = await scanAndPost({ config, env: { ...estateEnv(), INFLECT_INTEGRATIONS_KEY: 'integrations-key' }, log: quiet, fetchImpl: recorder.fetchImpl, resolveHost: PUBLIC_RESOLVER, now: () => NOW });
+        expect(result.ok).toBe(true);
+        expect(readOnlyProblems(recorder.requests, hosts)).toEqual([]);
+        const posts = recorder.requests.filter((r) => classifyRequest(r, hosts) === 'INGEST_POST');
+        expect(posts.map((p) => p.pathname)).toEqual(['/api/t/acme/admin/agents/harness-scans', '/api/t/acme/admin/agents/integration-scans']);
+        expect(posts[1].body).toBe(world.fakes.integrationsPosted[0]);
+        for (const request of recorder.requests) seen.push({ row: 'ingest', via: 'scan', request, cls: classifyRequest(request, hosts) });
+    });
+
     it('the same post to another host is not declared: the ingest is the configured tenant and nowhere else', () => {
         const hosts = configuredHostsOf(parseScannerConfig(estateConfig([ESTATE_SOURCES.code])));
         const elsewhere: RecordedRequest = {
@@ -281,6 +296,8 @@ describe('the one post: a signed report to the tenant, and nothing else', () => 
             redirect: 'error',
         };
         expect(classifyRequest(elsewhere, hosts)).toBe('UNDECLARED');
+        const integrations = '/api/t/acme/admin/agents/integration-scans';
+        expect(classifyRequest({ ...elsewhere, url: `https://elsewhere.example${integrations}`, pathname: integrations }, hosts)).toBe('UNDECLARED');
         for (const pathname of ['/api/mcp', '/api/mcp/token']) {
             expect(classifyRequest({ ...elsewhere, url: `https://elsewhere.example${pathname}`, pathname, body: JSON.stringify({ method: 'initialize' }) }, hosts)).toBe('UNDECLARED');
         }
@@ -328,7 +345,10 @@ describe('exhaustiveness', () => {
             }
             if (!seen.some(({ cls }) => cls === 'REGISTER_EXCHANGE')) unsent.push('register exchange');
         }
-        if (!seen.some(({ cls }) => cls === 'INGEST_POST')) unsent.push('ingest post');
+        // Each declared post by its own path: the agent report's and the integrations report's.
+        for (const send of SCANNER_SURFACE.sends) {
+            if (!seen.some(({ request, cls }) => cls === 'INGEST_POST' && matchesTemplate(send.path, request.pathname))) unsent.push(`ingest post ${send.path}`);
+        }
         expect(unsent).toEqual([]);
         expect([...MCP_MESSAGES]).toEqual([...SCANNER_SURFACE.lists[0].jsonRpc]);
     });

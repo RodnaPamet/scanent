@@ -142,7 +142,7 @@ criminal convictions are not read.
 |---|---|---|
 | The signed report (`report.signed.json`, or stdout, or posted to a tenant) | Your output directory; a tenant only if you configure one | Owner ids, as above. No declared inventory fields |
 | `results.json`, `agents.csv`, `summary.html`, `report.pdf` | Your output directory | Owner ids, and the inventory's declared `name`, `owner` and `purpose` |
-| `report.integrations.signed.json`, `integrations.csv`, `integration-findings.csv`, and the integrations section of `results.json`, `summary.html` and `report.pdf` | Your output directory, only when an integrations source is configured. The integrations report is not posted to a tenant | Application owners' object ids (Entra), application display names, labels and slugs, counts of people a grant was made for, and webhook target hosts. No consenting person's id, and no webhook URL |
+| `report.integrations.signed.json`, `integrations.csv`, `integration-findings.csv`, and the integrations section of `results.json`, `summary.html` and `report.pdf` | Your output directory, only when an integrations source is configured. The integrations report (`report.integrations.signed.json`, or stdout) is posted to a tenant only if you configure one and name its key (`integrationsApiKeyEnv`) | Application owners' object ids (Entra), application display names, labels and slugs, counts of people a grant was made for, and webhook target hosts. No consenting person's id, and no webhook URL |
 | `findings.csv` | Your output directory | Agent ids and credential references. A finding names an agent or a credential by its id; for the sources listed under "Indirectly" above, that id holds names your estate chose (a secret's name, a workflow file, a path), and a person's name written there is carried |
 | The log (stderr) | Wherever your platform sends a container's stderr | None by design: kinds, counts, scan ids, host names. No owner, no agent id (`docs/operations.md`) |
 | A support bundle | Where you write it, if you run the command | None by default: every name and id is replaced by a token. With `--include-identifiers`: agent ids, the estate's name, the tenant's host and slug, configured hosts, labels, paths, and the text of each doctor check |
@@ -159,7 +159,10 @@ runs as. Nothing is written outside the output directory.
   sources you configure, with your credentials, to read. It sends them no data
   about your estate beyond the requests themselves.
 - **To a tenant, only if you configure it.** With the `inflect` output, the
-  signed report is posted to the origin you name. It then contains owner ids.
+  signed agent report is posted to the origin you name. It then contains owner
+  ids. The integrations report is posted there too only when you name its key
+  (`integrationsApiKeyEnv`); it then contains application owners' object ids
+  and application names.
   Whether that is a transfer to a processor, and where that processor is, is a
   matter between you and whoever operates the tenant.
 - **No telemetry.** The scanner reports nothing to its authors and checks for

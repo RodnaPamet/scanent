@@ -213,7 +213,7 @@ Source kind: `code`. Credential: `(none)`. Hosts: none.
 
 - Write access: mount the roots read-only
 
-### An Inflect tenant (posting results, and reading its agent register)
+### An Inflect tenant (posting the agent report, and reading its agent register)
 
 Source kind: `inflect-register`. Credential: `INFLECT_INGEST_KEY`. Hosts: the tenant's host.
 
@@ -325,3 +325,23 @@ Source kind: `github-integrations`. Credential: `GITHUB_INTEGRATIONS_TOKEN`. Hos
 - Any repository permission
 - Members, or any organisation permission other than the two above
 - A classic token: listing webhooks takes admin:org_hook, which can also change them
+
+### An Inflect tenant (posting the integrations report)
+
+Not a source: the `inflect` output's second key. Credential: `INFLECT_INTEGRATIONS_KEY`. Hosts: the tenant's host.
+
+**Grant.** A second API key bound to the scanner agent, with the admin:integrations_ingest scope and no other.
+
+**Where it is created.**
+
+1. The Inflect tenant's API keys page: a key of its own, not the key that posts the agent report.
+2. Name its variable in the configuration as inflect.integrationsApiKeyEnv. Without it the integrations report is not posted, and the log says so.
+
+**Lets the scanner read.**
+
+- Nothing: it posts the signed integrations report, and is used for no other request
+
+**Not needed, and must not be granted.**
+
+- admin:harness_ingest, mcp:read or any other scope
+- The agent report's key: a key minted for one report does not post the other

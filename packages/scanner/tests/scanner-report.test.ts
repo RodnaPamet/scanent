@@ -209,7 +209,8 @@ describe('4. the whole run stays on the declared surface', () => {
     it('GETs to the sources, one token exchange, and one POST of the unchanged report', async () => {
         const { deps, fakes } = setup();
         const result = await scanAndPost(deps);
-        expect(result).toMatchObject({ ok: true, status: 201 });
+        // One report, one post: the agent report's answer, and no integrations report to post.
+        expect(result).toMatchObject({ ok: true, agents: { ok: true, status: 201 }, integrations: null });
 
         for (const r of fakes.log) expect(isDeclaredRequest(r.method, `https://${r.host}${r.path}${r.query}`)).toBe(true);
         expect(fakes.log.filter((r) => r.method !== 'GET').map((r) => `${r.method} ${r.host}${r.path}`)).toEqual([
@@ -225,7 +226,7 @@ describe('4. the whole run stays on the declared surface', () => {
     it('reports an ingest refusal by its code', async () => {
         const { deps, fakes } = setup();
         fakes.ingest = () => ({ status: 409, body: { error: { message: 'harness_report_refused: REPLAY: scan x is already ingested' } } });
-        expect(await scanAndPost(deps)).toEqual({ ok: false, status: 409, refusal: 'REPLAY', complete: null, agentCount: null });
+        expect(await scanAndPost(deps)).toEqual({ ok: false, agents: { ok: false, status: 409, refusal: 'REPLAY', complete: null, agentCount: null }, integrations: null });
     });
 });
 

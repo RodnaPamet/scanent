@@ -560,12 +560,12 @@ describe('6. the model, and the exit code', () => {
 });
 
 describe('7. grouped by scanner', () => {
-    const withIntegrations = () => {
+    const withIntegrations = (inflect: Record<string, unknown> = {}) => {
         const c = fullEstateConfig(join(dir, 'out'));
         const integrations = { kind: 'entra-integrations', directoryId: ENTRA_DIRECTORY_ID, clientId: AZURE_CLIENT_ID, clientSecretEnv: 'ENTRA_CLIENT_SECRET' };
         // Okta's integrations reader, on the agent source's org and token.
         const okta = { kind: 'okta-integrations', orgUrl: OKTA_ORG, apiTokenEnv: 'OKTA_API_TOKEN' };
-        writeFileSync(configPath, JSON.stringify({ ...c, sources: [...(c.sources as unknown[]), integrations, okta] }), { mode: 0o600 });
+        writeFileSync(configPath, JSON.stringify({ ...c, inflect: { ...(c.inflect as object), ...inflect }, sources: [...(c.sources as unknown[]), integrations, okta] }), { mode: 0o600 });
     };
 
     it('an agents-only estate: one group, every source scope and the ingest in it, and the local checks outside it', async () => {
@@ -580,7 +580,8 @@ describe('7. grouped by scanner', () => {
         withIntegrations();
         const report = await doctor(createDoctorWorld());
         expect(report.scanners.map((g) => g.scanner)).toEqual(['agents', 'integrations']);
-        expect(report.scanners[1].scopes).toEqual(['entra-integrations', 'okta-integrations']);
+        // The integrations report's key is that scanner's: here none is configured, and the check says the report will not be posted.
+        expect(report.scanners[1].scopes).toEqual(['entra-integrations', 'okta-integrations', 'inflect-integrations']);
         expect(statuses(report, 'entra-integrations')).toMatchObject({ 'credential.present': 'PASS', reachable: 'PASS', authenticated: 'PASS' });
         expect(statuses(report, 'okta-integrations')).toMatchObject({ 'credential.present': 'PASS', reachable: 'PASS', authenticated: 'PASS', 'read.permitted': 'PASS' });
         const text = renderDoctorText(report);
@@ -592,6 +593,49 @@ describe('7. grouped by scanner', () => {
         expect(text.indexOf('\nokta-integrations\n')).toBeGreaterThan(integrations);
         expect(text.indexOf('\nentra-sp\n')).toBeLessThan(integrations);
         expect(JSON.parse(renderDoctorJson(report)).scanners).toEqual(report.scanners);
+    });
+
+    it('the integrations report\'s key: not configured is said, not failed; configured is checked as the agent key is', async () => {
+        withIntegrations();
+        const none = await doctor(createDoctorWorld());
+        expect(none.checks.filter((c) => c.scope === 'inflect-integrations')).toEqual([
+            {
+                scope: 'inflect-integrations',
+                id: 'credential.present',
+                status: 'SKIPPED',
+                cause: 'NOT_APPLICABLE',
+                detail: 'no inflect.integrationsApiKeyEnv is configured: the integrations report will not be posted',
+            },
+        ]);
+        // Said, and not counted against readiness: no warning, nothing blocked.
+        expect(none.checks.filter((c) => c.status === 'WARN' || (c.status === 'SKIPPED' && c.cause === 'BLOCKED')).map((c) => c.scope)).not.toContain('inflect-integrations');
+
+        withIntegrations({ integrationsApiKeyEnv: 'INFLECT_INTEGRATIONS_KEY' });
+        const set = await doctor(createDoctorWorld(), { env: { ...fullEstateEnv(), INFLECT_INTEGRATIONS_KEY: 'iflk_fake-integrations-key' } });
+        expect(statuses(set, 'inflect-integrations')).toEqual({ 'credential.present': 'PASS', 'post.permitted': 'NOT_OBSERVABLE' });
+        expect(set.checks.find((c) => c.scope === 'inflect-integrations' && c.id === 'credential.present')).toMatchObject({ detail: 'INFLECT_INTEGRATIONS_KEY' });
+        // The agent report's key is still checked on its own.
+        expect(statuses(set, 'inflect')).toEqual({ 'credential.present': 'PASS', 'post.permitted': 'NOT_OBSERVABLE' });
+        expect(set.scanners[1].scopes).toContain('inflect-integrations');
+
+        const unset = await doctor(createDoctorWorld());
+        expect(unset.checks.find((c) => c.scope === 'inflect-integrations' && c.id === 'credential.present')).toMatchObject({
+            status: 'FAIL',
+            class: 'CREDENTIAL',
+            detail: 'INFLECT_INTEGRATIONS_KEY is not set',
+            fix: 'Set INFLECT_INTEGRATIONS_KEY or INFLECT_INTEGRATIONS_KEY_FILE.',
+        });
+        expect(unset.exitCode).toBe(5);
+        // Its value never reaches the report.
+        expect(renderDoctorJson(set)).not.toContain('iflk_fake-integrations-key');
+    });
+
+    it('an agents-only estate that names an integrations key has no check for it: there is no integrations report to post', async () => {
+        const c = fullEstateConfig(join(dir, 'out'));
+        writeFileSync(configPath, JSON.stringify({ ...c, inflect: { ...(c.inflect as object), integrationsApiKeyEnv: 'INFLECT_INTEGRATIONS_KEY' } }), { mode: 0o600 });
+        const report = await doctor(createDoctorWorld());
+        expect(report.checks.filter((c) => c.scope === 'inflect-integrations')).toEqual([]);
+        expect(report.scanners.map((g) => g.scanner)).toEqual(['agents']);
     });
 
     it('a configuration that could not be read groups nothing', async () => {

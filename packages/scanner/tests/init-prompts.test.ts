@@ -348,18 +348,19 @@ describe('an answer that breaks its field\'s rule', () => {
         await expect(collectAnswers(script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n']).io)).rejects.toThrow('no source was chosen');
     });
 
-    it('no agent source: the integrations scanner is offered on its own, and posting is not asked about', async () => {
+    it('no agent source: the integrations scanner is offered on its own, and posting is asked about in its own words', async () => {
         const directory = '11111111-2222-4333-8444-555555555555';
         const client = '66666666-7777-4888-8999-aaaaaaaaaaaa';
-        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', directory, client, 'y', 'n', 'n', '', '', '']);
+        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', directory, client, 'y', 'n', 'n', '', '', '', 'n']);
         const answers = await collectAnswers(s.io);
+        expect(s.asked.at(-1)).toBe('Post the integrations report to an Inflect tenant? [y/N] ');
         expect(answers.sources).toEqual([{ kind: 'entra-integrations', directoryId: directory, clientId: client, readSignInActivity: true }]);
         expect(answers.inflect).toBeNull();
         expect(planInit(answers).config.outputs?.map((o) => o.kind)).toEqual(['file']);
     });
 
     it('no agent source: Okta and GitHub are offered on their own too, each with its own credential', async () => {
-        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'https://acme.okta.com', 'y', 'Acme-Corp', '', '', '']);
+        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'https://acme.okta.com', 'y', 'Acme-Corp', '', '', '', 'n']);
         const answers = await collectAnswers(s.io);
         expect(answers.sources).toEqual([
             { kind: 'okta-integrations', orgUrl: 'https://acme.okta.com' },
@@ -373,7 +374,7 @@ describe('an answer that breaks its field\'s rule', () => {
     });
 
     it('an organisation that is not a GitHub login is asked for again', async () => {
-        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'acme/web', 'acme', '', '', '']);
+        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'acme/web', 'acme', '', '', '', 'n']);
         const answers = await collectAnswers(s.io);
         expect(answers.sources).toEqual([{ kind: 'github-integrations', organization: 'acme' }]);
         expect(s.said.join('\n')).not.toContain('acme/web');

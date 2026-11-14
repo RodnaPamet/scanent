@@ -9,12 +9,14 @@
  *      agents-only run's results have none.
  *   3. The outputs: the files of the run (three more, and only then), the two
  *      CSVs, the page's section and its own script, the PDF's section; stdout
- *      prints both reports; the `inflect` output posts the agent report only.
+ *      prints both reports; the `inflect` output posts the agent report, and
+ *      the integrations report only with its own key
+ *      (`integrations-post.test.ts`).
  *   4. Nothing secret in any of it: a canary in what the directory returns
  *      reaches no file, and a canary in the results refuses the run.
  *   5. The configuration: an integrations source runs with an agent source or
- *      on its own (posting, which carries the agent report, needs an agent
- *      source), `hosts` lists its hosts, `init` plans it. The run on its own
+ *      on its own (posting it alone needs the integrations report's key),
+ *      `hosts` lists its hosts, `init` plans it. The run on its own
  *      is `integrations-only-run.test.ts`.
  */
 import * as fs from 'node:fs';
@@ -247,13 +249,14 @@ describe('3. the outputs', () => {
         expect(printed).toEqual([`${agentsOf(result).raw}\n`, `${result.scan.integrations?.raw}\n`]);
     });
 
-    it('the inflect output posts the agent report alone, and says the integrations report was not sent', async () => {
+    it('the inflect output with no integrations key posts the agent report alone, and says the integrations report was not sent', async () => {
         const world = createEstateWorld();
         const logged = capturedLog();
         const result = await scanAndDeliver({ config: CONFIG, env: estateEnv(), log: logged.log, fetchImpl: world.fetchImpl, resolveHost: PUBLIC_RESOLVER, now: () => NOW, outputs: [{ kind: 'inflect' }], loadInventory: () => null });
         expect(result.ok).toBe(true);
         expect(world.fakes.posted).toEqual([agentsOf(result).raw]);
         expect(logged.lines().find((l) => l.msg === 'integrations report not posted')).toMatchObject({ scan: agentsOf(result).body.scan.id });
+        expect(world.fakes.integrationsPosted).toEqual([]);
     });
 });
 
@@ -295,11 +298,11 @@ describe('4. nothing secret', () => {
 });
 
 describe('5. the configuration', () => {
-    it('an integrations source runs on its own; posting, which carries the agent report only, needs an agent source', () => {
+    it('an integrations source runs on its own; posting it alone needs the integrations report\'s key', () => {
         const alone = { outputs: [{ kind: 'file', dir: '/out' }] };
         const { inflect: _inflect, ...noInflect } = estateConfig([INTEGRATIONS_ESTATE_SOURCE], alone);
         expect(parseScannerConfig(noInflect).sources.map((s) => s.kind)).toEqual(['entra-integrations']);
-        // An inflect block with no outputs means "post", and there is no agent report to post.
+        // An inflect block with no outputs means "post", and with no integrations key there is nothing to post.
         expect(() => parseScannerConfig(estateConfig([INTEGRATIONS_ESTATE_SOURCE]))).toThrow('outputs: custom');
         expect(() => parseScannerConfig(estateConfig([INTEGRATIONS_ESTATE_SOURCE], { outputs: [{ kind: 'inflect' }] }))).toThrow('outputs: custom');
         expect(parseScannerConfig(estateConfig([INTEGRATIONS_ESTATE_SOURCE], { outputs: [{ kind: 'stdout' }] })).sources).toHaveLength(1);

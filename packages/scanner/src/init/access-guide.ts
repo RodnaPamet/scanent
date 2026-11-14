@@ -10,13 +10,16 @@
  * granted: the scanner has no use for a write permission and should not be
  * handed one.
  */
-import type { ScannerConfig } from '../config';
+import { inflectPosts, type ScannerConfig } from '../config';
 import { hostNames, hostsFor } from '../hosts';
 import { SCANNER_OF_SOURCE, SCANNER_TITLE, SCANNERS, type ScannerSourceKind } from '../scanners';
 import { ENTRA_INTEGRATIONS_REQUIRED_ROLES, ENTRA_SIGN_IN_ROLE } from '../sources/entra-integrations';
 
+/** What an access table is for: a source, or the integrations report's ingest key, which is no source's. */
+export type AccessKind = ScannerSourceKind | 'inflect-integrations';
+
 export interface AccessEntry {
-    readonly kind: ScannerSourceKind;
+    readonly kind: AccessKind;
     readonly title: string;
     /** The role or scope, exactly as the product names it. */
     readonly grant: string;
@@ -174,7 +177,7 @@ export const ACCESS_GUIDE: Readonly<Record<ScannerSourceKind, AccessEntry>> = Ob
     },
     'inflect-register': {
         kind: 'inflect-register',
-        title: 'An Inflect tenant (posting results, and reading its agent register)',
+        title: 'An Inflect tenant (posting the agent report, and reading its agent register)',
         grant: 'An API key bound to the scanner agent with the admin:harness_ingest scope, plus mcp:read when the register is read',
         where: ["The Inflect tenant's API keys page."],
         reads: ["The tenant's agent register, through one tool, when the register is read"],
@@ -258,6 +261,25 @@ export const ACCESS_GUIDE: Readonly<Record<ScannerSourceKind, AccessEntry>> = Ob
     },
 });
 
+/**
+ * The integrations report's ingest key: not a source, the `inflect` output's
+ * second key. It posts that report and reads nothing. Listed after the
+ * integrations scanner's sources, in `docs/access.md` and by `init`.
+ */
+export const INFLECT_INTEGRATIONS_ACCESS: AccessEntry = Object.freeze({
+    kind: 'inflect-integrations',
+    title: 'An Inflect tenant (posting the integrations report)',
+    grant: 'A second API key bound to the scanner agent, with the admin:integrations_ingest scope and no other',
+    where: [
+        "The Inflect tenant's API keys page: a key of its own, not the key that posts the agent report.",
+        'Name its variable in the configuration as inflect.integrationsApiKeyEnv. Without it the integrations report is not posted, and the log says so.',
+    ],
+    reads: ['Nothing: it posts the signed integrations report, and is used for no other request'],
+    notNeeded: ['admin:harness_ingest, mcp:read or any other scope', 'The agent report\'s key: a key minted for one report does not post the other'],
+    credential: 'INFLECT_INTEGRATIONS_KEY',
+    hostsNote: "the tenant's host",
+});
+
 /** The variable an operator sets for an entry's credential: its name, or the `_FILE` form for a credential that is a file. */
 export function credentialVariable(entry: AccessEntry): string {
     return entry.asFile === true ? `${entry.credential}_FILE` : entry.credential;
@@ -269,12 +291,17 @@ const FILE_NOTE = (entry: AccessEntry): string => `a key file: set ${entry.crede
 export function accessTablesFor(config: ScannerConfig): AccessTable[] {
     const entries = hostsFor(config);
     const kinds = new Set<ScannerSourceKind>(config.sources.map((s) => s.kind));
-    // The ingest output uses the same key as the register read.
-    if (config.inflect !== undefined) kinds.add('inflect-register');
-    return GUIDE_ORDER.filter((k) => kinds.has(k)).map((kind) => ({
+    // The agent report's ingest uses the same key as the register read.
+    if (config.inflect?.apiKeyEnv !== undefined) kinds.add('inflect-register');
+    const tables: AccessTable[] = GUIDE_ORDER.filter((k) => kinds.has(k)).map((kind) => ({
         ...ACCESS_GUIDE[kind],
-        hosts: hostNames(entries.filter((e) => e.source === kind || (kind === 'inflect-register' && e.source === 'inflect'))),
+        hosts: hostNames(entries.filter((e) => e.source === kind || (kind === 'inflect-register' && e.source === 'inflect' && e.scanner === 'agents'))),
     }));
+    // The integrations report's own key, last, when this configuration posts that report.
+    if (inflectPosts(config).integrations) {
+        tables.push({ ...INFLECT_INTEGRATIONS_ACCESS, credential: config.inflect?.integrationsApiKeyEnv ?? INFLECT_INTEGRATIONS_ACCESS.credential, hosts: hostNames(entries.filter((e) => e.source === 'inflect' && e.scanner === 'integrations')) });
+    }
+    return tables;
 }
 
 /** One table as plain text, for the terminal. */
@@ -322,13 +349,15 @@ export function renderAccessMarkdown(): string {
     ];
     for (const scanner of SCANNERS) {
         lines.push(`## ${SCANNER_TITLE[scanner]}`, '');
-        for (const k of GUIDE_ORDER.filter((kind) => SCANNER_OF_SOURCE[kind] === scanner)) pushEntry(k);
+        for (const k of GUIDE_ORDER.filter((kind) => SCANNER_OF_SOURCE[kind] === scanner)) pushEntry(ACCESS_GUIDE[k]);
+        // The integrations report's ingest key is no source's: it follows that scanner's sources.
+        if (scanner === 'integrations') pushEntry(INFLECT_INTEGRATIONS_ACCESS);
     }
     return `${lines.join('\n')}`;
 
-    function pushEntry(k: ScannerSourceKind): void {
-        const e = ACCESS_GUIDE[k];
-        lines.push(`### ${e.title}`, '', `Source kind: \`${e.kind}\`. Credential: \`${e.credential}\`${e.asFile === true ? ` (${FILE_NOTE(e)})` : ''}. Hosts: ${e.hostsNote}.`, '', `**Grant.** ${e.grant}.`, '');
+    function pushEntry(e: AccessEntry): void {
+        const what = e.kind === 'inflect-integrations' ? 'Not a source: the `inflect` output\'s second key.' : `Source kind: \`${e.kind}\`.`;
+        lines.push(`### ${e.title}`, '', `${what} Credential: \`${e.credential}\`${e.asFile === true ? ` (${FILE_NOTE(e)})` : ''}. Hosts: ${e.hostsNote}.`, '', `**Grant.** ${e.grant}.`, '');
         lines.push('**Where it is created.**', '', ...e.where.map((w, i) => `${i + 1}. ${w}`), '');
         lines.push('**Lets the scanner read.**', '', ...e.reads.map((r) => `- ${r}`), '');
         if (e.limits !== undefined) lines.push('**What this grant does not show.**', '', ...e.limits.map((l) => `- ${l}`), '');

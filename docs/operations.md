@@ -49,10 +49,13 @@ label. Treat the log as you treat the configuration.
 | `integrations source incomplete` | warn | the fields of `integrations source read` with `status` `INCOMPLETE`, `reason` (string: the contract's reason) and `detail` (string or null: why, in the scanner's own fixed words) | An integrations source was not read in full. What it read is reported, and nothing it did not read is concluded |
 | `sign-in activity incomplete` | warn | `source` (string), `reason` (string: the contract's reason), `detail` (string or null) | The source's sign-in activity was asked for and not read in full, for example without `AuditLog.Read.All` or a licence that records sign-ins. No application it did not reach is concluded unused |
 | `integrations report signed` | info | `scan` (string: the scan id, the agent report's when there is one), `applications` (number), `sources` (number) | The integrations report was built and signed with the same key |
-| `integrations report not posted` | info | `scan` (string), `reason` (string) | The `inflect` output posted the agent report; the tenant has no ingest for the integrations report yet, so it was not sent |
+| `integrations report not posted` | info | `scan` (string), `reason` (string) | The `inflect` output is in effect and the configuration names no key for the integrations report (`inflect.integrationsApiKeyEnv`), so that report was not sent. Once per run |
 | `results written` | info | `scan` (string), `dir` (string: `runs/<scanId>`, relative to the output directory), `files` (number), `removedRuns` (number: runs removed by `retainRuns`) | The file output wrote a run |
-| `report ingested` | info | `scan` (string), `complete` (boolean: whether the tenant reads it as a complete scan), `agents` (number) | The tenant accepted the report |
-| `report refused` | error | `scan` (string), `status` (number: the HTTP status), `refusal` (string or null: the tenant's refusal code, when it gave one) | The tenant answered and did not accept the report. A tenant that could not be reached at all is `output failed` |
+| `report ingested` | info | `scan` (string), `complete` (boolean: whether the tenant reads it as a complete scan), `agents` (number) | The tenant accepted the agent report |
+| `report refused` | error | `scan` (string), `status` (number: the HTTP status), `refusal` (string or null: the tenant's refusal code, when it gave one) | The tenant answered and did not accept the agent report. A tenant that could not be reached at all is `output failed` |
+| `integrations report ingested` | info | `scan` (string), `complete` (boolean or null: whether the tenant reads it as a complete scan), `applications` (number or null: the applications the tenant holds from it) | The tenant accepted the integrations report |
+| `integrations report refused` | error | `scan` (string), `status` (number: the HTTP status), `refusal` (string or null: the tenant's refusal code, such as `REPLAY` on a 409, when it gave one) | The tenant answered and did not accept the integrations report. The run is not delivered |
+| `integrations post failed` | error | `scan` (string), `error` (string: the error's name and code) | The integrations report could not be sent at all. The agent report is still posted, and the run is not delivered |
 | `output failed` | error | `output` (string: `file`, `stdout` or `inflect`), `scan` (string), `error` (string: a fixed description or an error code) | One output could not be delivered. The others are still tried |
 | `scheduled scan failed; the schedule continues` | error | `error` (string) | A scan of `schedule` threw. The next one runs at its time |
 | `scanner stopped` | error | `error` (string) | The command ended on an error. The exit code says which kind |
@@ -79,7 +82,7 @@ the value.
 |---|---|
 | No `report signed` (or, for the integrations scanner alone, `integrations report signed`) line for longer than `schedule.everyHours` plus the time a scan takes | The schedule has stopped, or a scan is hanging past its time box |
 | `source incomplete` with the same `reason` on consecutive scans | A credential expired (`AUTH_FAILED`), a limit is too low (`RATE_LIMITED`), or a host is gone (`UNREACHABLE`) |
-| `report refused` or `output failed` | Results are not reaching where they should |
+| `report refused`, `integrations report refused`, `integrations post failed` or `output failed` | Results are not reaching where they should |
 | `egress not proven` | The confinement the deployment relies on is not in place |
 | Exit code 1, 4, 5 or 6 from a `scan` run by a scheduler | See the table below |
 

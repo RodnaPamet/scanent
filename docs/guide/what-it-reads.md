@@ -268,8 +268,8 @@ key.
 ### An Inflect tenant (optional)
 
 Only if your organisation uses Inflect. The scanner can then read the
-tenant's own list of registered agents, and can send the signed report to the
-tenant. Both are off unless you set them up.
+tenant's own list of registered agents, and can send the signed reports to the
+tenant. Each is off unless you set it up.
 
 **How to grant it.**
 
@@ -278,6 +278,13 @@ tenant. Both are off unless you set them up.
    `admin:harness_ingest`, and `mcp:read` if the list of agents is to be read.
 
 **Do not grant.** Any other scope.
+
+To send the integrations scanner's report to the tenant as well, create a
+second key with the scope `admin:integrations_ingest` and no other, and name
+the variable it goes in (`integrationsApiKeyEnv`, by default
+`INFLECT_INTEGRATIONS_KEY`) in the configuration. A key made for one report
+does not send the other. Without it the integrations report is kept and not
+sent; with the integrations scanner alone, it is the only key you need.
 
 ### Microsoft Entra ID, for integrations
 

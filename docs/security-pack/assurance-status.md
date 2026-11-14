@@ -251,7 +251,9 @@ and the [threat model](../threat-model.md).
   `scanent-inventory/1`, which the current code refuses with a message
   saying what changed. No released version exists to compare with. A second
   directory, `0.13.0`, holds what the code of the first release wrote (commit
-  `8388ff0`), so that the version after it is tested against it.
+  `8388ff0`), so that the version after it is tested against it. A third,
+  `0.15.0`, holds what the code tagged `v0.15.0` wrote (commit `dedb214`).
+  0.14.0 has none: none was made at its release.
 - **The deployment templates.** Compose, the chart, the air-gapped bundle's
   scripts (against stand-ins for the container runtime and `cosign`).
 - **The documents.** Several pages are generated from the code or checked

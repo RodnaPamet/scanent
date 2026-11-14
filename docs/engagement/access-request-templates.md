@@ -352,18 +352,23 @@ to it, or that its register of agents is read.
 >   `admin:harness_ingest`.
 > - Also the scope `mcp:read`, only if the scan is to read the tenant's
 >   register of agents.
+> - Only if the integrations scan's report is to be sent too: a second API
+>   key, bound to the same agent entry, with the scope
+>   `admin:integrations_ingest` and no other.
 >
 > **Where it is created:** the tenant's API keys page.
 >
 > **What this allows:** sending the signed scan report to the tenant and, with
-> `mcp:read`, reading the tenant's register of agents through one tool.
+> `mcp:read`, reading the tenant's register of agents through one tool. The
+> second key sends the integrations report and nothing else.
 >
 > **What we are not asking for. Please do not grant this.**
 >
 > - Any other scope.
 >
-> **When the scan ends** (planned for *[date]*): revoke the API key. If the
-> scanner's public signing key was registered with the tenant, remove it.
+> **When the scan ends** (planned for *[date]*): revoke the API key (both,
+> if there are two). If the scanner's public signing key was registered with
+> the tenant, remove it.
 
 ---
 

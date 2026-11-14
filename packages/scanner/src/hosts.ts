@@ -11,12 +11,14 @@
  * Every port is 443: the scanner makes no request that is not https.
  *
  * GROUPED BY SCANNER. Each entry names the scanner its source belongs to (the
- * `inflect` output posts the agent report, so it is the agent scanner's), and
+ * `inflect` output is each report's scanner's: the agent scanner's when it
+ * posts the agent report, the integrations scanner's when it posts the
+ * integrations report), and
  * the `lines` format prints one group per scanner that reaches a host, under a
  * `# <scanner>` comment line. A host two scanners reach is listed under each.
  * `egress-allow` is one value for one proxy, so it stays one flat list.
  */
-import type { ScannerConfig } from './config';
+import { inflectPosts, type ScannerConfig } from './config';
 import { SCANNER_OF_SOURCE, SCANNERS, type ScannerId } from './scanners';
 import { AZURE_LOGIN_ORIGIN } from './sources/azure-key-vault';
 import { GRAPH_ORIGIN } from './sources/entra';
@@ -44,13 +46,13 @@ function postsToInflect(config: ScannerConfig): boolean {
     return config.outputs === undefined || config.outputs.some((o) => o.kind === 'inflect');
 }
 
-/** Every host the configuration makes the scanner reach, one entry per (host, source, purpose), sorted. */
+/** Every host the configuration makes the scanner reach, one entry per (scanner, host, source, purpose), sorted. */
 export function hostsFor(config: ScannerConfig): HostEntry[] {
     const out: HostEntry[] = [];
-    const add = (origin: string, source: keyof typeof SCANNER_OF_SOURCE | 'inflect', purpose: HostEntry['purpose'], named: HostEntry['named']) => {
+    const add = (origin: string, source: keyof typeof SCANNER_OF_SOURCE | 'inflect', purpose: HostEntry['purpose'], named: HostEntry['named'], ingestOf: ScannerId = 'agents') => {
         const host = hostOf(origin);
-        const scanner: ScannerId = source === 'inflect' ? 'agents' : SCANNER_OF_SOURCE[source];
-        if (!out.some((e) => e.host === host && e.source === source && e.purpose === purpose)) out.push({ scanner, host, port: 443, source, purpose, named });
+        const scanner: ScannerId = source === 'inflect' ? ingestOf : SCANNER_OF_SOURCE[source];
+        if (!out.some((e) => e.scanner === scanner && e.host === host && e.source === source && e.purpose === purpose)) out.push({ scanner, host, port: 443, source, purpose, named });
     };
     for (const s of config.sources) {
         switch (s.kind) {
@@ -94,7 +96,11 @@ export function hostsFor(config: ScannerConfig): HostEntry[] {
             }
         }
     }
-    if (config.inflect !== undefined && postsToInflect(config)) add(config.inflect.baseUrl, 'inflect', 'ingest', 'configured');
+    if (config.inflect !== undefined && postsToInflect(config)) {
+        const posts = inflectPosts(config);
+        if (posts.agents) add(config.inflect.baseUrl, 'inflect', 'ingest', 'configured', 'agents');
+        if (posts.integrations) add(config.inflect.baseUrl, 'inflect', 'ingest', 'configured', 'integrations');
+    }
     const rank = (e: HostEntry): number => SCANNERS.indexOf(e.scanner);
     return out.sort((a, b) =>
         rank(a) !== rank(b)

@@ -18,9 +18,11 @@
  *     service-account key for an account holding
  *     `roles/iam.serviceAccountViewer`, a GitHub fine-grained token holding the
  *     organisation permissions Administration: read and Webhooks: read — the `code`
- *     source takes none, and the only other credential is the
- *     Inflect API key that posts the report, which needs the
- *     `admin:harness_ingest` scope and nothing else (contract, Transport).
+ *     source takes none, and the only other credentials are the
+ *     Inflect API keys that post the reports: the agent report's, which needs
+ *     the `admin:harness_ingest` scope and nothing else (contract, Transport),
+ *     and, optionally, the integrations report's, which needs
+ *     `admin:integrations_ingest` and nothing else.
  *   • EVERY HOST IS FIXED BY KIND. Okta orgs on Okta's own domains, Key Vaults
  *     on the public cloud's, Entra on Microsoft Graph's public-cloud host, LangSmith on its US or EU cloud host, GitHub
  *     Actions on `api.github.com`, Google Cloud on `iam.googleapis.com` with its token from
@@ -51,7 +53,7 @@ import {
     LANGSMITH_MAX_WINDOW_DAYS,
 } from './sources/langsmith';
 import { OKTA_HOST_SUFFIXES } from './sources/okta';
-import { ALL_SOURCE_KINDS, isAgentSourceKind } from './scanners';
+import { ALL_SOURCE_KINDS, isAgentSourceKind, isIntegrationsSourceKind } from './scanners';
 
 const envName = z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/, 'an environment variable NAME, never a value');
 const slug = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/);
@@ -415,18 +417,31 @@ export const ScannerConfigSchema = z
             })
             .strict(),
         /**
-         * The Inflect tenant the report is posted to and the register is read
-         * from. Optional: a run that only writes its results locally names no
-         * tenant. Required when the `inflect` output is in effect, when the
-         * `inflect-register` source is configured, or when `egress` is set
-         * (the egress proof's allowed host is the ingest's).
+         * The Inflect tenant the reports are posted to and the register is
+         * read from. Optional: a run that only writes its results locally
+         * names no tenant. Required when the `inflect` output is in effect,
+         * when the `inflect-register` source is configured, or when `egress`
+         * is set (the egress proof's allowed host is the ingest's).
          */
         inflect: z
             .object({
                 baseUrl: z.string().refine((v) => httpsOrigin(v) !== null, 'baseUrl must be an https origin'),
                 tenantSlug: slug,
-                /** An API key with the `admin:harness_ingest` scope and no other. */
-                apiKeyEnv: envName,
+                /**
+                 * An API key with the `admin:harness_ingest` scope and no other
+                 * (and `mcp:read` when the register is read): it posts the agent
+                 * report. Required when an agent report is posted or the
+                 * register is read; a configuration with integrations sources
+                 * alone need not name it.
+                 */
+                apiKeyEnv: envName.optional(),
+                /**
+                 * An API key with the `admin:integrations_ingest` scope and no
+                 * other: it posts the integrations report. A key of its own,
+                 * never the agent report's. Absent, the integrations report is
+                 * not posted, and the log says so.
+                 */
+                integrationsApiKeyEnv: envName.optional(),
             })
             .strict()
             .optional(),
@@ -491,16 +506,34 @@ export const ScannerConfigSchema = z
         if (new Set(outputKinds).size !== outputKinds.length) {
             ctx.addIssue({ code: 'custom', message: 'each output kind appears once', path: ['outputs'] });
         }
-        // Which scanners run follows from the sources configured. The tenant's ingest
-        // takes the agent report only, so posting needs an agent source: an
-        // `inflect` output in effect (named, or meant by an `inflect` block with
-        // no `outputs`) over integrations sources alone would send nothing.
+        // Which scanners run follows from the sources configured, and which reports
+        // the `inflect` output posts follows from them and the keys named: the agent
+        // report with `apiKeyEnv`, the integrations report with `integrationsApiKeyEnv`.
+        // An `inflect` output in effect (named, or meant by an `inflect` block with no
+        // `outputs`) that would post nothing is refused.
         const inflectOutput = c.outputs !== undefined ? outputKinds.includes('inflect') : c.inflect !== undefined;
-        if (inflectOutput && !kinds.some(isAgentSourceKind)) {
+        const agentSources = kinds.some(isAgentSourceKind);
+        const integrationsKey = c.inflect?.integrationsApiKeyEnv;
+        if (inflectOutput && !agentSources && (integrationsKey === undefined || !kinds.some(isIntegrationsSourceKind))) {
             ctx.addIssue({
                 code: 'custom',
-                message: 'the inflect output posts the agent report, and no agent source is configured: name the file or stdout output',
+                message:
+                    'the inflect output posts the agent report, and no agent source is configured: to post the integrations report, name inflect.integrationsApiKeyEnv; otherwise name the file or stdout output',
                 path: ['outputs'],
+            });
+        }
+        if (c.inflect !== undefined && c.inflect.apiKeyEnv === undefined && ((inflectOutput && agentSources) || kinds.includes('inflect-register'))) {
+            ctx.addIssue({
+                code: 'custom',
+                message: 'the agent report is posted, or the register read, with the key inflect.apiKeyEnv names: name it',
+                path: ['inflect', 'apiKeyEnv'],
+            });
+        }
+        if (integrationsKey !== undefined && integrationsKey === c.inflect?.apiKeyEnv) {
+            ctx.addIssue({
+                code: 'custom',
+                message: 'the integrations report is posted with a key of its own: integrationsApiKeyEnv must name another variable than apiKeyEnv',
+                path: ['inflect', 'integrationsApiKeyEnv'],
             });
         }
         if (c.inflect === undefined && (outputKinds.includes('inflect') || kinds.includes('inflect-register') || c.egress !== undefined)) {
@@ -612,7 +645,24 @@ export function mcpTokenEnvNames(source: Extract<SourceConfig, { kind: 'mcp' }>)
     return source.servers.flatMap((s) => (s.readTokenEnv === undefined ? [] : [s.readTokenEnv]));
 }
 
-/** The environment variables a configuration names, every one of them. The ingest key is one only when the `inflect` block exists. */
+/**
+ * Which reports the `inflect` output posts, when it is in effect: the agent
+ * report when an agent source is configured; the integrations report when an
+ * integrations source is and `integrationsApiKeyEnv` names its key.
+ * `integrationsWithoutKey` is an integrations report the output does not post,
+ * because no key for it is named.
+ */
+export function inflectPosts(config: ScannerConfig): { readonly agents: boolean; readonly integrations: boolean; readonly integrationsWithoutKey: boolean } {
+    const agents = config.sources.some((s) => isAgentSourceKind(s.kind));
+    const integrationsSources = config.sources.some((s) => isIntegrationsSourceKind(s.kind));
+    const keyed = config.inflect?.integrationsApiKeyEnv !== undefined;
+    return { agents, integrations: integrationsSources && keyed, integrationsWithoutKey: integrationsSources && !keyed };
+}
+
+/**
+ * The environment variables a configuration names, every one of them. The
+ * ingest keys are among them only when the `inflect` block names them.
+ */
 export function credentialEnvNames(config: ScannerConfig): string[] {
     const fromSources = config.sources.flatMap((s) =>
         s.kind === 'code' || s.kind === 'inflect-register'
@@ -621,5 +671,11 @@ export function credentialEnvNames(config: ScannerConfig): string[] {
                 ? mcpTokenEnvNames(s)
                 : [sourceCredentialEnv(s)],
     );
-    return [config.scanner.signingKeyEnv, ...(config.inflect === undefined ? [] : [config.inflect.apiKeyEnv]), ...fromSources];
+    const inflect = config.inflect;
+    return [
+        config.scanner.signingKeyEnv,
+        ...(inflect?.apiKeyEnv === undefined ? [] : [inflect.apiKeyEnv]),
+        ...(inflect?.integrationsApiKeyEnv === undefined ? [] : [inflect.integrationsApiKeyEnv]),
+        ...fromSources,
+    ];
 }

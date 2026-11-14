@@ -660,26 +660,42 @@ name not in GitHub's table, projects and webhooks among them, is unknown.
 
 ## Transport
 
-A consumer that takes reports over HTTP takes them as scanent sends them:
+A consumer that takes reports over HTTP takes them as scanent sends them,
+each report to its own route, with a key of its own:
 
 ```
 POST <base URL>/api/t/<tenant>/admin/agents/harness-scans
 Authorization: Bearer <ingest key>
 Content-Type: application/json
 
-<the signed report, byte for byte>
+<the signed agent report, byte for byte>
 ```
 
-- `201` accepts it. The body may carry `complete` (boolean, as the consumer
-  derived it) and `agentCount`.
-- Any other status refuses it. A refusal that names its code as
-  `harness_report_refused: <CODE>` in the body is reported by that code; the
-  body is not otherwise read.
-- scanent sends the report once and follows no redirect.
+```
+POST <base URL>/api/t/<tenant>/admin/agents/integration-scans
+Authorization: Bearer <integrations ingest key>
+Content-Type: application/json
 
-A report written to a file (`report.signed.json`) is the same bytes. The
-integrations report (`report.integrations.signed.json`) has no ingest yet:
-scanent writes it and prints it, and does not post it.
+<the signed integrations report, byte for byte>
+```
+
+- `201` accepts it. For the agent report the body may carry `complete`
+  (boolean, as the consumer derived it) and `agentCount`; for the
+  integrations report, `complete` and `applicationCount`.
+- Any other status refuses it. A refusal that names its code in the body is
+  reported by that code: `harness_report_refused: <CODE>` for the agent
+  report, `third_party_app_report_refused: <CODE>` for the integrations
+  report (`REPLAY`, with a 409, for a scan already taken). The body is not
+  otherwise read.
+- scanent sends each report once and follows no redirect.
+- The keys are two. Inflect's agent ingest takes a key with the scope
+  `admin:harness_ingest`; its integrations ingest takes a key with
+  `admin:integrations_ingest`. One signing key signs both reports. The
+  integrations report is posted only when the configuration names its key
+  (`inflect.integrationsApiKeyEnv`), from 0.16.0.
+
+A report written to a file (`report.signed.json`,
+`report.integrations.signed.json`) is the same bytes.
 
 ## What a consumer must not assume
 

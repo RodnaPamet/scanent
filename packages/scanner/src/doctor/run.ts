@@ -18,7 +18,7 @@
  */
 import { accessSync, lstatSync, readFileSync, statSync } from 'fs';
 
-import { ConfigError, parseScannerConfig, sourceCredentialEnv, type ScannerConfig, type SourceConfig } from '../config';
+import { ConfigError, inflectPosts, parseScannerConfig, sourceCredentialEnv, type ScannerConfig, type SourceConfig } from '../config';
 import { addressCheckedByProxy, assertResolvesReachable, customerHostCheckFor, parsePrivateCidrAllowlist, resolveWithDns, type PrivateCidrAllowlist, type ResolveHost } from '../customer-host';
 import type { EgressProbe } from '../egress-proof';
 import { hostsFor } from '../hosts';
@@ -137,6 +137,9 @@ function targetsOf(config: ScannerConfig, sources: readonly SourceConfig[]): Tar
 }
 
 const isSet = (v: string | undefined): boolean => typeof v === 'string' && v.trim() !== '';
+
+/** The scope of the integrations report's ingest key: the `inflect` output's second key. */
+const INFLECT_INTEGRATIONS_SCOPE = 'inflect-integrations';
 
 /** Builds one scope's checks; each constructor names the status, so no check has a default one. */
 function scoped(scope: string) {
@@ -379,8 +382,10 @@ function reportOf(estate: string | null, at: string, checks: readonly Check[], s
 /** Each scanner's scopes, in the order the checks list them, for the scanners that have any. */
 function scannersOf(targets: readonly Target[], checks: readonly Check[]): DoctorReport['scanners'] {
     const scannerOfScope = new Map<string, ScannerId>(targets.map((t) => [t.scope, SCANNER_OF_SOURCE[t.kind]]));
-    // The ingest posts the agent report: its checks are the agent scanner's.
+    // The ingest posts each report with its own key: the agent report's checks are the agent
+    // scanner's, the integrations report's the integrations scanner's.
     scannerOfScope.set('inflect', 'agents');
+    scannerOfScope.set(INFLECT_INTEGRATIONS_SCOPE, 'integrations');
     return SCANNERS.map((scanner) => ({
         scanner,
         scopes: [...new Set(checks.map((c) => c.scope))].filter((scope) => scannerOfScope.get(scope) === scanner),
@@ -499,20 +504,30 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
     );
     for (const checks of perTarget) sourceChecks.push(...checks);
 
-    // The ingest: its use is a write (the post of a report), so doctor checks the key is there and sends nothing.
+    // The ingest: its use is a write (the post of a report), so doctor checks each key is there and sends nothing.
     const postsToInflect = hostsFor(config).some((e) => e.source === 'inflect');
     if (postsToInflect && config.inflect !== undefined && (deps.only === undefined || deps.only.length === 0)) {
-        const c = scoped('inflect');
-        const name = config.inflect.apiKeyEnv;
-        const present = isSet(secrets.resolved[name]);
-        sourceChecks.push(
-            secrets.unresolved.has(name)
-                ? c.skip('credential.present', 'BLOCKED', `${name} could not be read: see secret-files`)
-                : present
-                    ? c.pass('credential.present', name)
-                    : c.fail('credential.present', 'CREDENTIAL', `${name} is not set`, `Set ${name} or ${name}_FILE.`),
-            c.skip('post.permitted', 'NOT_OBSERVABLE', 'doctor does not post; the first scan shows whether the key may post'),
-        );
+        const posts = inflectPosts(config);
+        const keyChecks = (scope: string, name: string): Check[] => {
+            const c = scoped(scope);
+            return [
+                secrets.unresolved.has(name)
+                    ? c.skip('credential.present', 'BLOCKED', `${name} could not be read: see secret-files`)
+                    : isSet(secrets.resolved[name])
+                        ? c.pass('credential.present', name)
+                        : c.fail('credential.present', 'CREDENTIAL', `${name} is not set`, `Set ${name} or ${name}_FILE.`),
+                c.skip('post.permitted', 'NOT_OBSERVABLE', 'doctor does not post; the first scan shows whether the key may post'),
+            ];
+        };
+        if (posts.agents && config.inflect.apiKeyEnv !== undefined) sourceChecks.push(...keyChecks('inflect', config.inflect.apiKeyEnv));
+        // The integrations report's own key, under a scope of its own: the integrations scanner's.
+        if (posts.integrations && config.inflect.integrationsApiKeyEnv !== undefined) {
+            sourceChecks.push(...keyChecks(INFLECT_INTEGRATIONS_SCOPE, config.inflect.integrationsApiKeyEnv));
+        } else if (posts.integrationsWithoutKey) {
+            sourceChecks.push(
+                scoped(INFLECT_INTEGRATIONS_SCOPE).skip('credential.present', 'NOT_APPLICABLE', 'no inflect.integrationsApiKeyEnv is configured: the integrations report will not be posted'),
+            );
+        }
     }
 
     // ─── The local checks, in the table's order ───

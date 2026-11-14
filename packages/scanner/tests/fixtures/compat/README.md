@@ -30,5 +30,11 @@ Its results carry what 0.12.0's do not: `toolEvidenceSources` and
 `modelSigns` on each agent, and `estate.unregisteredIdentities`. Its
 inventory is `scanent-inventory/2`.
 
+`0.15.0` was made from commit `dedb214`, the commit tagged `v0.15.0`. Its
+run has a seventh file, `report.pdf`, and its doctor report a member 0.13.0's
+does not, `scanners`, the checks grouped by scanner. Its `configs/` hold the
+integrations examples as well. `0.14.0` has no directory: none was made at
+its release.
+
 A release adds a directory. None is removed while that version is supported
 (`docs/release-checklist.md`).

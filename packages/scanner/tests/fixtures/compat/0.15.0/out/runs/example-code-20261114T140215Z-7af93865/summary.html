@@ -1,0 +1,1277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; script-src &#39;sha256-53pVd0pgJeLtqLMcdA8a3UgBYSNaSa7uFBlfg3U9RF4=&#39;; style-src &#39;sha256-VwJ3by66lynUtGfnKgwpEvOsslOmSuaQvNflGsx/Ux8=&#39;; connect-src &#39;none&#39;; img-src &#39;none&#39;; font-src &#39;none&#39;; base-uri &#39;none&#39;; form-action &#39;none&#39;; require-trusted-types-for &#39;script&#39;">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scanent results: example-code, example-code-20261114T140215Z-7af93865</title>
+<style>
+:root{color-scheme:light dark;--bg:#ffffff;--panel:#f5f7f9;--text:#1a1f24;--muted:#4a5560;--line:#c9d1d9;--accent:#0b5cad;
+--ok:#1a6e3a;--ok-bg:#e6f4ea;--bad:#a4262c;--bad-bg:#fde7e9;--warn:#7a4b00;--warn-bg:#fff4d6;--decl:#5b3fa0;--decl-bg:#efe9fb}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1419;--panel:#171d24;--text:#e6edf3;--muted:#a9b4be;--line:#3a444f;--accent:#79b8ff;
+--ok:#7ee2a0;--ok-bg:#12301f;--bad:#ffa3a3;--bad-bg:#3a1518;--warn:#ffd479;--warn-bg:#33270a;--decl:#c9b6ff;--decl-bg:#261d40}}
+*{box-sizing:border-box}
+html{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:16px;line-height:1.5;background:var(--bg);color:var(--text)}
+body{margin:0 auto;max-width:78rem;padding:1.5rem 1.25rem 4rem}
+h1{font-size:1.9rem;line-height:1.2;margin:.1rem 0 1rem}
+h2{font-size:1.3rem;margin:0 0 .6rem;padding-top:.4rem}
+h3{font-size:1.05rem;margin:1.4rem 0 .4rem}
+p{margin:.5rem 0;max-width:62rem}
+section{margin-top:2.25rem;border-top:1px solid var(--line);padding-top:1rem}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86em;overflow-wrap:anywhere}
+a{color:var(--accent)}
+.skip{position:absolute;left:-999rem;top:0;background:var(--bg);color:var(--accent);padding:.5rem .75rem;border:2px solid var(--accent)}
+.skip:focus{left:.5rem;top:.5rem;z-index:10}
+.brand{margin:0;color:var(--muted);font-size:.9rem;letter-spacing:.02em}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr));gap:.5rem 1.5rem;margin:.5rem 0 1rem}
+.meta.wide{grid-template-columns:1fr}
+.meta dt,.stats dt{color:var(--muted);font-size:.82rem}
+.meta dd,.stats dd{margin:0}
+.status{padding:.6rem .8rem;border-left:.3rem solid;border-radius:.2rem;max-width:none}
+.status.ok{background:var(--ok-bg);border-color:var(--ok)}
+.status.bad{background:var(--bad-bg);border-color:var(--bad)}
+.callout{background:var(--panel);border-left:.3rem solid var(--muted);padding:.6rem .8rem;border-radius:.2rem}
+.callout.bad{background:var(--bad-bg);border-color:var(--bad)}
+div.callout p{margin:.3rem 0}
+nav.contents{margin:1rem 0 0}
+nav.contents ul{list-style:none;display:flex;flex-wrap:wrap;gap:.3rem 1.1rem;padding:0;margin:0;font-size:.92rem}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(10.5rem,1fr));gap:.75rem;margin:.75rem 0 1rem}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:.4rem;padding:.6rem .8rem}
+.big{font-size:1.7rem;font-weight:650;line-height:1.1}
+.note{color:var(--muted);font-size:.82rem}
+.scroll{overflow-x:auto;max-width:100%}
+table{border-collapse:collapse;width:100%;font-size:.92rem;margin:.5rem 0}
+caption{text-align:left;color:var(--muted);font-size:.85rem;padding:.2rem 0 .4rem}
+th,td{border-bottom:1px solid var(--line);padding:.4rem .6rem;text-align:left;vertical-align:top}
+thead th{background:var(--panel);border-bottom:2px solid var(--line);font-weight:600}
+tbody th{font-weight:500}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;padding:0 .45rem;border-radius:.8rem;font-size:.8rem;font-weight:600;border:1px solid;white-space:nowrap}
+.tag.ok{color:var(--ok);background:var(--ok-bg)}
+.tag.bad,.tag.sev-high,.tag.sev-critical{color:var(--bad);background:var(--bad-bg)}
+.tag.warn,.tag.sev-medium{color:var(--warn);background:var(--warn-bg)}
+.tag.sev-low{color:var(--muted);background:var(--panel)}
+.tag.sev-critical{border-width:2px}
+.decl{color:var(--decl);font-size:.8rem}
+.name{font-weight:600}
+.reasons{margin:.3rem 0 0;padding-left:1.1rem;color:var(--muted);font-size:.8rem;font-weight:400}
+.levels{max-width:40rem}
+.barcell{width:50%}
+.bar{display:block;height:.8rem;background:var(--accent);border-radius:.15rem;min-width:1px}
+.w-0{width:0%}.w-1{width:5%}.w-2{width:10%}.w-3{width:15%}.w-4{width:20%}.w-5{width:25%}.w-6{width:30%}.w-7{width:35%}.w-8{width:40%}.w-9{width:45%}.w-10{width:50%}.w-11{width:55%}.w-12{width:60%}.w-13{width:65%}.w-14{width:70%}.w-15{width:75%}.w-16{width:80%}.w-17{width:85%}.w-18{width:90%}.w-19{width:95%}.w-20{width:100%}
+.legend{list-style:none;display:grid;grid-template-columns:repeat(auto-fit,minmax(21rem,1fr));gap:.3rem 1.25rem;padding:0;margin:.75rem 0;font-size:.86rem}
+.cell{text-align:center;font-weight:700;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.legend .cell{display:inline-block;width:1.6rem;border:1px solid var(--line);border-radius:.2rem;margin-right:.3rem}
+.c-e{color:var(--ok);background:var(--ok-bg)}
+.c-d{color:var(--decl);background:var(--decl-bg)}
+.c-m{color:var(--warn);background:var(--warn-bg)}
+.c-n{color:var(--bad);background:var(--bad-bg)}
+.c-u{color:var(--muted)}
+.c-x{color:var(--muted);background:var(--panel)}
+.matrix{border:1px solid var(--line);border-radius:.3rem}
+.matrix table{margin:0;width:auto;min-width:100%}
+.matrix th.agent{position:sticky;left:0;background:var(--bg);min-width:15rem;max-width:24rem;border-right:2px solid var(--line);z-index:1}
+.matrix thead th.agent{background:var(--panel);z-index:2}
+.matrix td,.matrix th{border-right:1px solid var(--line)}
+.matrix td.cell{padding:.4rem .3rem;min-width:1.9rem;vertical-align:middle}
+.matrix td.lvl{white-space:nowrap}
+.matrix td.lvl .decl{white-space:normal;display:inline-block;max-width:14rem}
+th.group{text-align:center;white-space:nowrap}
+th.crit{vertical-align:bottom;padding:.4rem .2rem;font-weight:500;font-size:.78rem}
+th.crit span{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;max-height:11rem}
+.id{font-size:.82em}
+.ids{columns:2 22rem;padding-left:1.1rem}
+details summary{cursor:pointer}
+.fold{margin:.75rem 0}
+.fold summary{font-weight:600}
+.ref{color:var(--muted);font-size:.82rem}
+.findings td:last-child{min-width:18rem}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+.print-footer{display:none}
+[hidden]{display:none!important}
+html.js .dup{display:none}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.muted{color:var(--muted)}
+.small,.note{font-size:.84rem}
+.note{color:var(--muted)}
+.block{display:block}
+.tag.plain{color:var(--muted);background:var(--panel)}
+.dash{margin-top:2.25rem;border-top:1px solid var(--line);padding-top:1rem}
+.d-section{border-top:0;margin-top:2rem;padding-top:0}
+.dash>.d-section:first-child{margin-top:0}
+.btn{font:inherit;font-size:.88rem;padding:.35rem .75rem;border:1px solid var(--line);border-radius:.35rem;background:var(--panel);color:var(--text);cursor:pointer}
+.btn:hover:not([disabled]){border-color:var(--accent)}
+.btn[disabled]{opacity:.55;cursor:default}
+.linkish{font:inherit;padding:0;border:0;background:none;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:.15em}
+.hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(16rem,22rem);gap:1rem 2rem;align-items:start;background:var(--panel);border:1px solid var(--line);border-radius:.6rem;padding:1rem 1.25rem;margin:1rem 0}
+.eyebrow{margin:0;color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+.hero-big{font-size:1.9rem;font-weight:700;line-height:1.15;margin:.35rem 0}
+.hero-num{font-variant-numeric:tabular-nums}
+.bad-text{color:var(--bad)}
+.ladder{list-style:none;margin:0;padding:0;display:grid;gap:.15rem}
+.ladder-row{display:grid;grid-template-columns:minmax(0,10.5rem) minmax(3rem,1fr) 3rem;gap:.5rem;align-items:center;width:100%;font:inherit;font-size:.82rem;text-align:left;padding:.2rem .35rem;border:1px solid transparent;border-radius:.3rem;background:none;color:var(--text);cursor:pointer}
+.ladder-row:hover{border-color:var(--line);background:var(--bg)}
+.ladder-level{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ladder-n{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.meter{display:block;height:.6rem;background:var(--bg);border:1px solid var(--line);border-radius:.3rem;overflow:hidden}
+.meter-fill{display:block;height:100%;background:var(--accent);min-width:0}
+.meter-fill.out{background:var(--muted);opacity:.5}
+.meter-fill.bad{background:var(--bad)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(11rem,1fr));gap:.6rem;margin:1rem 0}
+.tile{display:flex;flex-direction:column;align-items:flex-start;gap:.1rem;font:inherit;text-align:left;padding:.65rem .8rem;border:1px solid var(--line);border-left:.3rem solid var(--line);border-radius:.45rem;background:var(--panel);color:var(--text);cursor:pointer}
+.tile:hover{border-color:var(--accent)}
+.tile.bad{border-left-color:var(--bad)}
+.tile.warn{border-left-color:var(--warn)}
+.tile-num{font-size:1.6rem;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile-label{font-weight:600;font-size:.9rem}
+.tile-note{color:var(--muted);font-size:.78rem}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(19rem,1fr));gap:1rem;margin:1.5rem 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:.6rem;padding:.9rem 1rem;margin:0}
+.card h3{margin:0 0 .5rem}
+.d-section .card{margin:1rem 0}
+.chart{display:block;width:100%;height:auto;max-height:15rem}
+.ch-grid{stroke:var(--line);stroke-width:1}
+.ch-axis{fill:var(--muted);font-size:11px}
+.ch-value{fill:var(--text);font-size:11px;font-weight:600}
+.ch-mark{fill:var(--muted);font-size:9px}
+.ch-label{fill:var(--text);font-size:11px}
+.ch-bar{fill:var(--accent)}
+.ch-bar.out{fill:var(--muted);opacity:.45}
+.ch-bar.nj{fill:var(--warn)}
+.ch-bar.sev-critical,.ch-bar.sev-high{fill:var(--bad)}
+.ch-bar.sev-medium{fill:var(--warn)}
+.ch-bar.sev-low{fill:var(--muted)}
+.ch-reach{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:4 3}
+.ch-hit{cursor:pointer}
+.ch-hit:focus-visible rect{stroke:var(--text);stroke-width:2.5}
+.ch-hit:hover rect{opacity:.85}
+.sources{list-style:none;margin:0;padding:0;display:grid;gap:.45rem}
+.sources li{display:grid;grid-template-columns:minmax(0,1fr);gap:.15rem}
+.src-n{font-size:.8rem;color:var(--muted)}
+.drift-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(16rem,1fr));gap:.25rem 1.5rem}
+.drift-col h3{margin-top:.8rem}
+.plain-list{list-style:none;padding:0;margin:.3rem 0}
+.plain-list li{margin:.25rem 0}
+.toolbar{display:flex;flex-wrap:wrap;gap:.5rem .75rem;align-items:flex-end;margin:.75rem 0;padding:.6rem .75rem;background:var(--panel);border:1px solid var(--line);border-radius:.45rem}
+.field{display:flex;flex-direction:column;gap:.15rem;font-size:.8rem;min-width:0}
+.field label,.label-spacer{color:var(--muted);font-weight:600}
+.field input,.field select{font:inherit;font-size:.88rem;padding:.3rem .45rem;border:1px solid var(--line);border-radius:.3rem;background:var(--bg);color:var(--text);max-width:16rem}
+.field input[type=search]{width:16rem;max-width:100%}
+.count{font-size:.85rem;color:var(--muted);margin:.4rem 0}
+.pager{display:flex;flex-wrap:wrap;gap:.5rem .75rem;align-items:flex-end;margin:.6rem 0}
+.page-of{font-size:.85rem;color:var(--muted);padding-bottom:.4rem}
+.empty{padding:1rem;color:var(--muted)}
+.agent-btn{font:inherit;font-weight:500;padding:0;border:0;background:none;color:var(--accent);cursor:pointer;text-align:left;text-decoration:underline;text-underline-offset:.15em;overflow-wrap:anywhere}
+.badges .tag{margin:.2rem .25rem 0 0}
+.badges{display:block}
+.cb{font:inherit;font-weight:700;width:100%;min-width:1.6rem;padding:.15rem 0;border:0;background:none;color:inherit;cursor:pointer}
+.cell.inline{display:inline-block;min-width:1.4rem;border:1px solid var(--line);border-radius:.2rem}
+.matrix td.cell{padding:.25rem .15rem}
+.dash .matrix td.lvl{white-space:normal;min-width:9rem}
+.dash .matrix td.lvl .tag{white-space:nowrap}
+.drawer-back{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:20}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(40rem,100%);overflow-y:auto;background:var(--bg);color:var(--text);border-left:1px solid var(--line);box-shadow:-.5rem 0 1.5rem rgba(0,0,0,.25);z-index:21;padding:0 1.1rem 2rem}
+.drawer-head{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:1rem;background:var(--bg);border-bottom:1px solid var(--line);padding:.8rem 0;z-index:1}
+.drawer-head h2{margin:0;padding:0;font-size:1.15rem;overflow-wrap:anywhere}
+body.drawer-open{overflow:hidden}
+.kv{display:grid;grid-template-columns:minmax(8rem,12rem) minmax(0,1fr);gap:.35rem 1rem;margin:.75rem 0}
+.kv dt{color:var(--muted);font-size:.85rem}
+.kv dd{margin:0;overflow-wrap:anywhere}
+.tags .tag{margin-right:.3rem}
+.crit-table td,.crit-table th{font-size:.85rem}
+.ev{overflow-wrap:anywhere}
+@media (max-width:40rem){
+body{padding:1rem .75rem 3rem}
+.hero{grid-template-columns:1fr}
+.hero-big{font-size:1.5rem}
+.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+.kv{grid-template-columns:1fr}
+.field input[type=search]{width:100%}
+.toolbar .field{flex:1 1 9rem}
+.field select{max-width:100%}
+}
+footer.end{margin-top:2.5rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--line);padding-top:.75rem}
+@media print{
+:root{--bg:#ffffff;--panel:#ffffff;--text:#000000;--muted:#333333;--line:#888888;--accent:#000000;--ok:#000000;--ok-bg:#ffffff;--bad:#000000;--bad-bg:#ffffff;--warn:#000000;--warn-bg:#ffffff;--decl:#000000;--decl-bg:#ffffff}
+html{font-size:10.5pt}
+body{max-width:none;padding:0 0 2.2em}
+.skip,nav.contents,#dash,.drawer,.drawer-back{display:none!important}
+html.js .dup{display:block}
+section{break-before:auto;break-inside:auto}
+#matrix{break-before:page}
+h2,h3,caption{break-after:avoid}
+tr{break-inside:avoid}
+thead{display:table-header-group}
+.scroll{overflow:visible}
+.matrix{border:0}
+.matrix table{font-size:7pt}
+.matrix th.agent{position:static;min-width:0}
+details:not([open])>*:not(summary){display:block}
+details::details-content{content-visibility:visible;display:block}
+.bar{border:1px solid #000;background:#000;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.print-footer{display:block;position:fixed;bottom:0;left:0;right:0;font-size:8pt;color:#000;border-top:1px solid #888;padding-top:.2em;background:#fff}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to the results</a>
+<header class="top">
+<p class="brand">scanent, the Agent Estate Scanner</p>
+<h1>Agent estate scan results</h1>
+<dl class="meta">
+<div><dt>Estate</dt><dd>example-code</dd></div>
+<div><dt>Scan</dt><dd><code>example-code-20261114T140215Z-7af93865</code></dd></div>
+<div><dt>As of (UTC)</dt><dd>2026-11-14T14:02:15.928Z</dd></div>
+</dl>
+<p class="status ok"><strong>Complete.</strong> Every listed source was read in full.</p>
+</header>
+<nav class="contents" aria-label="Contents">
+<ul>
+<li><a href="#completeness">Completeness</a></li><li><a href="#coverage">Not evidenced</a></li><li><a href="#summary">Summary</a></li><li><a href="#drift">Since the previous run</a></li><li><a href="#matrix">Agents and criteria</a></li><li><a href="#shadow">Shadow agents</a></li><li><a href="#identities">Unregistered identities</a></li><li><a href="#payments">Payment capabilities</a></li><li><a href="#orphans">Orphan credentials</a></li><li><a href="#findings">Findings</a></li><li><a href="#inventory">Inventory</a></li><li><a href="#provenance">Provenance</a></li><li><a href="#limits">Limits</a></li>
+</ul>
+</nav>
+<main id="main">
+<section id="completeness" aria-labelledby="completeness-h">
+<h2 id="completeness-h">Completeness per source</h2>
+<p>Every source this scan lists was read in full, so each result below rests on a whole read.</p>
+<div class="scroll"><table>
+<caption>Each source this scan lists, and whether it was read in full</caption>
+<thead><tr><th scope="col">Source</th><th scope="col">Status</th><th scope="col">Reason</th><th scope="col" class="num">Rows read</th><th scope="col" class="num">Agents found</th></tr></thead>
+<tbody>
+<tr class="row-ok">
+<th scope="row"><code>code</code></th>
+<td><span class="tag ok">Complete</span></td>
+<td></td>
+<td class="num">1</td>
+<td class="num">1</td>
+</tr>
+</tbody>
+</table></div>
+
+</section>
+<section id="coverage" aria-labelledby="coverage-h">
+<h2 id="coverage-h">What this scan could not evidence</h2>
+<p>The highest level this run could have stated for any agent is <strong>H1 Registered</strong>.
+A criterion nobody answered counts as not met, so no agent is shown above that level, whatever its real state.</p>
+<p>The bar is H2 for an agent that only reads and H3 for one that can write or reach outside the estate.
+<strong>This run could not have shown any agent at its bar</strong>, so every judged agent is reported below it. That is a limit of what was read, stated here so it is not mistaken for a failure a source observed.</p>
+
+<details class="fold">
+<summary>21 of 25 criteria had no configured reader. Show which, and what would read each</summary>
+<div class="scroll"><table>
+<caption>Criteria no configured reader could have reported met</caption>
+<thead><tr><th scope="col">Criterion</th><th scope="col">Why</th><th scope="col">Readers that would</th></tr></thead>
+<tbody>
+<tr>
+<th scope="row"><code>H2.credential_bound</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>entra-sp</code>, <code>gcp-sa</code>, <code>cicd</code>, <code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H2.grant_kind_declared</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>okta-app</code>, <code>gcp-sa</code>, <code>cicd</code>, <code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H2.tools_allowlisted</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>cicd</code>, <code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H2.audience_tokens</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H2.policy_card</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.manifests_pinned</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.payloads_guarded</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.propose_not_commit</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.prior_state_reads</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.skills_declared</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.delegation_narrows</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H3.egress_enforced</code></th>
+<td>A reader exists; this run did not configure it <code>READER_NOT_CONFIGURED</code></td>
+<td><code>inflect-register</code></td>
+</tr><tr>
+<th scope="row"><code>H4.ledger_baseline</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H4.receipts</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H4.kill_switch_drilled</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H4.token_budget</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H5.asi_coverage</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H5.evidence_emitted</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H5.skills_evaluated</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H5.sample_audit</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr><tr>
+<th scope="row"><code>H5.independent_audit</code></th>
+<td>No reader in scanent reports this criterion <code>NO_READER</code></td>
+<td>None</td>
+</tr>
+</tbody>
+</table></div>
+</details>
+</section>
+<div id="dash" class="dash" hidden></div>
+<section id="summary" class="dup" aria-labelledby="summary-h">
+<h2 id="summary-h">Estate summary</h2>
+<dl class="stats">
+<div class="stat"><dt>Agents found</dt><dd><span class="big">1</span> <span class="note"></span></dd></div>
+<div class="stat"><dt>Judged</dt><dd><span class="big">1</span> <span class="note">have a level</span></dd></div>
+<div class="stat"><dt>Not judged</dt><dd><span class="big">0</span> <span class="note"></span></dd></div>
+<div class="stat"><dt>Below their bar</dt><dd><span class="big">1</span> <span class="note">of the judged agents</span></dd></div>
+<div class="stat"><dt>Shadow agents</dt><dd><span class="big">0</span> <span class="note">not registered, with a sign of a model</span></dd></div>
+<div class="stat"><dt>Unregistered identities</dt><dd><span class="big">0</span> <span class="note">no sign of a model</span></dd></div>
+<div class="stat"><dt>Can pay</dt><dd><span class="big">0</span> <span class="note">code calls a payment client</span></dd></div>
+<div class="stat"><dt>Orphan credentials</dt><dd><span class="big">0</span> <span class="note">bound to no agent</span></dd></div>
+</dl>
+<p>Registration is taken from: The operator’s inventory (declared by the operator, not observed).</p>
+<div class="scroll"><table class="levels">
+<caption>Judged agents per level</caption>
+<thead><tr><th scope="col">Level</th><th scope="col" class="num">Agents</th><th scope="col">Share</th></tr></thead>
+<tbody>
+<tr>
+<th scope="row">H0 Shadow</th>
+<td class="num">0</td>
+<td class="barcell"><span class="bar w-0"></span></td>
+</tr><tr>
+<th scope="row">H1 Registered</th>
+<td class="num">1</td>
+<td class="barcell"><span class="bar w-20"></span></td>
+</tr><tr>
+<th scope="row">H2 Bounded</th>
+<td class="num">0</td>
+<td class="barcell"><span class="bar w-0"></span></td>
+</tr><tr>
+<th scope="row">H3 Guarded</th>
+<td class="num">0</td>
+<td class="barcell"><span class="bar w-0"></span></td>
+</tr><tr>
+<th scope="row">H4 Observed and stoppable</th>
+<td class="num">0</td>
+<td class="barcell"><span class="bar w-0"></span></td>
+</tr><tr>
+<th scope="row">H5 Evidenced</th>
+<td class="num">0</td>
+<td class="barcell"><span class="bar w-0"></span></td>
+</tr>
+</tbody>
+</table></div>
+
+</section><section id="drift" class="dup" aria-labelledby="drift-h">
+<h2 id="drift-h">Since the previous run</h2>
+<p>This output directory held no earlier run, so there is nothing to compare with.</p>
+</section><section id="matrix" class="dup" aria-labelledby="matrix-h">
+<h2 id="matrix-h">Agents and criteria</h2>
+
+<p>An agent reaches a level only when every criterion on it and below it is evidenced. A level is stated only for an agent every relevant source was read in full for.</p>
+<ul class="legend" aria-label="What each cell code means">
+<li><span class="cell c-e" aria-hidden="true">E</span> Evidenced: a source observed it</li><li><span class="cell c-d" aria-hidden="true">D</span> Evidenced on what the operator declared in the inventory, not observed</li><li><span class="cell c-m" aria-hidden="true">M</span> Reported met without evidence; counts as not met</li><li><span class="cell c-n" aria-hidden="true">N</span> Not met: a source saw it fail</li><li><span class="cell c-n" aria-hidden="true">n</span> Not met on what the operator declared in the inventory; no source saw it fail</li><li><span class="cell c-u" aria-hidden="true">·</span> Unanswered: a configured reader could have reported it and none did; counts as not met</li><li><span class="cell c-x" aria-hidden="true">–</span> Not readable: nothing this run was configured to read could have reported it; counts as not met</li>
+</ul>
+<div class="scroll matrix" tabindex="0" role="region" aria-labelledby="matrix-h">
+<table>
+<caption>One row per agent, one column per criterion, grouped by level</caption>
+<thead>
+<tr>
+<th scope="col" rowspan="2" class="agent">Agent</th>
+<th scope="col" rowspan="2">Registration</th>
+<th scope="col" rowspan="2">Reach</th>
+<th scope="col" rowspan="2">Level</th>
+<th scope="col" rowspan="2">Bar</th>
+<th scope="colgroup" colspan="4" class="group">H1 Registered</th><th scope="colgroup" colspan="5" class="group">H2 Bounded</th><th scope="colgroup" colspan="7" class="group">H3 Guarded</th><th scope="colgroup" colspan="4" class="group">H4 Observed and stoppable</th><th scope="colgroup" colspan="5" class="group">H5 Evidenced</th>
+</tr>
+<tr>
+<th scope="col" class="crit"><span title="H1.registered">registered</span></th><th scope="col" class="crit"><span title="H1.owner">owner</span></th><th scope="col" class="crit"><span title="H1.axes_declared">axes declared</span></th><th scope="col" class="crit"><span title="H1.tier_scored_fresh">tier scored fresh</span></th><th scope="col" class="crit"><span title="H2.credential_bound">credential bound</span></th><th scope="col" class="crit"><span title="H2.grant_kind_declared">grant kind declared</span></th><th scope="col" class="crit"><span title="H2.tools_allowlisted">tools allowlisted</span></th><th scope="col" class="crit"><span title="H2.audience_tokens">audience tokens</span></th><th scope="col" class="crit"><span title="H2.policy_card">policy card</span></th><th scope="col" class="crit"><span title="H3.manifests_pinned">manifests pinned</span></th><th scope="col" class="crit"><span title="H3.payloads_guarded">payloads guarded</span></th><th scope="col" class="crit"><span title="H3.propose_not_commit">propose not commit</span></th><th scope="col" class="crit"><span title="H3.prior_state_reads">prior state reads</span></th><th scope="col" class="crit"><span title="H3.skills_declared">skills declared</span></th><th scope="col" class="crit"><span title="H3.delegation_narrows">delegation narrows</span></th><th scope="col" class="crit"><span title="H3.egress_enforced">egress enforced</span></th><th scope="col" class="crit"><span title="H4.ledger_baseline">ledger baseline</span></th><th scope="col" class="crit"><span title="H4.receipts">receipts</span></th><th scope="col" class="crit"><span title="H4.kill_switch_drilled">kill switch drilled</span></th><th scope="col" class="crit"><span title="H4.token_budget">token budget</span></th><th scope="col" class="crit"><span title="H5.asi_coverage">asi coverage</span></th><th scope="col" class="crit"><span title="H5.evidence_emitted">evidence emitted</span></th><th scope="col" class="crit"><span title="H5.skills_evaluated">skills evaluated</span></th><th scope="col" class="crit"><span title="H5.sample_audit">sample audit</span></th><th scope="col" class="crit"><span title="H5.independent_audit">independent audit</span></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th scope="row" class="agent"><span class="name">Support order lookup</span> <span class="decl">(name declared by the operator)</span><br><code class="id">code:example/support/agent.py#support_executor</code></th>
+<td>Declared by the operator</td>
+<td>Write or external</td>
+<td class="lvl"><strong>H1</strong> Registered<br><span class="decl">H0 on observation alone; the rest is declared by the operator</span></td>
+<td class="lvl">H3 <span class="tag bad">Below bar</span></td>
+<td class="cell c-d" title="H1.registered: Evidenced on what the operator declared in the inventory, not observed"><span aria-hidden="true">D</span><span class="vh">Evidenced on what the operator declared in the inventory, not observed</span></td><td class="cell c-d" title="H1.owner: Evidenced on what the operator declared in the inventory, not observed"><span aria-hidden="true">D</span><span class="vh">Evidenced on what the operator declared in the inventory, not observed</span></td><td class="cell c-d" title="H1.axes_declared: Evidenced on what the operator declared in the inventory, not observed"><span aria-hidden="true">D</span><span class="vh">Evidenced on what the operator declared in the inventory, not observed</span></td><td class="cell c-d" title="H1.tier_scored_fresh: Evidenced on what the operator declared in the inventory, not observed"><span aria-hidden="true">D</span><span class="vh">Evidenced on what the operator declared in the inventory, not observed</span></td><td class="cell c-x" title="H2.credential_bound: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H2.grant_kind_declared: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H2.tools_allowlisted: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H2.audience_tokens: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H2.policy_card: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.manifests_pinned: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.payloads_guarded: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.propose_not_commit: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.prior_state_reads: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.skills_declared: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.delegation_narrows: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H3.egress_enforced: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H4.ledger_baseline: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H4.receipts: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H4.kill_switch_drilled: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H4.token_budget: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H5.asi_coverage: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H5.evidence_emitted: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H5.skills_evaluated: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H5.sample_audit: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td><td class="cell c-x" title="H5.independent_audit: Not readable: nothing this run was configured to read could have reported it; counts as not met"><span aria-hidden="true">–</span><span class="vh">Not readable: nothing this run was configured to read could have reported it; counts as not met</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section><section id="shadow" class="dup" aria-labelledby="shadow-h">
+<h2 id="shadow-h">Shadow agents</h2>
+<p>None: every agent this scan found is registered.</p>
+</section><section id="identities" class="dup" aria-labelledby="identities-h">
+<h2 id="identities-h">Unregistered identities</h2>
+<p>An unregistered automated identity is a principal that no register or inventory names, and that shows no sign of a model: it was not in agent code, in a tracing system or on an MCP server, and its report lists no tool and no model endpoint. A build workflow that holds a key, or a service account, looks like this.</p>
+<p><strong>The scan cannot show that one of these runs no model.</strong> Each is a finding of medium severity, and none is held to the agent bar. If one is an agent, register it or add it to the inventory, and it is then scored as one. If it is not, it still needs an owner on record.</p>
+<p>None.</p>
+</section><section id="payments" aria-labelledby="payments-h">
+<h2 id="payments-h">Payment capabilities</h2>
+<p>An agent whose code calls a payment client can pay for something on its own. scanent reads this from code: the payer side of the x402 protocol, in an agent's own file. It reports where the call is, never an amount, a wallet or a key. It does not read any spending limit, so it cannot say whether one is in place.</p>
+<p>1 agent was read for this, out of 1. For the others the report says nothing about payment.</p>
+<p>None seen in the code this scan read. That is not a statement that no agent can pay: a payment client wrapped in another module is out of the reader's sight.</p>
+</section><section id="orphans" aria-labelledby="orphans-h">
+<h2 id="orphans-h">Orphan credentials</h2>
+<p>None concluded.</p>
+
+</section><section id="findings" class="dup" aria-labelledby="findings-h">
+<h2 id="findings-h">Findings</h2>
+<div class="scroll"><table class="findings">
+<caption>2 findings, most severe first</caption>
+<thead><tr><th scope="col">Severity</th><th scope="col">Code</th><th scope="col">Subject</th><th scope="col">Finding</th></tr></thead>
+<tbody>
+<tr>
+<td><span class="tag sev-high">HIGH</span></td>
+<td><code>UNPINNED_WRITE_TOOL</code></td>
+<td><code class="id">code:example/support/agent.py#support_executor</code></td>
+<td><details><summary>Unpinned write-capable tool on agent code:example/support/agent.py#support_executor</summary><p>A harness scan (scan example-code-20261114T140215Z-7af93865, scanner agt_example) found 1 write-capable tool(s) with no pinned definition on agent code:example/support/agent.py#support_executor: lookup_order on code://example/support/agent.py#L7. A tool the agent may call with a definition nobody reviewed can change under it without anyone noticing.</p><p class="ref">Reference <code class="id">UNPINNED_WRITE_TOOL:code:example/support/agent.py#support_executor</code></p></details></td>
+</tr><tr>
+<td><span class="tag sev-high">HIGH</span></td>
+<td><code>HARNESS_SHORTFALL</code></td>
+<td><code class="id">code:example/support/agent.py#support_executor</code></td>
+<td><details><summary>Agent code:example/support/agent.py#support_executor is below the harness bar (H1, bar H3)</summary><p>A harness scan (scan example-code-20261114T140215Z-7af93865, scanner agt_example) found agent code:example/support/agent.py#support_executor at H1, whose reach is WRITE_OR_EXTERNAL; the bar for that reach is H3. Criteria blocking the next rung: H2.credential_bound, H2.grant_kind_declared, H2.tools_allowlisted, H2.audience_tokens, H2.policy_card. This finding never blocks the agent: it closes when a later scan shows the agent at the bar, or with a time-limited acceptance by the agent’s owner. The level H1 rests in part on what the operator declared in the inventory; on what the sources observed alone it is H0.</p><p class="ref">Reference <code class="id">HARNESS_SHORTFALL:code:example/support/agent.py#support_executor</code></p></details></td>
+</tr>
+</tbody>
+</table></div>
+</section><section id="inventory" aria-labelledby="inventory-h">
+<h2 id="inventory-h">Inventory</h2>
+<p>Everything in the inventory is <strong>declared by the operator</strong>. scanent did not observe it, and it is never sent anywhere.</p>
+<dl class="meta">
+<div><dt>Rows</dt><dd>2</dd></div>
+<div><dt>Matched an agent this scan found</dt><dd>1</dd></div>
+<div><dt>Declared, not found by this scan</dt><dd>1</dd></div>
+</dl>
+<p>Declared by the operator and not found by this scan. This is not a statement that they are gone: the scan may not read where they live.</p>
+<ul class="ids"><li><code class="id">code:example/billing/agent.py#billing_executor</code></li></ul>
+</section><section id="provenance" aria-labelledby="provenance-h">
+<h2 id="provenance-h">Provenance</h2>
+<dl class="meta wide">
+<div><dt>Scanner</dt><dd><code>agt_example</code>, version 0.15.0</dd></div>
+<div><dt>Scanner manifest</dt><dd><code class="id">sha256:885886a3315b34fb8bc870a37fcd34993ee77af4abdaf9fca5052311b8f1f053</code></dd></div>
+<div><dt>Ladder version</dt><dd><code class="id">sha256:b3aa459c8e48dc7dc7528f117de754cf1be24e53f7ec47c8ac81c471ec28d7ae</code></dd></div>
+<div><dt>Report contract</dt><dd><code>inflect-agent-harness/4</code></dd></div>
+<div><dt>Signed report SHA-256</dt><dd><code class="id">6b6ef1fece711f3bccc0770c03657a293f26e0d22e8a4a3e05566677cdc5b0fc</code></dd></div>
+<div><dt>Signer key fingerprint</dt><dd><code class="id">e77c299353726d9a1d8a73faaa46cf39fc41bccccd204d66c0eb6efa240acbd4</code></dd></div>
+<div><dt>Signer</dt><dd>Pinned: verified against a key supplied apart from the report</dd></div>
+<div><dt>Register claims</dt><dd>No register was read by this run</dd></div>
+<div><dt>Inventory SHA-256</dt><dd><code class="id">28892c7767866a5805b5300ec03dd61ee058f2f0c17281f113f7488294c670a9</code> (json)</dd></div>
+<div><dt>Files of this run</dt><dd><code>report.signed.json</code>, <code>results.json</code>, <code>agents.csv</code>, <code>findings.csv</code>, <code>summary.html</code>, <code>report.pdf</code>, <code>manifest.json</code></dd></div>
+</dl>
+<p>The signed report is the record; this page and the other files are derived from it and from the inventory. The same inputs give the same files.</p>
+</section><section id="limits" aria-labelledby="limits-h">
+<h2 id="limits-h">What this page does not say</h2>
+<ul><li>A source that was not read in full closes nothing: an agent found through it, or one a verdict source could have reported on, is not judged and has no level.</li><li>A criterion nobody answered counts as not met. Unanswered means a configured reader could have reported it and none did; not readable means nothing this run was configured to read could have.</li><li>A criterion the operator declared in the inventory is never shown as observed. The level on observation alone is stated beside any level that rests on a declaration.</li><li>An unregistered automated identity shows no sign of a model and is held to no bar. The scan cannot show that it runs no model.</li><li>A scan that found no agents evidences nothing. It is a finding, never a clean result.</li><li>Where code was read and no payment client was seen, that is what the reader saw in the agent’s own file. It is not evidence that the agent cannot pay.</li><li>This is derived from the signed report and the operator’s inventory. The signed report is the record.</li></ul>
+</section>
+</main>
+<footer class="end">Scan <code>example-code-20261114T140215Z-7af93865</code>, as of 2026-11-14T14:02:15.928Z UTC. Ladder <code>sha256:b3aa459c8e48dc7dc7528f117de754cf1be24e53f7ec47c8ac81c471ec28d7ae</code>.</footer>
+<p class="print-footer">Scan example-code-20261114T140215Z-7af93865, as of 2026-11-14T14:02:15.928Z UTC</p>
+<script type="application/json" id="scan-data">{"schema":"scanent-summary-page/1","scan":{"id":"example-code-20261114T140215Z-7af93865","asOf":"2026-11-14T14:02:15.928Z","estate":"example-code","complete":true,"contract":"inflect-agent-harness/4","scanner":"agt_example","version":"0.15.0","ladder":"sha256:b3aa459c8e48dc7dc7528f117de754cf1be24e53f7ec47c8ac81c471ec28d7ae"},"completeness":"COMPLETE","sources":[{"kind":"code","status":"COMPLETE","reason":null,"rows":1,"agents":1,"detail":null,"notReadTotal":0}],"coverage":{"reachable":"H1","unreadable":[{"criterion":"H2.credential_bound","why":"READER_NOT_CONFIGURED","readers":["entra-sp","gcp-sa","cicd","inflect-register"]},{"criterion":"H2.grant_kind_declared","why":"READER_NOT_CONFIGURED","readers":["okta-app","gcp-sa","cicd","inflect-register"]},{"criterion":"H2.tools_allowlisted","why":"READER_NOT_CONFIGURED","readers":["cicd","inflect-register"]},{"criterion":"H2.audience_tokens","why":"READER_NOT_CONFIGURED","readers":["inflect-register"]},{"criterion":"H2.policy_card","why":"READER_NOT_CONFIGURED","readers":["inflect-register"]},{"criterion":"H3.manifests_pinned","why":"READER_NOT_CONFIGURED","readers":["inflect-register"]},{"criterion":"H3.payloads_guarded","why":"READER_NOT_CONFIGURED","readers":["inflect-register"]},{"criterion":"H3.propose_not_commit","why":"READER_NOT_CONFIGURED","readers":["inflect-register"]},{"criterion":"H3.prior_state_reads","why":"READER_NOT_CONFIGURED","readers":["inflect-register"]},{"criterion":"H3.skills_declared","why":"READER_NOT_CONFIGURED","readers":["inflect-register"]},{"criterion":"H3.delegation_narrows","why":"READER_NOT_CONFIGURED","readers":["inflect-register"]},{"criterion":"H3.egress_enforced","why":"READER_NOT_CONFIGURED","readers":["inflect-register"]},{"criterion":"H4.ledger_baseline","why":"NO_READER","readers":[]},{"criterion":"H4.receipts","why":"NO_READER","readers":[]},{"criterion":"H4.kill_switch_drilled","why":"NO_READER","readers":[]},{"criterion":"H4.token_budget","why":"NO_READER","readers":[]},{"criterion":"H5.asi_coverage","why":"NO_READER","readers":[]},{"criterion":"H5.evidence_emitted","why":"NO_READER","readers":[]},{"criterion":"H5.skills_evaluated","why":"NO_READER","readers":[]},{"criterion":"H5.sample_audit","why":"NO_READER","readers":[]},{"criterion":"H5.independent_audit","why":"NO_READER","readers":[]}]},"bars":{"readOnly":"H2","write":"H3"},"levels":[{"level":"H0","name":"Shadow"},{"level":"H1","name":"Registered"},{"level":"H2","name":"Bounded"},{"level":"H3","name":"Guarded"},{"level":"H4","name":"Observed and stoppable"},{"level":"H5","name":"Evidenced"}],"columns":[{"level":"H1","name":"Registered","criteria":["H1.registered","H1.owner","H1.axes_declared","H1.tier_scored_fresh"]},{"level":"H2","name":"Bounded","criteria":["H2.credential_bound","H2.grant_kind_declared","H2.tools_allowlisted","H2.audience_tokens","H2.policy_card"]},{"level":"H3","name":"Guarded","criteria":["H3.manifests_pinned","H3.payloads_guarded","H3.propose_not_commit","H3.prior_state_reads","H3.skills_declared","H3.delegation_narrows","H3.egress_enforced"]},{"level":"H4","name":"Observed and stoppable","criteria":["H4.ledger_baseline","H4.receipts","H4.kill_switch_drilled","H4.token_budget"]},{"level":"H5","name":"Evidenced","criteria":["H5.asi_coverage","H5.evidence_emitted","H5.skills_evaluated","H5.sample_audit","H5.independent_audit"]}],"criteria":["H1.registered","H1.owner","H1.axes_declared","H1.tier_scored_fresh","H2.credential_bound","H2.grant_kind_declared","H2.tools_allowlisted","H2.audience_tokens","H2.policy_card","H3.manifests_pinned","H3.payloads_guarded","H3.propose_not_commit","H3.prior_state_reads","H3.skills_declared","H3.delegation_narrows","H3.egress_enforced","H4.ledger_baseline","H4.receipts","H4.kill_switch_drilled","H4.token_budget","H5.asi_coverage","H5.evidence_emitted","H5.skills_evaluated","H5.sample_audit","H5.independent_audit"],"states":[{"state":"EVIDENCED","code":"E","cls":"c-e","label":"Evidenced","text":"Evidenced: a source observed it","met":true},{"state":"DECLARED","code":"D","cls":"c-d","label":"Declared","text":"Evidenced on what the operator declared in the inventory, not observed","met":true},{"state":"MET_UNEVIDENCED","code":"M","cls":"c-m","label":"Met, no evidence","text":"Reported met without evidence; counts as not met","met":false},{"state":"NOT_MET","code":"N","cls":"c-n","label":"Not met","text":"Not met: a source saw it fail","met":false},{"state":"NOT_MET_DECLARED","code":"n","cls":"c-n","label":"Not met, declared","text":"Not met on what the operator declared in the inventory; no source saw it fail","met":false},{"state":"UNANSWERED","code":"·","cls":"c-u","label":"Unanswered","text":"Unanswered: a configured reader could have reported it and none did; counts as not met","met":false},{"state":"NOT_READABLE","code":"–","cls":"c-x","label":"Not readable","text":"Not readable: nothing this run was configured to read could have reported it; counts as not met","met":false}],"estate":{"agentCount":1,"judgedCount":1,"notJudgedCount":0,"byLevel":{"H0":0,"H1":1,"H2":0,"H3":0,"H4":0,"H5":0},"shortfallCount":1,"shadow":[],"identities":[],"paying":[],"orphans":[],"unbound":[],"registration":"The operator’s inventory (declared by the operator, not observed)","registrationBasis":"INVENTORY","inventorySupplied":true},"agents":[{"id":"code:example/support/agent.py#support_executor","name":"Support order lookup","cls":"REGISTERED","reg":"DECLARED_INVENTORY","ref":"inventory:row-1","via":["code"],"reach":"WRITE_OR_EXTERNAL","judged":true,"level":"H1","observed":"H0","bar":"H3","standing":"BELOW_BAR","barStatus":"BELOW_BAR","blocking":["H2.credential_bound","H2.grant_kind_declared","H2.tools_allowlisted","H2.audience_tokens","H2.policy_card"],"notes":[],"cells":"1111666666666666666666666","basis":"DDDD---------------------","ev":[0,0,1,0,2,0,3,0],"owner":"support-operations","purpose":"Answers customers\u0027 questions about an order\u0027s status","observedOwner":null,"counts":[1,1,1,1,1],"signs":["FOUND_IN_CODE","LISTS_A_TOOL","LISTS_A_MODEL"],"pay":[]}],"evidence":[{"t":"inventory:sha256:28892c7767866a58#row-1","h":null,"r":false}],"findings":[{"code":"UNPINNED_WRITE_TOOL","severity":"HIGH","agent":"code:example/support/agent.py#support_executor","title":"Unpinned write-capable tool on agent code:example/support/agent.py#support_executor","description":"A harness scan (scan example-code-20261114T140215Z-7af93865, scanner agt_example) found 1 write-capable tool(s) with no pinned definition on agent code:example/support/agent.py#support_executor: lookup_order on code://example/support/agent.py#L7. A tool the agent may call with a definition nobody reviewed can change under it without anyone noticing."},{"code":"HARNESS_SHORTFALL","severity":"HIGH","agent":"code:example/support/agent.py#support_executor","title":"Agent code:example/support/agent.py#support_executor is below the harness bar (H1, bar H3)","description":"A harness scan (scan example-code-20261114T140215Z-7af93865, scanner agt_example) found agent code:example/support/agent.py#support_executor at H1, whose reach is WRITE_OR_EXTERNAL; the bar for that reach is H3. Criteria blocking the next rung: H2.credential_bound, H2.grant_kind_declared, H2.tools_allowlisted, H2.audience_tokens, H2.policy_card. This finding never blocks the agent: it closes when a later scan shows the agent at the bar, or with a time-limited acceptance by the agent’s owner. The level H1 rests in part on what the operator declared in the inventory; on what the sources observed alone it is H0."}],"drift":{"kind":"FIRST"},"say":{"status":{"tone":"ok","strong":"Complete.","rest":"Every listed source was read in full."},"noFindings":null,"noneListed":"None.","empty":null},"files":{"report":"report.signed.json","results":"results.json","agents":"agents.csv","findings":"findings.csv","summary":"summary.html","pdf":"report.pdf","manifest":"manifest.json"},"text":{"reach":{"READ_ONLY":"Read only","WRITE_OR_EXTERNAL":"Write or external","UNKNOWN":"Unknown"},"registration":{"NONE":"Not registered","DECLARED_INVENTORY":"Declared by the operator","OBSERVED_REGISTER":"In the Inflect register"},"classification":{"REGISTERED":"Registered","SHADOW_AGENT":"Shadow agent","UNREGISTERED_IDENTITY":"Unregistered identity"},"standing":{"AT_BAR":"At bar","BELOW_BAR":"Below bar","NOT_JUDGED":"Not judged","NO_BAR":"Held to no bar"},"unreadable":{"NO_READER":"No reader in scanent reports this criterion","READER_NOT_CONFIGURED":"A reader exists; this run did not configure it"},"unbound":{"OWN_SOURCE_INCOMPLETE":"The source that listed it was not read in full","IDENTITY_SOURCE_INCOMPLETE":"A source that could name the agent it is bound to was not read in full"},"signs":{"FOUND_IN_CODE":"found in agent code","FOUND_IN_RUNTIME":"found in a tracing system","FOUND_ON_MCP_SERVER":"found on an MCP server","LISTS_A_TOOL":"lists a tool","LISTS_A_MODEL":"lists a model endpoint"},"basis":{"OBSERVED":"Observed: a source reported it","DECLARED":"Declared by the operator in the inventory; no source observed it"},"severity":{"CRITICAL":"Critical","HIGH":"High","MEDIUM":"Medium","LOW":"Low"},"reasons":{},"caveats":["A source that was not read in full closes nothing: an agent found through it, or one a verdict source could have reported on, is not judged and has no level.","A criterion nobody answered counts as not met. Unanswered means a configured reader could have reported it and none did; not readable means nothing this run was configured to read could have.","A criterion the operator declared in the inventory is never shown as observed. The level on observation alone is stated beside any level that rests on a declaration.","An unregistered automated identity shows no sign of a model and is held to no bar. The scan cannot show that it runs no model.","A scan that found no agents evidences nothing. It is a finding, never a clean result.","Where code was read and no payment client was seen, that is what the reader saw in the agent’s own file. It is not evidence that the agent cannot pay.","This is derived from the signed report and the operator’s inventory. The signed report is the record."]}}</script>
+<script>(function () {
+'use strict';
+var root = document.getElementById('dash');
+var holder = document.getElementById('scan-data');
+if (!root || !holder) return;
+var D;
+try { D = JSON.parse(holder.textContent || ''); } catch (err) { return; }
+if (!D || D.schema !== 'scanent-summary-page/1') return;
+
+var SVG_NS = 'http://www.w3.org/2000/svg';
+var has = function (o, k) { return o !== null && typeof o === 'object' && Object.prototype.hasOwnProperty.call(o, k); };
+var word = function (table, key, fallback) { return has(table, key) ? table[key] : fallback; };
+var plural = function (n, one, many) { return n + ' ' + (n === 1 ? one : many); };
+var byCodeUnit = function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
+
+function add(parent, kids) {
+  if (kids === null || kids === undefined || kids === false) return parent;
+  if (Array.isArray(kids)) { for (var i = 0; i < kids.length; i++) add(parent, kids[i]); return parent; }
+  if (typeof kids === 'string' || typeof kids === 'number') { parent.appendChild(document.createTextNode(String(kids))); return parent; }
+  parent.appendChild(kids);
+  return parent;
+}
+function el(tag, attrs, kids) {
+  var e = document.createElement(tag);
+  if (attrs) {
+    for (var k in attrs) {
+      if (!has(attrs, k)) continue;
+      var v = attrs[k];
+      if (v === null || v === undefined || v === false) continue;
+      if (k === 'cls') e.className = v;
+      else if (k === 'text') e.textContent = String(v);
+      else e.setAttribute(k, v === true ? '' : String(v));
+    }
+  }
+  return add(e, kids);
+}
+function sv(tag, attrs, kids) {
+  var e = document.createElementNS(SVG_NS, tag);
+  if (attrs) for (var k in attrs) if (has(attrs, k) && attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, String(attrs[k]));
+  if (kids) for (var i = 0; i < kids.length; i++) if (kids[i]) e.appendChild(kids[i]);
+  return e;
+}
+function svgText(x, y, text, cls, anchor) {
+  var t = sv('text', { x: x, y: y, 'class': cls || 'ch-label', 'text-anchor': anchor || 'middle' });
+  t.textContent = text;
+  return t;
+}
+function tag(text, kind) { return el('span', { cls: 'tag ' + kind }, text); }
+function code(text) { return el('code', null, text); }
+function idCode(text) { return el('code', { cls: 'id' }, text); }
+function button(text, cls, onClick, attrs) {
+  var b = el('button', Object.assign({ type: 'button', cls: cls || 'btn' }, attrs || {}), text);
+  b.addEventListener('click', onClick);
+  return b;
+}
+function option(value, text, selected) { return el('option', { value: value, selected: selected ? true : null }, text); }
+function labelled(labelText, control) {
+  var id = 'f-' + (labelled.n = (labelled.n || 0) + 1);
+  control.id = id;
+  return el('div', { cls: 'field' }, [el('label', { 'for': id }, labelText), control]);
+}
+
+// ── The data, indexed ──
+var T = D.text;
+var STATES = D.states;
+var CRITERIA = D.criteria;
+var LEVELS = D.levels.map(function (l) { return l.level; });
+var LEVEL_NAME = {};
+D.levels.forEach(function (l) { LEVEL_NAME[l.level] = l.name; });
+var rung = function (level) { var i = LEVELS.indexOf(level); return i < 0 ? 0 : i; };
+var levelText = function (level) { return level + ' ' + word(LEVEL_NAME, level, ''); };
+var SOURCE = {};
+D.sources.forEach(function (s) { SOURCE[s.kind] = s; });
+var UNREADABLE = {};
+D.coverage.unreadable.forEach(function (u) { UNREADABLE[u.criterion] = u; });
+var GROUP_OF = {};
+D.columns.forEach(function (g) { g.criteria.forEach(function (c) { GROUP_OF[c] = g; }); });
+
+var AGENTS = D.agents;
+var AGENT = new Map();
+AGENTS.forEach(function (a, i) {
+  a.order = i;
+  a.findings = [];
+  a.codes = {};
+  var hay = [a.id, a.name, a.owner, a.purpose, a.ref, a.observedOwner ? a.observedOwner.ref : null].concat(a.via);
+  a.hay = hay.filter(function (x) { return typeof x === 'string'; }).join(' ').toLowerCase();
+  a.evidence = {};
+  for (var k = 0; k + 1 < a.ev.length; k += 2) a.evidence[a.ev[k]] = D.evidence[a.ev[k + 1]];
+  AGENT.set(a.id, a);
+});
+D.findings.forEach(function (f, i) {
+  f.order = i;
+  if (typeof f.ref !== 'string') f.ref = f.code + ':' + (f.agent === null ? '' : f.agent);
+  var a = f.agent === null ? undefined : AGENT.get(f.agent);
+  if (a) { a.findings.push(f); a.codes[f.code] = true; }
+});
+var stateOf = function (a, i) { return STATES[Number(a.cells.charAt(i))] || STATES[STATES.length - 2]; };
+var payState = function (a) { return a.pay === null ? 'NOT_REPORTED' : a.pay.length > 0 ? 'CAN_PAY' : 'NONE_SEEN'; };
+var payingKnown = D.estate.paying !== null;
+var identitiesKnown = D.estate.identities !== null;
+var incomplete = D.sources.filter(function (s) { return s.status !== 'COMPLETE'; });
+
+// ── The drawer ──
+var drawerBack = el('div', { cls: 'drawer-back', hidden: true });
+var drawerTitle = el('h2', { id: 'drawer-h' });
+var drawerBody = el('div', { cls: 'drawer-body' });
+var drawerClose = button('Close', 'btn', function () { closeDrawer(); }, { 'aria-label': 'Close the details' });
+var drawer = el('aside', { cls: 'drawer', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'drawer-h', hidden: true, tabindex: '-1' }, [
+  el('div', { cls: 'drawer-head' }, [drawerTitle, drawerClose]),
+  drawerBody,
+]);
+var returnFocus = null;
+drawerBack.addEventListener('click', function () { closeDrawer(); });
+drawer.addEventListener('keydown', function (ev) {
+  if (ev.key === 'Escape') { ev.preventDefault(); closeDrawer(); return; }
+  if (ev.key !== 'Tab') return;
+  var focusable = drawer.querySelectorAll('button, a[href], select, input, [tabindex="0"]');
+  if (focusable.length === 0) return;
+  var first = focusable[0];
+  var last = focusable[focusable.length - 1];
+  if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+  else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+});
+function openDrawer(title, body) {
+  if (drawer.hidden) returnFocus = document.activeElement;
+  drawerTitle.textContent = title;
+  drawerBody.textContent = '';
+  add(drawerBody, body);
+  drawerBack.hidden = false;
+  drawer.hidden = false;
+  document.body.classList.add('drawer-open');
+  drawer.scrollTop = 0;
+  drawerClose.focus();
+}
+function closeDrawer() {
+  drawer.hidden = true;
+  drawerBack.hidden = true;
+  document.body.classList.remove('drawer-open');
+  if (returnFocus && document.contains(returnFocus)) returnFocus.focus();
+  returnFocus = null;
+}
+
+function evidenceNode(e) {
+  if (!e) return el('span', { cls: 'muted' }, 'No evidence reference');
+  var node = typeof e.h === 'string' && e.h.indexOf('https://') === 0
+    ? el('a', { href: e.h, rel: 'noopener noreferrer', target: '_blank', cls: 'ev' }, e.t)
+    : el('code', { cls: 'ev' }, e.t);
+  if (!e.r) return node;
+  return el('span', null, [node, el('span', { cls: 'note' }, ' User information in the reference was replaced by ***.')]);
+}
+function reasonList(codes) {
+  return el('ul', { cls: 'reasons' }, codes.map(function (c) { return el('li', null, [word(T.reasons, c, 'See the code') + '. ', code(c)]); }));
+}
+function standingNode(a) {
+  if (a.standing === 'NOT_JUDGED') return tag('Not judged', 'warn');
+  if (a.standing === 'NO_BAR') return tag(T.standing.NO_BAR, 'plain');
+  return tag(T.standing[a.standing], a.standing === 'BELOW_BAR' ? 'bad' : 'ok');
+}
+function levelNode(a) {
+  if (!a.judged) return tag('Not judged', 'warn');
+  return el('span', null, [el('strong', null, a.level), ' ' + word(LEVEL_NAME, a.level, ''),
+    a.observed !== a.level ? el('span', { cls: 'decl block' }, a.observed + ' on observation alone; the rest is declared by the operator') : null]);
+}
+function badges(a) {
+  var out = [];
+  if (a.cls === 'SHADOW_AGENT') out.push(tag('Shadow agent', 'warn'));
+  if (a.cls === 'UNREGISTERED_IDENTITY') out.push(tag('Unregistered identity', 'plain'));
+  if (a.pay !== null && a.pay.length > 0) out.push(tag('Can pay', 'warn'));
+  return out;
+}
+function agentTitle(a) { return a.name === null ? a.id : a.name; }
+function sevTag(s) { return tag(word(T.severity, s, s), 'sev-' + String(s).toLowerCase()); }
+
+function cellSection(a, i) {
+  var c = CRITERIA[i];
+  var s = stateOf(a, i);
+  var basis = a.basis.charAt(i);
+  var g = GROUP_OF[c];
+  var u = UNREADABLE[c];
+  return el('div', { cls: 'cell-detail' }, [
+    el('dl', { cls: 'kv' }, [
+      el('dt', null, 'Criterion'), el('dd', null, [code(c), g ? ' (required from ' + levelText(g.level) + ')' : '']),
+      el('dt', null, 'State'), el('dd', null, [el('span', { cls: 'cell inline ' + s.cls, 'aria-hidden': 'true' }, s.code), ' ' + s.text]),
+      el('dt', null, 'Basis'), el('dd', null, basis === 'O' ? T.basis.OBSERVED : basis === 'D' ? T.basis.DECLARED : 'No verdict was reported'),
+      el('dt', null, 'Evidence'), el('dd', null, basis === '-' ? el('span', { cls: 'muted' }, 'None: no verdict') : evidenceNode(a.evidence[i])),
+      u ? el('dt', null, 'Why not readable') : null,
+      u ? el('dd', null, [word(T.unreadable, u.why, 'See the code') + ' ', code(u.why), u.readers.length > 0 ? el('span', { cls: 'block' }, ['Readers that would: ', u.readers.join(', ')]) : null]) : null,
+    ]),
+  ]);
+}
+
+function showCell(a, i) {
+  openDrawer(CRITERIA[i], [
+    el('p', { cls: 'muted' }, ['For ', idCode(a.id), a.name === null ? '' : ' (' + a.name + ', name declared by the operator)']),
+    cellSection(a, i),
+    el('p', null, button('Show everything about this agent', 'btn', function () { showAgent(a); })),
+  ]);
+}
+
+function showAgent(a) {
+  var via = a.via.map(function (k, n) {
+    var s = SOURCE[k];
+    return el('span', null, [n > 0 ? ', ' : '', code(k), s ? (s.status === 'COMPLETE' ? ' (read in full)' : ' (not read in full: ' + (s.reason || 'no reason given') + ')') : ' (not listed as a source)']);
+  });
+  var counts = a.counts;
+  var signs = a.signs === null ? 'Not recorded in this results file'
+    : a.signs.length === 0 ? 'None: nothing the scan read shows that it runs a model'
+    : a.signs.map(function (s) { return word(T.signs, s, s); }).join('; ');
+  var pay = a.pay === null ? 'Not reported'
+    : a.pay.length === 0 ? 'Code was read and no payment client was seen in the agent’s own file. That is not evidence that it cannot pay.'
+    : el('ul', { cls: 'plain-list' }, a.pay.map(function (p) { return el('li', null, [code(p.library), ' (' + p.protocol + ') at ', idCode(p.at)]); }));
+  var bar = a.standing === 'NO_BAR'
+    ? 'Held to no bar: an unregistered automated identity. Against the bar its reach would carry (' + a.bar + '), its level is ' + (a.barStatus === 'BELOW_BAR' ? 'below it' : 'at it') + '.'
+    : a.standing === 'NOT_JUDGED' ? 'Its bar is ' + a.bar + '. No level is stated, so it is not compared with the bar.'
+    : 'Its bar is ' + a.bar + ', and it is ' + (a.standing === 'BELOW_BAR' ? 'below it' : 'at it') + '.';
+  var rows = D.columns.map(function (g) {
+    return el('tbody', null, [
+      el('tr', null, el('th', { scope: 'colgroup', colspan: '4', cls: 'group' }, levelText(g.level))),
+      g.criteria.map(function (c) {
+        var i = CRITERIA.indexOf(c);
+        var s = stateOf(a, i);
+        var basis = a.basis.charAt(i);
+        return el('tr', null, [
+          el('th', { scope: 'row' }, code(c)),
+          el('td', null, [el('span', { cls: 'cell inline ' + s.cls, 'aria-hidden': 'true' }, s.code), ' ' + s.label]),
+          el('td', null, basis === 'O' ? 'Observed' : basis === 'D' ? 'Declared' : '–'),
+          el('td', null, basis === '-' ? '' : evidenceNode(a.evidence[i])),
+        ]);
+      }),
+    ]);
+  });
+  openDrawer(agentTitle(a), [
+    el('p', null, [idCode(a.id), a.name === null ? null : el('span', { cls: 'decl' }, ' (name declared by the operator)')]),
+    el('p', { cls: 'tags' }, [tag(word(T.classification, a.cls, a.cls), a.cls === 'REGISTERED' ? 'ok' : a.cls === 'SHADOW_AGENT' ? 'warn' : 'plain'), ' ', standingNode(a)].concat(a.pay && a.pay.length > 0 ? [' ', tag('Can pay', 'warn')] : [])),
+    !a.judged ? el('div', { cls: 'callout bad' }, [el('p', null, el('strong', null, 'Not judged: no level is stated for this agent.')), reasonList(a.notes)]) : null,
+    a.judged && a.notes.length > 0 ? el('div', { cls: 'callout' }, [el('p', null, 'Judged, with a caveat:'), reasonList(a.notes)]) : null,
+    el('dl', { cls: 'kv' }, [
+      el('dt', null, 'Registration'), el('dd', null, [word(T.registration, a.reg, 'Not stated'), a.ref === null ? '' : el('span', { cls: 'block' }, idCode(a.ref))]),
+      el('dt', null, 'Reach'), el('dd', null, word(T.reach, a.reach, 'Unknown')),
+      el('dt', null, 'Found through'), el('dd', null, via),
+      a.owner !== null ? el('dt', null, 'Owner (declared)') : null, a.owner !== null ? el('dd', null, [a.owner, el('span', { cls: 'decl' }, ' declared by the operator')]) : null,
+      a.purpose !== null ? el('dt', null, 'Purpose (declared)') : null, a.purpose !== null ? el('dd', null, [a.purpose, el('span', { cls: 'decl' }, ' declared by the operator')]) : null,
+      el('dt', null, 'Owner (observed)'), el('dd', null, a.observedOwner === null ? 'None read from the estate' : [a.observedOwner.kind + ' ', idCode(a.observedOwner.ref)]),
+      el('dt', null, 'Level'), el('dd', null, levelNode(a)),
+      el('dt', null, 'Bar'), el('dd', null, bar),
+      a.blocking !== null && a.blocking.length > 0 ? el('dt', null, 'Between it and the next rung') : null,
+      a.blocking !== null && a.blocking.length > 0 ? el('dd', null, a.blocking.map(function (c, n) { return el('span', null, [n > 0 ? ', ' : '', code(c)]); })) : null,
+      el('dt', null, 'Credentials, tools'), el('dd', null, counts[0] + ' credentials; ' + counts[1] + ' tools, ' + counts[2] + ' that can write, ' + counts[3] + ' of those not pinned'),
+      el('dt', null, 'Models'), el('dd', null, counts[4] === null ? 'Not reported' : plural(counts[4], 'model endpoint', 'model endpoints')),
+      el('dt', null, 'Signs of a model'), el('dd', null, signs),
+      el('dt', null, 'Payment'), el('dd', null, pay),
+    ]),
+    el('h3', null, 'Criteria'),
+    el('div', { cls: 'scroll' }, el('table', { cls: 'crit-table' }, [
+      el('caption', null, 'Every criterion of the ladder for this agent, by the level that first requires it'),
+      el('thead', null, el('tr', null, [el('th', { scope: 'col' }, 'Criterion'), el('th', { scope: 'col' }, 'State'), el('th', { scope: 'col' }, 'Basis'), el('th', { scope: 'col' }, 'Evidence')])),
+    ].concat(rows))),
+    el('h3', null, 'Findings'),
+    a.findings.length === 0 ? el('p', null, 'None about this agent.') : el('ul', { cls: 'plain-list' }, a.findings.map(function (f) {
+      return el('li', null, [sevTag(f.severity), ' ', code(f.code), ' ', f.title,
+        f.description === null ? el('p', { cls: 'note' }, 'The description is in ' + D.files.findings + '.') : el('details', null, [el('summary', null, 'Description'), el('p', null, f.description), el('p', { cls: 'note' }, ['Reference ', idCode(f.ref)])])]);
+    })),
+  ]);
+}
+
+// ── Filters and order: what the table shows ──
+var F = { q: '', level: '', standing: '', cls: '', source: '', code: '', pay: '', criterion: '', state: '', sort: 'model', page: 0, size: 50 };
+var shown = AGENTS.slice();
+function matches(a) {
+  if (F.q !== '' && a.hay.indexOf(F.q) < 0) return false;
+  if (F.level !== '' && (F.level === 'none' ? a.judged : a.level !== F.level)) return false;
+  if (F.standing !== '' && a.standing !== F.standing) return false;
+  if (F.cls !== '' && a.cls !== F.cls) return false;
+  if (F.source !== '' && a.via.indexOf(F.source) < 0) return false;
+  if (F.code !== '' && !a.codes[F.code]) return false;
+  if (F.pay !== '' && payState(a) !== F.pay) return false;
+  if (F.state !== '') {
+    var target = String(STATES.map(function (s) { return s.state; }).indexOf(F.state));
+    if (F.criterion !== '') { if (a.cells.charAt(CRITERIA.indexOf(F.criterion)) !== target) return false; }
+    else if (a.cells.indexOf(target) < 0) return false;
+  }
+  return true;
+}
+var ORDER = {
+  model: function (a, b) { return a.order - b.order; },
+  id: function (a, b) { return byCodeUnit(a.id, b.id); },
+  name: function (a, b) { return byCodeUnit(agentTitle(a).toLowerCase(), agentTitle(b).toLowerCase()) || byCodeUnit(a.id, b.id); },
+  'level-asc': function (a, b) { return (a.judged ? rung(a.level) + 1 : 0) - (b.judged ? rung(b.level) + 1 : 0) || a.order - b.order; },
+  'level-desc': function (a, b) { return (b.judged ? rung(b.level) + 1 : 0) - (a.judged ? rung(a.level) + 1 : 0) || a.order - b.order; },
+};
+function refilter() {
+  shown = AGENTS.filter(matches).sort(ORDER[F.sort] || ORDER.model);
+  var pages = Math.max(1, Math.ceil(shown.length / F.size));
+  if (F.page >= pages) F.page = pages - 1;
+  drawMatrix();
+}
+
+// ── The overview ──
+function overview() {
+  var e = D.estate;
+  var band = el('section', { id: 'd-overview', 'aria-labelledby': 'd-overview-h', cls: 'd-section' }, el('h2', { id: 'd-overview-h' }, 'Overview'));
+  if (D.sources.length === 0) {
+    band.appendChild(el('div', { cls: 'callout bad' }, el('p', null, [el('strong', null, D.say.status.strong), ' ' + D.say.status.rest])));
+  } else if (incomplete.length > 0) {
+    band.appendChild(el('div', { cls: 'callout bad' }, [
+      el('p', null, [el('strong', null, 'Read this first: ' + incomplete.length + ' of ' + plural(D.sources.length, 'source was', 'sources were') + ' not read in full.'),
+        ' A source that was not read in full may hold agents, tools and verdicts this page does not show. Nothing here is shown as gone, closed or resolved on a partial read.']),
+      el('ul', { cls: 'plain-list' }, incomplete.map(function (s) {
+        return el('li', null, [code(s.kind), ' ', tag('Incomplete', 'bad'), ' ', s.reason === null ? '' : code(s.reason), s.detail === null ? '' : ': ' + s.detail]);
+      })),
+      e.notJudgedCount > 0 ? el('p', null, plural(e.notJudgedCount, 'agent is', 'agents are') + ' not judged for that reason and ' + (e.notJudgedCount === 1 ? 'has' : 'have') + ' no level here.') : null,
+    ]));
+  } else {
+    band.appendChild(el('p', { cls: 'status ' + D.say.status.tone }, [el('strong', null, D.say.status.strong), ' ' + D.say.status.rest]));
+  }
+  if (D.say.empty !== null) {
+    band.appendChild(el('div', { cls: 'callout bad' }, D.say.empty.map(function (line, n) { return el('p', null, n === 0 ? el('strong', null, line) : line); })));
+  }
+  var judgedHeld = AGENTS.filter(function (a) { return a.judged && a.standing !== 'NO_BAR'; }).length;
+  var reach = D.coverage.reachable;
+  var hero = el('div', { cls: 'hero' }, [
+    el('div', { cls: 'hero-main' }, [
+      el('p', { cls: 'eyebrow' }, 'Agent estate, as of ' + D.scan.asOf + ' UTC'),
+      D.completeness === 'EMPTY' ? el('p', { cls: 'hero-big bad-text' }, 'No agents found')
+        : el('p', { cls: 'hero-big' + (e.shortfallCount > 0 ? ' bad-text' : '') }, [el('span', { cls: 'hero-num' }, String(e.shortfallCount)), ' below their bar']),
+      D.completeness === 'EMPTY' ? null : el('p', { cls: 'muted' }, 'of ' + plural(judgedHeld, 'judged agent', 'judged agents') + ' held to a bar. ' + plural(e.notJudgedCount, 'agent is', 'agents are') + ' not judged and have no level.'),
+      el('p', { cls: 'muted small' }, ['The highest level this run could have stated for any agent is ', el('strong', null, levelText(reach)),
+        '. The bar is ' + D.bars.readOnly + ' for an agent that only reads and ' + D.bars.write + ' for one that can write or reach outside the estate.']),
+    ]),
+    ladder(),
+  ]);
+  band.appendChild(hero);
+  var tiles = el('div', { cls: 'tiles', role: 'group', 'aria-label': 'Counts over the whole scan. Each one filters the table.' });
+  function tile(label, value, note, onClick, tone) {
+    tiles.appendChild(button([el('span', { cls: 'tile-num' }, String(value)), el('span', { cls: 'tile-label' }, label), note ? el('span', { cls: 'tile-note' }, note) : null], 'tile' + (tone ? ' ' + tone : ''), onClick));
+  }
+  var go = function (target) { return function () { var t = document.getElementById(target); if (t) t.scrollIntoView(); }; };
+  var filterTo = function (patch) { return function () { setFilters(patch); go('d-matrix')(); }; };
+  tile('Agents found', e.agentCount, identitiesKnown && e.identities.length > 0 ? 'agents and automated identities' : '', filterTo({}), '');
+  tile('Not judged', e.notJudgedCount, 'no level stated', filterTo({ standing: 'NOT_JUDGED' }), e.notJudgedCount > 0 ? 'warn' : '');
+  tile('Below their bar', e.shortfallCount, identitiesKnown ? 'of the judged agents held to a bar' : 'of the judged agents', filterTo({ standing: 'BELOW_BAR' }), e.shortfallCount > 0 ? 'bad' : '');
+  tile('Shadow agents', e.shadow.length, identitiesKnown ? 'not registered, with a sign of a model' : 'not registered', filterTo({ cls: 'SHADOW_AGENT' }), e.shadow.length > 0 ? 'warn' : '');
+  if (identitiesKnown) tile('Unregistered identities', e.identities.length, 'no sign of a model; held to no bar', filterTo({ cls: 'UNREGISTERED_IDENTITY' }), '');
+  tile('Orphan credentials', e.orphans.length, 'bound to no agent', go('orphans'), e.orphans.length > 0 ? 'warn' : '');
+  if (payingKnown) tile('Can pay', e.paying.length, 'code calls a payment client', filterTo({ pay: 'CAN_PAY' }), e.paying.length > 0 ? 'warn' : '');
+  tile('Sources incomplete', incomplete.length + ' of ' + D.sources.length, 'see completeness', go('completeness'), incomplete.length > 0 || D.sources.length === 0 ? 'bad' : '');
+  tile('Findings', D.findings.length, 'most severe first', go('d-findings'), '');
+  band.appendChild(tiles);
+  band.appendChild(el('p', { cls: 'muted small' }, 'Registration is taken from: ' + e.registration + '.'));
+  return band;
+}
+
+function ladder() {
+  var e = D.estate;
+  var max = 1;
+  LEVELS.forEach(function (l) { max = Math.max(max, e.byLevel[l] || 0); });
+  var list = el('ul', { cls: 'ladder', 'aria-label': 'Judged agents per level' });
+  LEVELS.slice().reverse().forEach(function (l) {
+    var n = e.byLevel[l] || 0;
+    var meter = el('span', { cls: 'meter' }, el('span', { cls: 'meter-fill' + (rung(l) > rung(D.coverage.reachable) ? ' out' : '') }));
+    meter.firstChild.style.width = (n / max * 100).toFixed(1) + '%';
+    list.appendChild(el('li', null, button([el('span', { cls: 'ladder-level' }, levelText(l)), meter, el('span', { cls: 'ladder-n' }, String(n))], 'ladder-row', function () { setFilters({ level: l }); var t = document.getElementById('d-matrix'); if (t) t.scrollIntoView(); }, { 'aria-label': levelText(l) + ': ' + plural(n, 'agent', 'agents') + '. Show them in the table.' })));
+  });
+  list.appendChild(el('li', null, button([el('span', { cls: 'ladder-level' }, 'Not judged'), el('span', { cls: 'meter' }), el('span', { cls: 'ladder-n' }, String(e.notJudgedCount))], 'ladder-row', function () { setFilters({ level: 'none' }); var t = document.getElementById('d-matrix'); if (t) t.scrollIntoView(); }, { 'aria-label': 'Not judged: ' + plural(e.notJudgedCount, 'agent', 'agents') + '. Show them in the table.' })));
+  return list;
+}
+
+// ── Charts ──
+function card(id, title, kids) {
+  return el('section', { cls: 'card', id: id, 'aria-labelledby': id + '-h' }, [el('h3', { id: id + '-h' }, title)].concat(kids));
+}
+function focusableBar(g, label, onActivate) {
+  g.setAttribute('tabindex', '0');
+  g.setAttribute('role', 'button');
+  g.setAttribute('aria-label', label);
+  g.setAttribute('class', 'ch-hit');
+  g.addEventListener('click', onActivate);
+  g.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onActivate(); } });
+  var t = sv('title');
+  t.textContent = label;
+  g.appendChild(t);
+  return g;
+}
+function levelChart() {
+  var e = D.estate;
+  var cats = LEVELS.map(function (l) { return { key: l, label: l, n: e.byLevel[l] || 0, cls: rung(l) > rung(D.coverage.reachable) ? 'ch-bar out' : 'ch-bar' }; });
+  cats.push({ key: 'none', label: 'NJ', n: e.notJudgedCount, cls: 'ch-bar nj' });
+  var W = 360, H = 200, left = 34, bottom = 40, top = 18, gap = 8;
+  var bw = (W - left - 8 - gap * (cats.length - 1)) / cats.length;
+  var max = 1;
+  cats.forEach(function (c) { max = Math.max(max, c.n); });
+  var kids = [];
+  // Whole numbers only, each once: as many ticks as there are values up to four.
+  var ticks = Math.min(4, max);
+  max = Math.ceil(max / ticks) * ticks;
+  for (var t = 0; t <= ticks; t++) {
+    var y = top + (H - top - bottom) * (1 - t / ticks);
+    kids.push(sv('line', { x1: left, x2: W - 4, y1: y, y2: y, 'class': 'ch-grid' }));
+    kids.push(svgText(left - 6, y + 4, String(max * t / ticks), 'ch-axis', 'end'));
+  }
+  var reachX = null;
+  cats.forEach(function (c, i) {
+    var x = left + i * (bw + gap);
+    var h = (H - top - bottom) * (c.n / max);
+    var g = sv('g');
+    g.appendChild(sv('rect', { x: x, y: H - bottom - h, width: bw, height: Math.max(h, c.n > 0 ? 1 : 0), rx: 2, 'class': c.cls }));
+    g.appendChild(svgText(x + bw / 2, H - bottom - h - 4, String(c.n), 'ch-value'));
+    g.appendChild(svgText(x + bw / 2, H - bottom + 14, c.label, 'ch-axis'));
+    if (c.key === D.bars.readOnly) g.appendChild(svgText(x + bw / 2, H - bottom + 28, 'read bar', 'ch-mark'));
+    if (c.key === D.bars.write) g.appendChild(svgText(x + bw / 2, H - bottom + 28, 'write bar', 'ch-mark'));
+    var name = c.key === 'none' ? 'Not judged' : levelText(c.key);
+    kids.push(focusableBar(g, name + ': ' + plural(c.n, 'agent', 'agents') + (c.cls.indexOf('out') >= 0 ? ', above what this run could state' : '') + '. Show them in the table.', function () { setFilters({ level: c.key }); var m = document.getElementById('d-matrix'); if (m) m.scrollIntoView(); }));
+    if (c.key === D.coverage.reachable) reachX = x + bw + gap / 2;
+  });
+  if (reachX !== null && rung(D.coverage.reachable) < LEVELS.length - 1) {
+    kids.push(sv('line', { x1: reachX, x2: reachX, y1: top - 8, y2: H - bottom, 'class': 'ch-reach' }));
+    kids.push(svgText(reachX + 3, top - 8, 'beyond this run', 'ch-mark', 'start'));
+  }
+  var svgEl = sv('svg', { viewBox: '0 0 ' + W + ' ' + H, 'class': 'chart', role: 'group', 'aria-label': 'Judged agents per level, and those not judged' }, kids);
+  return card('d-levels', 'Levels across the estate', [
+    svgEl,
+    el('p', { cls: 'note' }, 'Judged agents per level. NJ is not judged: no level is stated. A level to the right of the dashed line could not have been stated by this run, so an empty bar there says nothing about the agents. Select a bar to filter the table.'),
+  ]);
+}
+function severityChart() {
+  var counts = {};
+  D.findings.forEach(function (f) { counts[f.severity] = (counts[f.severity] || 0) + 1; });
+  var sevs = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+  var max = 1;
+  sevs.forEach(function (s) { max = Math.max(max, counts[s] || 0); });
+  var W = 360, rowH = 34, left = 70, H = rowH * sevs.length + 8;
+  var kids = [];
+  sevs.forEach(function (s, i) {
+    var n = counts[s] || 0;
+    var y = 6 + i * rowH;
+    var w = (W - left - 46) * n / max;
+    var g = sv('g');
+    g.appendChild(svgText(left - 8, y + 18, word(T.severity, s, s), 'ch-axis', 'end'));
+    g.appendChild(sv('rect', { x: left, y: y + 4, width: Math.max(w, n > 0 ? 1 : 0), height: rowH - 12, rx: 2, 'class': 'ch-bar sev-' + s.toLowerCase() }));
+    g.appendChild(svgText(left + w + 6, y + 18, String(n), 'ch-value', 'start'));
+    kids.push(focusableBar(g, word(T.severity, s, s) + ': ' + plural(n, 'finding', 'findings') + '. Show them in the findings table.', function () { setFindingFilters({ severity: s }); var t = document.getElementById('d-findings'); if (t) t.scrollIntoView(); }));
+  });
+  return card('d-severity', 'Findings by severity', [
+    sv('svg', { viewBox: '0 0 ' + W + ' ' + H, 'class': 'chart', role: 'group', 'aria-label': 'Findings by severity' }, kids),
+    el('p', { cls: 'note' }, D.say.noFindings !== null ? D.say.noFindings : plural(D.findings.length, 'finding', 'findings') + ' in all. Select a bar to filter the findings.'),
+  ]);
+}
+function coverageCard() {
+  var max = 1;
+  D.sources.forEach(function (s) { max = Math.max(max, s.agents); });
+  var ordered = incomplete.concat(D.sources.filter(function (s) { return s.status === 'COMPLETE'; }));
+  var readable = CRITERIA.length - D.coverage.unreadable.length;
+  var list = el('ul', { cls: 'sources' }, ordered.map(function (s) {
+    var meter = el('span', { cls: 'meter' }, el('span', { cls: 'meter-fill' + (s.status === 'COMPLETE' ? '' : ' bad') }));
+    meter.firstChild.style.width = (s.agents / max * 100).toFixed(1) + '%';
+    return el('li', null, [
+      el('span', { cls: 'src-kind' }, [code(s.kind), ' ', s.status === 'COMPLETE' ? tag('Complete', 'ok') : tag('Incomplete', 'bad')]),
+      meter,
+      el('span', { cls: 'src-n' }, plural(s.agents, 'agent', 'agents') + ', ' + plural(s.rows, 'row', 'rows') + ' read' + (s.reason === null ? '' : ' (' + s.reason + ')')),
+    ]);
+  }));
+  return card('d-coverage', 'Coverage per source', [
+    D.sources.length === 0 ? el('p', { cls: 'callout bad' }, D.say.status.strong + ' ' + D.say.status.rest) : list,
+    el('p', { cls: 'note' }, readable + ' of ' + CRITERIA.length + ' criteria had a reader this run configured. The highest level it could have stated is ' + levelText(D.coverage.reachable) + '. Not readable is not the same as unanswered.'),
+  ]);
+}
+
+// ── Since the previous run ──
+function driftSection() {
+  var d = D.drift;
+  if (d === null) return null;
+  var s = el('section', { id: 'd-drift', cls: 'd-section', 'aria-labelledby': 'd-drift-h' }, el('h2', { id: 'd-drift-h' }, 'Since the previous run'));
+  if (d.kind === 'FIRST') { s.appendChild(el('p', null, 'This output directory held no earlier run, so there is nothing to compare with.')); return s; }
+  if (d.kind === 'NOT_COMPARED') { s.appendChild(el('div', { cls: 'callout' }, el('p', null, ['Not compared with ', d.scanId === null ? 'the previous run' : idCode(d.scanId), ': ' + d.text + '.']))); return s; }
+  s.appendChild(el('p', null, ['Compared with ', idCode(d.old.scanId), ', as of ' + d.old.asOf + ' UTC (' + (d.old.complete ? 'complete' : 'incomplete') + ', ' + plural(d.old.agentCount, 'agent', 'agents') + '). ', el('strong', null, d.outcomeText)]));
+  s.appendChild(el('p', { cls: 'muted' }, plural(d.differences, 'difference', 'differences') + '; ' + plural(d.notConcludedCount, 'comparison', 'comparisons') + ' not concluded. The full comparison: scanent diff on the two results files.'));
+  if (d.warnings.length > 0) s.appendChild(el('div', { cls: 'callout' }, el('ul', { cls: 'plain-list' }, d.warnings.map(function (w) { return el('li', null, [code(w.code), ': ' + w.text + '.']); }))));
+  function list(title, part, line, none) {
+    var kids = [el('h3', null, title + ' (' + part.total + ')')];
+    if (part.total === 0) kids.push(el('p', { cls: 'muted' }, none));
+    else {
+      kids.push(el('ul', { cls: 'plain-list' }, part.rows.map(line)));
+      if (part.total > part.rows.length) kids.push(el('p', { cls: 'note' }, 'The first ' + part.rows.length + ' of ' + part.total + '.'));
+    }
+    return el('div', { cls: 'drift-col' }, kids);
+  }
+  var agentLink = function (id) { var a = AGENT.get(id); return a ? button(id, 'linkish', function () { showAgent(a); }) : idCode(id); };
+  var grid = el('div', { cls: 'drift-grid' }, [
+    list('Levels', d.levels, function (l) { return el('li', null, [agentLink(l.id), ': ' + l.text + (l.from !== null && l.to !== null ? ', ' + l.from + ' to ' + l.to : '')]); }, 'No level changed where both runs judged the agent.'),
+    list('New agents', d.added, function (id) { return el('li', null, agentLink(id)); }, 'None.'),
+    list('Gone', d.gone, function (id) { return el('li', null, [idCode(id), ' (every source it was found through was read in full)']); }, 'None concluded gone.'),
+    list('Not seen, not concluded', d.notSeen, function (x) { return el('li', null, [idCode(x.id), ': ' + x.why]); }, 'None.'),
+    list('Completeness', { total: d.sources.length, rows: d.sources }, function (x) { return el('li', null, [code(x.kind), ' ' + x.text + (x.from !== null || x.to !== null ? ' (' + (x.from || '-') + ' to ' + (x.to || '-') + ')' : '')]); }, 'No source changed.'),
+    list('Findings', d.findings, function (f) { return el('li', null, [code(f.code), ' ' + (f.change === 'NOT_CONCLUDED' ? 'no longer reported, not concluded (' + (f.why || 'UNKNOWN') + ')' : f.change.toLowerCase()) + ' ', idCode(f.ref)]); }, 'No finding opened or closed.'),
+  ]);
+  s.appendChild(grid);
+  return s;
+}
+
+// ── The matrix ──
+var tableHost = el('div', { cls: 'scroll matrix', role: 'region', 'aria-labelledby': 'd-matrix-h', tabindex: '0' });
+var countLine = el('p', { cls: 'count', 'aria-live': 'polite' });
+var pager = el('div', { cls: 'pager' });
+var controls = {};
+
+function select(name, label, options) {
+  var s = el('select', null, options.map(function (o) { return option(o[0], o[1], F[name] === o[0]); }));
+  s.addEventListener('change', function () { F[name] = s.value; F.page = 0; refilter(); });
+  controls[name] = s;
+  return labelled(label, s);
+}
+function setFilters(patch) {
+  ['q', 'level', 'standing', 'cls', 'source', 'code', 'pay', 'criterion', 'state'].forEach(function (k) { F[k] = has(patch, k) ? patch[k] : ''; });
+  F.page = 0;
+  for (var k in controls) if (has(controls, k)) controls[k].value = k === 'q' ? F.q : F[k];
+  refilter();
+}
+
+function matrixSection() {
+  var s = el('section', { id: 'd-matrix', cls: 'd-section', 'aria-labelledby': 'd-matrix-h' }, [
+    el('h2', { id: 'd-matrix-h' }, 'Agents and criteria'),
+    el('p', null, 'An agent reaches a level only when every criterion on it and below it is evidenced. A level is stated only for an agent every relevant source was read in full for. The rows start with the agents that most need a reader: not judged, then below their bar, then the lowest levels.'),
+  ]);
+  var search = el('input', { type: 'search', placeholder: 'Id, name, owner, purpose or source', autocomplete: 'off', spellcheck: 'false' });
+  search.addEventListener('input', function () { F.q = search.value.trim().toLowerCase(); F.page = 0; refilter(); });
+  controls.q = search;
+  var codes = {};
+  D.findings.forEach(function (f) { if (f.agent !== null) codes[f.code] = (codes[f.code] || 0) + 1; });
+  var kinds = {};
+  AGENTS.forEach(function (a) { a.via.forEach(function (k) { kinds[k] = true; }); });
+  var tools = el('div', { cls: 'toolbar', role: 'search', 'aria-label': 'Filter the agents' }, [
+    labelled('Search', search),
+    select('level', 'Level', [['', 'Any level']].concat(LEVELS.map(function (l) { return [l, levelText(l)]; })).concat([['none', 'Not judged']])),
+    select('standing', 'Against the bar', [['', 'Any'], ['BELOW_BAR', T.standing.BELOW_BAR], ['AT_BAR', T.standing.AT_BAR], ['NO_BAR', T.standing.NO_BAR], ['NOT_JUDGED', T.standing.NOT_JUDGED]]),
+    select('cls', 'Classification', [['', 'Any'], ['REGISTERED', T.classification.REGISTERED], ['SHADOW_AGENT', T.classification.SHADOW_AGENT], ['UNREGISTERED_IDENTITY', T.classification.UNREGISTERED_IDENTITY]]),
+    select('source', 'Found through', [['', 'Any source']].concat(Object.keys(kinds).sort(byCodeUnit).map(function (k) { return [k, k]; }))),
+    select('code', 'Finding', [['', 'Any finding']].concat(Object.keys(codes).sort(byCodeUnit).map(function (c) { return [c, c + ' (' + codes[c] + ')']; }))),
+    select('pay', 'Payment', [['', 'Any'], ['CAN_PAY', 'Code calls a payment client'], ['NONE_SEEN', 'None seen'], ['NOT_REPORTED', 'Not reported']]),
+    select('criterion', 'Criterion', [['', 'Any criterion']].concat(CRITERIA.map(function (c) { return [c, c]; }))),
+    select('state', 'Cell state', [['', 'Any state']].concat(STATES.map(function (st) { return [st.state, st.code + ' ' + st.label]; }))),
+    select('sort', 'Order', [['model', 'Most in need of a reader first'], ['level-asc', 'Lowest level first'], ['level-desc', 'Highest level first'], ['id', 'Id, A to Z'], ['name', 'Name, A to Z']]),
+    el('div', { cls: 'field' }, [el('span', { cls: 'label-spacer', 'aria-hidden': 'true' }, ' '), button('Clear filters', 'btn', function () { setFilters({}); })]),
+  ]);
+  s.appendChild(tools);
+  s.appendChild(el('ul', { cls: 'legend', 'aria-label': 'What each cell code means' }, STATES.map(function (st) { return el('li', null, [el('span', { cls: 'cell ' + st.cls, 'aria-hidden': 'true' }, st.code), ' ' + st.text]); })));
+  s.appendChild(el('p', { cls: 'note' }, 'Select an agent for everything about it, or a cell for its evidence. In the table, the arrow keys move between cells.'));
+  s.appendChild(countLine);
+  s.appendChild(tableHost);
+  s.appendChild(pager);
+  return s;
+}
+
+function matrixHead() {
+  var top = el('tr', null, [
+    el('th', { scope: 'col', rowspan: '2', cls: 'agent' }, 'Agent'),
+    el('th', { scope: 'col', rowspan: '2' }, 'Registration'),
+    el('th', { scope: 'col', rowspan: '2' }, 'Reach'),
+    el('th', { scope: 'col', rowspan: '2' }, 'Level'),
+    el('th', { scope: 'col', rowspan: '2' }, 'Bar'),
+  ].concat(D.columns.map(function (g) { return el('th', { scope: 'colgroup', colspan: String(g.criteria.length), cls: 'group' }, levelText(g.level)); })));
+  var second = el('tr', null, CRITERIA.map(function (c) { return el('th', { scope: 'col', cls: 'crit', title: c }, el('span', null, c.slice(c.indexOf('.') + 1).split('_').join(' '))); }));
+  return el('thead', null, [top, second]);
+}
+
+function drawMatrix() {
+  var total = AGENTS.length;
+  var pages = Math.max(1, Math.ceil(shown.length / F.size));
+  var from = F.page * F.size;
+  var slice = shown.slice(from, from + F.size);
+  countLine.textContent = shown.length === total
+    ? 'Showing ' + (shown.length === 0 ? 0 : from + 1) + ' to ' + (from + slice.length) + ' of ' + plural(total, 'agent', 'agents') + '.'
+    : 'Showing ' + (shown.length === 0 ? 0 : from + 1) + ' to ' + (from + slice.length) + ' of ' + shown.length + ' matching, out of ' + plural(total, 'agent', 'agents') + '.';
+  var body = el('tbody');
+  slice.forEach(function (a) {
+    var name = a.name === null ? idCode(a.id) : el('span', null, [el('span', { cls: 'name' }, a.name), el('span', { cls: 'decl' }, ' (declared)'), el('br'), idCode(a.id)]);
+    var open = button(name, 'agent-btn', function () { showAgent(a); }, { 'aria-label': agentTitle(a) + ': show everything about this agent', 'data-col': '-1' });
+    var tr = el('tr', null, [
+      el('th', { scope: 'row', cls: 'agent' }, [open, el('span', { cls: 'badges' }, badges(a)),
+        !a.judged ? el('span', { cls: 'block note' }, a.notes.map(function (c) { return word(T.reasons, c, c); }).join('. ') + '.') : null]),
+      el('td', null, word(T.registration, a.reg, 'Not stated')),
+      el('td', null, word(T.reach, a.reach, 'Unknown')),
+      el('td', { cls: 'lvl' }, levelNode(a)),
+      el('td', { cls: 'lvl' }, [a.bar + ' ', standingNode(a)]),
+    ]);
+    for (var i = 0; i < CRITERIA.length; i++) {
+      var st = stateOf(a, i);
+      var b = el('button', { type: 'button', cls: 'cb', tabindex: '-1', 'data-col': String(i), 'aria-label': CRITERIA[i] + ': ' + st.text }, st.code);
+      b.addEventListener('click', (function (agent, index) { return function () { showCell(agent, index); }; })(a, i));
+      tr.appendChild(el('td', { cls: 'cell ' + st.cls }, b));
+    }
+    body.appendChild(tr);
+  });
+  var table = el('table', null, [el('caption', null, 'One row per agent, one column per criterion, grouped by the level that first requires it'), matrixHead(), body]);
+  if (slice.length === 0) {
+    tableHost.textContent = '';
+    tableHost.appendChild(el('p', { cls: 'empty' }, 'No agent matches these filters.'));
+  } else {
+    tableHost.textContent = '';
+    tableHost.appendChild(table);
+  }
+  pager.textContent = '';
+  var size = el('select', null, [25, 50, 100, 250].map(function (n) { return option(String(n), String(n), n === F.size); }));
+  size.addEventListener('change', function () { F.size = Number(size.value); F.page = 0; refilter(); });
+  pager.appendChild(labelled('Rows per page', size));
+  var prev = button('Previous page', 'btn', function () { if (F.page > 0) { F.page -= 1; drawMatrix(); } }, { disabled: F.page === 0 ? true : null });
+  var next = button('Next page', 'btn', function () { if (F.page < pages - 1) { F.page += 1; drawMatrix(); } }, { disabled: F.page >= pages - 1 ? true : null });
+  pager.appendChild(prev);
+  pager.appendChild(el('span', { cls: 'page-of' }, 'Page ' + (F.page + 1) + ' of ' + pages));
+  pager.appendChild(next);
+}
+
+tableHost.addEventListener('keydown', function (ev) {
+  var t = ev.target;
+  if (!t || !t.getAttribute || t.getAttribute('data-col') === null) return;
+  var col = Number(t.getAttribute('data-col'));
+  var row = t.closest('tr');
+  var target = null;
+  if (ev.key === 'ArrowRight') target = row.querySelector('[data-col="' + (col + 1) + '"]');
+  else if (ev.key === 'ArrowLeft') target = row.querySelector('[data-col="' + (col - 1) + '"]');
+  else if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    var other = ev.key === 'ArrowDown' ? row.nextElementSibling : row.previousElementSibling;
+    if (other) target = other.querySelector('[data-col="' + col + '"]');
+  } else if (ev.key === 'Home') target = row.querySelector('[data-col="-1"]');
+  else if (ev.key === 'End') target = row.querySelector('[data-col="' + (CRITERIA.length - 1) + '"]');
+  if (target) { ev.preventDefault(); target.focus(); }
+});
+
+// ── A paged list: the shadow agents, the identities, the findings ──
+function pagedList(opts) {
+  var state = { page: 0, size: opts.size || 25 };
+  var host = el('div');
+  var counter = el('p', { cls: 'count', 'aria-live': 'polite' });
+  var nav = el('div', { cls: 'pager' });
+  function draw() {
+    var items = opts.items();
+    var pages = Math.max(1, Math.ceil(items.length / state.size));
+    if (state.page >= pages) state.page = pages - 1;
+    var from = state.page * state.size;
+    var slice = items.slice(from, from + state.size);
+    counter.textContent = items.length === 0 ? '' : 'Showing ' + (from + 1) + ' to ' + (from + slice.length) + ' of ' + items.length + '.';
+    host.textContent = '';
+    host.appendChild(items.length === 0 ? opts.empty() : el('div', { cls: 'scroll' }, el('table', { cls: opts.cls || '' }, [el('caption', null, opts.caption), el('thead', null, el('tr', null, opts.head.map(function (h) { return el('th', { scope: 'col' }, h); }))), el('tbody', null, slice.map(opts.row))])));
+    nav.textContent = '';
+    if (pages > 1) {
+      nav.appendChild(button('Previous page', 'btn', function () { state.page -= 1; draw(); }, { disabled: state.page === 0 ? true : null }));
+      nav.appendChild(el('span', { cls: 'page-of' }, 'Page ' + (state.page + 1) + ' of ' + pages));
+      nav.appendChild(button('Next page', 'btn', function () { state.page += 1; draw(); }, { disabled: state.page >= pages - 1 ? true : null }));
+    }
+  }
+  return { node: el('div', null, [counter, host, nav]), draw: function (reset) { if (reset) state.page = 0; draw(); } };
+}
+
+function agentButton(id) {
+  var a = AGENT.get(id);
+  return a ? button(idCode(id), 'linkish', function () { showAgent(a); }, { 'aria-label': id + ': show everything about this agent' }) : idCode(id);
+}
+
+function unregisteredSection() {
+  var e = D.estate;
+  var s = el('section', { id: 'd-shadow', cls: 'd-section', 'aria-labelledby': 'd-shadow-h' }, el('h2', { id: 'd-shadow-h' }, 'Shadow agents and unregistered identities'));
+  function block(title, ids, intro, noneText, caption) {
+    var list = pagedList({
+      items: function () { return ids.map(function (id) { return AGENT.get(id); }).filter(function (a) { return a !== undefined; }); },
+      caption: caption,
+      head: ['Agent', 'Found through', 'Reach', 'Credentials'],
+      row: function (a) { return el('tr', null, [el('th', { scope: 'row' }, agentButton(a.id)), el('td', null, a.via.join(', ')), el('td', null, word(T.reach, a.reach, 'Unknown')), el('td', { cls: 'num' }, String(a.counts[0]))]); },
+      empty: function () { return el('p', null, noneText); },
+    });
+    list.draw(true);
+    return el('div', { cls: 'card' }, [el('h3', null, title + ' (' + ids.length + ')'), el('p', null, intro), list.node]);
+  }
+  var none = D.say.noneListed;
+  if (e.registrationBasis === 'NONE') {
+    s.appendChild(el('p', null, 'With no inventory and no register read, every agent this scan found is unregistered. Supply an inventory to see which agents the estate does not know.'));
+  }
+  s.appendChild(block('Shadow agents', e.shadow, identitiesKnown ? 'Not registered, and showing a sign of a model.' : 'Agents found by this scan that are not registered.', none, 'Shadow agents'));
+  if (identitiesKnown) {
+    s.appendChild(block('Unregistered identities', e.identities, 'Not registered, and showing no sign of a model: a build workflow that holds a key, or a service account, looks like this. The scan cannot show that one of these runs no model. Each is a finding of medium severity, and none is held to the agent bar.', none, 'Unregistered identities'));
+  }
+  return s;
+}
+
+var FF = { severity: '', code: '', q: '' };
+var findingControls = {};
+var findingList = null;
+function setFindingFilters(patch) {
+  FF.severity = patch.severity || '';
+  FF.code = patch.code || '';
+  FF.q = patch.q || '';
+  for (var k in findingControls) if (has(findingControls, k)) findingControls[k].value = FF[k];
+  if (findingList) findingList.draw(true);
+}
+function findingsSection() {
+  var s = el('section', { id: 'd-findings', cls: 'd-section', 'aria-labelledby': 'd-findings-h' }, el('h2', { id: 'd-findings-h' }, 'Findings'));
+  var codes = {};
+  D.findings.forEach(function (f) { codes[f.code] = (codes[f.code] || 0) + 1; });
+  function sel(name, label, opts) {
+    var x = el('select', null, opts.map(function (o) { return option(o[0], o[1], false); }));
+    x.addEventListener('change', function () { FF[name] = x.value; findingList.draw(true); });
+    findingControls[name] = x;
+    return labelled(label, x);
+  }
+  var q = el('input', { type: 'search', placeholder: 'Title, code, reference or agent', autocomplete: 'off', spellcheck: 'false' });
+  q.addEventListener('input', function () { FF.q = q.value.trim().toLowerCase(); findingList.draw(true); });
+  findingControls.q = q;
+  s.appendChild(el('div', { cls: 'toolbar', role: 'search', 'aria-label': 'Filter the findings' }, [
+    labelled('Search', q),
+    sel('severity', 'Severity', [['', 'Any severity'], ['CRITICAL', 'Critical'], ['HIGH', 'High'], ['MEDIUM', 'Medium'], ['LOW', 'Low']]),
+    sel('code', 'Code', [['', 'Any code']].concat(Object.keys(codes).sort(byCodeUnit).map(function (c) { return [c, c + ' (' + codes[c] + ')']; }))),
+  ]));
+  var described = D.findings.filter(function (f) { return f.description !== null; }).length;
+  if (described < D.findings.length) s.appendChild(el('p', { cls: 'callout' }, 'Every finding is listed. The ' + described + ' most severe carry their description here; the rest are in ' + D.files.findings + '.'));
+  findingList = pagedList({
+    size: 50,
+    cls: 'findings',
+    items: function () {
+      return D.findings.filter(function (f) {
+        if (FF.severity !== '' && f.severity !== FF.severity) return false;
+        if (FF.code !== '' && f.code !== FF.code) return false;
+        if (FF.q !== '' && [f.title, f.code, f.ref, f.agent || ''].join(' ').toLowerCase().indexOf(FF.q) < 0) return false;
+        return true;
+      });
+    },
+    caption: 'Findings, most severe first',
+    head: ['Severity', 'Code', 'Subject', 'Finding'],
+    row: function (f) {
+      return el('tr', null, [
+        el('td', null, sevTag(f.severity)),
+        el('td', null, code(f.code)),
+        el('td', null, f.agent === null ? (f.code === 'SPENDING_AGENT_UNDECLARED' ? 'One registration, several agents' : 'The scan') : agentButton(f.agent)),
+        el('td', null, f.description === null ? [f.title, el('span', { cls: 'block note' }, 'The description is in ' + D.files.findings + '.')]
+          : el('details', null, [el('summary', null, f.title), el('p', null, f.description), el('p', { cls: 'note' }, ['Reference ', idCode(f.ref)])])),
+      ]);
+    },
+    empty: function () { return el('p', null, D.say.noFindings !== null ? D.say.noFindings : 'No finding matches these filters.'); },
+  });
+  findingList.draw(true);
+  s.appendChild(findingList.node);
+  return s;
+}
+
+// ── Build, then show ──
+try {
+  add(root, [
+    overview(),
+    D.completeness === 'EMPTY' ? null : el('div', { cls: 'charts' }, [levelChart(), severityChart(), coverageCard()]),
+    driftSection(),
+    D.completeness === 'EMPTY' ? null : matrixSection(),
+    D.completeness === 'EMPTY' ? null : unregisteredSection(),
+    findingsSection(),
+  ]);
+  document.body.appendChild(drawerBack);
+  document.body.appendChild(drawer);
+  if (D.completeness !== 'EMPTY') refilter();
+  var targets = { summary: 'd-overview', matrix: 'd-matrix', shadow: 'd-shadow', identities: 'd-shadow', findings: 'd-findings', drift: 'd-drift' };
+  var links = document.querySelectorAll('nav.contents a');
+  for (var i = 0; i < links.length; i++) {
+    var to = links[i].getAttribute('href').slice(1);
+    if (has(targets, to) && document.getElementById(targets[to])) links[i].setAttribute('href', '#' + targets[to]);
+  }
+  root.hidden = false;
+  document.documentElement.classList.add('js');
+} catch (err) {
+  root.textContent = '';
+  root.hidden = true;
+}
+})();
+</script>
+</body>
+</html>

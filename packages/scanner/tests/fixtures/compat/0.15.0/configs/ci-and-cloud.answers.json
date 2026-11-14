@@ -1,0 +1,9 @@
+{
+  "answers": "scanent-init-answers/1",
+  "estate": "acme-delivery",
+  "retainRuns": 90,
+  "sources": [
+    { "kind": "cicd", "repositories": ["acme/payments-api", "acme/support-bot"] },
+    { "kind": "gcp-sa", "projects": ["acme-prod-204"] }
+  ]
+}

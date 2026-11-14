@@ -186,7 +186,7 @@ export function renderNetworkAndPermissionsMarkdown(): string {
         '- **A link to another host or another path is not followed.** A next-page link is used only when it stays on the origin and the path of the listing being read.',
         `- **Bounded.** At most ${mib(MAX_RESPONSE_BYTES)} per response and ${mib(MAX_SOURCE_BYTES)} per source, and one deadline per source (\`timeBoxSeconds\`). Past a bound the source is reported as not read in full.`,
         '- **No retry.** A request that fails is not sent again in the same scan.',
-        '- **Only GET**, except the requests listed under "Token exchanges", "MCP servers", "The register read" and "The one post" below.',
+        '- **Only GET**, except the requests listed under "Token exchanges", "MCP servers", "The register read" and "The two posts" below.',
         '- **No other outbound traffic.** The scanner sends no telemetry and checks for no update. Besides the requests on this page it makes DNS lookups for the hosts it reaches.',
         '',
         'To list the hosts one configuration reaches, run `scanent hosts --config <file>`.',
@@ -314,16 +314,21 @@ export function renderNetworkAndPermissionsMarkdown(): string {
     }
     lines.push('');
 
-    // ── The one post ──
+    // ── The two posts ──
+    const SEND_SAYS: Readonly<Record<'agents' | 'integrations', string>> = {
+        agents: `${SCANNER_TITLE.agents}'s report, with the key \`inflect.apiKeyEnv\` names (\`admin:harness_ingest\`). Only when an agent source is configured`,
+        integrations: `${SCANNER_TITLE.integrations}'s report, with the key \`inflect.integrationsApiKeyEnv\` names (\`admin:integrations_ingest\`). Only when an integrations source is configured and that variable is named; without it the report is not posted, and the scanner says so in its log`,
+    };
     lines.push(
-        '## The one post',
+        '## The two posts',
         '',
-        "Only when the `inflect` output is in effect, the agent scanner's signed report is sent to the tenant you configure:",
+        'Only when the `inflect` output is in effect, each signed report is posted to the tenant you configure,',
+        'to the ingest for it, with a key of its own:',
         '',
-        ...s.sends.map((send) => `- \`${send.method} ${send.path}\``),
+        ...s.sends.map((send) => `- \`${send.method} ${send.path}\`: ${SEND_SAYS[send.report]}.`),
         '',
-        'The body is the signed report, byte for byte what the file output writes as `report.signed.json`.',
-        `The integrations scanner's report (\`${SCANNER_REPORT_FILE.integrations}\`) is not posted anywhere: the tenant has no ingest for it yet, and the scanner says so in its log.`,
+        `The body is the signed report, byte for byte what the file output writes as \`${SCANNER_REPORT_FILE.agents}\` or \`${SCANNER_REPORT_FILE.integrations}\`.`,
+        'No other path is posted to.',
         'With no `inflect` output (`--out`, `--dry-run`, or a configuration that names no tenant) nothing is posted anywhere.',
         '',
     );

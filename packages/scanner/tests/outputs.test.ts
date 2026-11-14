@@ -361,14 +361,15 @@ describe('4. delivery', () => {
 });
 
 describe('5. the declared surface', () => {
-    it('outputs added no request: but for the version, the grants 0.13.0 declared inside it, the contract id and the integrations scanner, the surface hashes to what it did before them', () => {
+    it('outputs added no request: but for the version, the grants 0.13.0 declared inside it, the contract id, the integrations scanner and its post, the surface hashes to what it did before them', () => {
         // 0.13.0 put each token exchange's grant inside the surface, so the hash moved once, on purpose,
         // and the surface names its own version. The move to `inflect-agent-harness/4` changed the
         // contract id it names, and no request. The integrations scanner then joined the one surface
         // (its reads, its token exchange, and the scanners in place of the one contract id). Put those
-        // back and the surface is, to the byte, the one from before outputs existed: nothing else was
+        // back, and 0.16.0's second post (the integrations report's ingest, each send naming its report),
+        // and the surface is, to the byte, the one from before outputs existed: nothing else was
         // added to it, by outputs or by anything since.
-        expect(SCANNER_SURFACE.version).toBe('0.15.0');
+        expect(SCANNER_SURFACE.version).toBe('0.16.0');
         expect(SCANNER_SURFACE.scanners.map((s) => [s.id, s.contract])).toEqual([
             ['agents', 'inflect-agent-harness/4'],
             ['integrations', 'scanent-integrations/1'],
@@ -379,6 +380,7 @@ describe('5. the declared surface', () => {
             version: '0.12.0',
             contract: 'inflect-agent-harness/3',
             reads: SCANNER_SURFACE.reads.filter((r) => r.source !== 'entra-integrations' && r.source !== 'okta-integrations' && r.source !== 'github-integrations'),
+            sends: SCANNER_SURFACE.sends.filter((send) => send.report === 'agents').map(({ method, path }) => ({ method, path })),
             authenticates: SCANNER_SURFACE.authenticates
                 .filter((entry) => entry.product !== 'entra-integrations')
                 .map((entry) => Object.fromEntries(Object.entries(entry).filter(([key]) => key !== 'grant'))),
@@ -396,8 +398,9 @@ describe('5. the declared surface', () => {
         expect(JSON.stringify(SCANNER_SURFACE)).not.toMatch(/scanent-results|results\.json|latest\.json|summary\.html/);
     });
 
-    it('the one write is still the ingest post', () => {
+    it('the writes are still the ingest posts, one per report', () => {
         expect(isDeclaredRequest('POST', 'https://inflect.example.com/api/t/example/admin/agents/harness-scans')).toBe(true);
+        expect(isDeclaredRequest('POST', 'https://inflect.example.com/api/t/example/admin/agents/integration-scans')).toBe(true);
         expect(isDeclaredRequest('PUT', 'https://inflect.example.com/api/t/example/admin/agents/harness-scans')).toBe(false);
     });
 });

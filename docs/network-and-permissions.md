@@ -6,7 +6,7 @@ Every request scanent can make, and every permission it asks for. This page is r
 the surface the scanner declares in its own code, the same declaration whose hash is in every
 signed report, so it lists what the code can do and nothing else.
 
-Scanner `inflect-agent-harness-scanner`, version 0.15.0. One image holds 2 scanners, and this page lists the requests of all of them:
+Scanner `inflect-agent-harness-scanner`, version 0.16.0. One image holds 2 scanners, and this page lists the requests of all of them:
 
 - The agent scanner: report contract `inflect-agent-harness/4`, written as `report.signed.json`; source kinds `entra-sp`, `okta-app`, `vault`, `mcp`, `runtime`, `cicd`, `inflect-register`, `code`, `gcp-sa`.
 - The integrations scanner: report contract `scanent-integrations/1`, written as `report.integrations.signed.json`; source kinds `entra-integrations`, `okta-integrations`, `github-integrations`.
@@ -14,7 +14,7 @@ Scanner `inflect-agent-harness-scanner`, version 0.15.0. One image holds 2 scann
 A run reads only the sources its configuration names, and writes one signed report for each scanner
 whose sources it names, all with the same key and the same scan id.
 
-Manifest hash: `sha256:885886a3315b34fb8bc870a37fcd34993ee77af4abdaf9fca5052311b8f1f053`
+Manifest hash: `sha256:db1c8b3819cfe1480dbf144b64c18af1e194999084760810adef392e858dc1ae`
 
 The hash is SHA-256 over the canonical JSON of the declared surface, every scanner's requests in one.
 A scanner that can reach anything this page does not list has a different hash, and every report it
@@ -27,7 +27,7 @@ signs, of either contract, carries it.
 - **A link to another host or another path is not followed.** A next-page link is used only when it stays on the origin and the path of the listing being read.
 - **Bounded.** At most 4 MiB per response and 64 MiB per source, and one deadline per source (`timeBoxSeconds`). Past a bound the source is reported as not read in full.
 - **No retry.** A request that fails is not sent again in the same scan.
-- **Only GET**, except the requests listed under "Token exchanges", "MCP servers", "The register read" and "The one post" below.
+- **Only GET**, except the requests listed under "Token exchanges", "MCP servers", "The register read" and "The two posts" below.
 - **No other outbound traffic.** The scanner sends no telemetry and checks for no update. Besides the requests on this page it makes DNS lookups for the hosts it reaches.
 
 To list the hosts one configuration reaches, run `scanent hosts --config <file>`.
@@ -360,14 +360,16 @@ written or logged.
 | `gcp-iam` | `POST https://oauth2.googleapis.com/token` | JWT bearer (RFC 7523): an assertion signed with the service-account key |
 | `entra-integrations` | `POST https://login.microsoftonline.com/{directoryId}/oauth2/v2.0/token` | client credentials |
 
-## The one post
+## The two posts
 
-Only when the `inflect` output is in effect, the agent scanner's signed report is sent to the tenant you configure:
+Only when the `inflect` output is in effect, each signed report is posted to the tenant you configure,
+to the ingest for it, with a key of its own:
 
-- `POST /api/t/{tenantSlug}/admin/agents/harness-scans`
+- `POST /api/t/{tenantSlug}/admin/agents/harness-scans`: The agent scanner's report, with the key `inflect.apiKeyEnv` names (`admin:harness_ingest`). Only when an agent source is configured.
+- `POST /api/t/{tenantSlug}/admin/agents/integration-scans`: The integrations scanner's report, with the key `inflect.integrationsApiKeyEnv` names (`admin:integrations_ingest`). Only when an integrations source is configured and that variable is named; without it the report is not posted, and the scanner says so in its log.
 
-The body is the signed report, byte for byte what the file output writes as `report.signed.json`.
-The integrations scanner's report (`report.integrations.signed.json`) is not posted anywhere: the tenant has no ingest for it yet, and the scanner says so in its log.
+The body is the signed report, byte for byte what the file output writes as `report.signed.json` or `report.integrations.signed.json`.
+No other path is posted to.
 With no `inflect` output (`--out`, `--dry-run`, or a configuration that names no tenant) nothing is posted anywhere.
 
 ## The egress proof

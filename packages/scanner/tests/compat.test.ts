@@ -40,6 +40,12 @@ function inventoryRefusal(file: string): readonly string[] {
     }
     throw new Error('the inventory was read');
 }
+/** Whether `a` is the version `b` or later, part by part. */
+function atLeast(a: string, b: string): boolean {
+    const [x, y] = [a, b].map((v) => v.split('.').map(Number));
+    for (let i = 0; i < 3; i += 1) if (x[i] !== y[i]) return x[i] > y[i];
+    return true;
+}
 const VERSIONS = fs
     .readdirSync(COMPAT, { withFileTypes: true })
     .filter((e) => e.isDirectory())
@@ -69,7 +75,10 @@ describe.each(VERSIONS)('what %s wrote', (version) => {
         const manifest = JSON.parse(read(`${run}/manifest.json`)) as { manifest: string; scanId: string; files: { name: string; bytes: number; sha256: string }[] };
         expect(manifest.manifest).toBe('scanent-run/1');
         expect(manifest.scanId).toBe(latest.scanId);
-        expect(manifest.files.map((f) => f.name).sort()).toEqual(['agents.csv', 'findings.csv', 'report.signed.json', 'results.json', 'summary.html']);
+        // The PDF was added to a run's files after 0.13.0: a version wrote it or did not, and every one wrote the other five.
+        const names = manifest.files.map((f) => f.name).sort();
+        expect(names.filter((n) => n !== 'report.pdf')).toEqual(['agents.csv', 'findings.csv', 'report.signed.json', 'results.json', 'summary.html']);
+        if (atLeast(version, '0.15.0')) expect(names).toContain('report.pdf');
         for (const file of manifest.files) {
             const bytes = fs.readFileSync(path.join(root, run, file.name));
             expect(`${file.name} ${bytes.byteLength}`).toBe(`${file.name} ${file.bytes}`);
@@ -196,7 +205,9 @@ describe.each(VERSIONS)('what %s wrote', (version) => {
     it('the doctor report is still one this version would have produced from its checks', () => {
         const report = JSON.parse(read('doctor.json')) as DoctorReport;
         expect(report.doctor).toBe(DOCTOR_SCHEMA);
-        expect(Object.keys(report).sort()).toEqual(['at', 'checks', 'counts', 'doctor', 'estate', 'exitCode', 'ready', 'scanner']);
+        // `scanners`, the checks grouped by scanner, came with the integrations scanner in 0.15.0.
+        const members = ['at', 'checks', 'counts', 'doctor', 'estate', 'exitCode', 'ready', 'scanner', ...(atLeast(version, '0.15.0') ? ['scanners'] : [])];
+        expect(Object.keys(report).sort()).toEqual(members.sort());
         expect(report.checks.length).toBeGreaterThan(0);
         for (const check of report.checks) expect(() => assertWellFormed(check)).not.toThrow();
         expect(countsOf(report.checks)).toEqual(report.counts);

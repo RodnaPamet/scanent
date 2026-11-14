@@ -251,7 +251,9 @@ function credentialsOf(config: ScannerConfig, env: Env, ids: Identifiers): Suppo
     const named: { variable: string; shown: string; usedBy: string }[] = [
         { variable: config.scanner.signingKeyEnv, shown: config.scanner.signingKeyEnv, usedBy: 'signing-key' },
     ];
-    if (config.inflect !== undefined) named.push({ variable: config.inflect.apiKeyEnv, shown: config.inflect.apiKeyEnv, usedBy: 'tenant' });
+    const inflect = config.inflect;
+    if (inflect?.apiKeyEnv !== undefined) named.push({ variable: inflect.apiKeyEnv, shown: inflect.apiKeyEnv, usedBy: 'tenant' });
+    if (inflect?.integrationsApiKeyEnv !== undefined) named.push({ variable: inflect.integrationsApiKeyEnv, shown: inflect.integrationsApiKeyEnv, usedBy: 'tenant-integrations' });
     for (const s of config.sources) {
         if (s.kind === 'code' || s.kind === 'inflect-register') continue;
         if (s.kind !== 'mcp') {
