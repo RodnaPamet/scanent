@@ -1,0 +1,16 @@
+{
+  "kind": "vulnerable",
+  "expected": [
+    {
+      "id": "sqli-express-1",
+      "attackClass": "injection",
+      "cwe": "CWE-89",
+      "sink": {
+        "path": "src/routes/users.ts",
+        "startLine": 8,
+        "endLine": 9,
+        "contains": "pool.query(sql)"
+      }
+    }
+  ]
+}

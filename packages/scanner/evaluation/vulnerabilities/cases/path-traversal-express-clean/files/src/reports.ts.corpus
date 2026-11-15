@@ -1,0 +1,15 @@
+import express from 'express';
+import path from 'path';
+
+const BASE = path.resolve('/srv/app/reports');
+export const reports = express.Router();
+
+reports.get('/reports/download', (req, res) => {
+    const name = String(req.query.file ?? '');
+    const target = path.resolve(BASE, name);
+    if (!target.startsWith(BASE + path.sep)) {
+        res.status(400).end();
+        return;
+    }
+    res.sendFile(target);
+});

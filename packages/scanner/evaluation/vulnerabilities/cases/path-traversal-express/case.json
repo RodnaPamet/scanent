@@ -1,0 +1,16 @@
+{
+  "kind": "vulnerable",
+  "expected": [
+    {
+      "id": "path-traversal-express-1",
+      "attackClass": "resource-and-file-handling",
+      "cwe": "CWE-22",
+      "sink": {
+        "path": "src/reports.ts",
+        "startLine": 9,
+        "endLine": 9,
+        "contains": "res.sendFile(path.join(BASE, name))"
+      }
+    }
+  ]
+}

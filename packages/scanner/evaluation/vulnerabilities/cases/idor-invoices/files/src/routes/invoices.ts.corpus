@@ -1,0 +1,11 @@
+import express from 'express';
+import { requireUser } from '../auth';
+import { db } from '../db';
+
+export const invoices = express.Router();
+
+invoices.get('/invoices/:id', requireUser, async (req, res) => {
+    const invoice = await db.invoice.findUnique({ where: { id: req.params.id } });
+    if (!invoice) return res.status(404).end();
+    res.json(invoice);
+});

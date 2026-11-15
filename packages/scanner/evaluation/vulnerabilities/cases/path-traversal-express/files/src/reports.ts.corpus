@@ -1,0 +1,10 @@
+import express from 'express';
+import path from 'path';
+
+const BASE = '/srv/app/reports';
+export const reports = express.Router();
+
+reports.get('/reports/download', (req, res) => {
+    const name = String(req.query.file ?? '');
+    res.sendFile(path.join(BASE, name));
+});

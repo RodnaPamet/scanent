@@ -54,6 +54,10 @@ Each module is imported by its own path. There is no index module.
 | `@rodnapamet/scanent-contract/integrations-contract-rules` | Its contract id, source kinds and limits: `INTEGRATIONS_CONTRACT_V1`, `INTEGRATIONS_SOURCE_KINDS`, `isIntegrationsScanComplete` |
 | `@rodnapamet/scanent-contract/integrations-scopes` | Which Microsoft Graph permissions are high-privilege: `GRAPH_PERMISSION_CLASSES`, `classifyPermission` |
 | `@rodnapamet/scanent-contract/integrations-findings` | `planIntegrationsScan`: the integration findings, and what is not concluded |
+| `@rodnapamet/scanent-contract/vulnerabilities-contract` | The vulnerability scanner's report: `VulnerabilitiesReportBodyV1Schema`, `verifyAndParseVulnerabilitiesReport` |
+| `@rodnapamet/scanent-contract/vulnerabilities-contract-rules` | Its contract id, attack classes, severity cap and locators: `VULNERABILITIES_CONTRACT_V1`, `ATTACK_CLASSES`, `SEVERITY_CAP`, `capSeverity`, `parseCodeRange` |
+| `@rodnapamet/scanent-contract/vulnerabilities-findings` | `planVulnerabilitiesScan`: the vulnerability findings, and what was not reviewed |
+| `@rodnapamet/scanent-contract/vulnerabilities-evaluation` | How a model revision earns the right to run: `scoreEvaluation`, `evaluationGate`, `EvaluationRecordSchema` |
 
 ```ts
 import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
@@ -69,8 +73,9 @@ if (result.ok) {
 The package is CommonJS with type declarations, for Node 22 or later. It uses
 Node's `crypto`, so it runs on a server and not in a browser, except
 `harness-matrix-model` and the `harness-ladder` it imports, which import
-nothing else, and `integrations-findings` with the `integrations-scopes` it
-imports, which import nothing else at run time. Its one dependency is `zod`,
+nothing else, `integrations-findings` with the `integrations-scopes` it
+imports, and `vulnerabilities-findings` with the `vulnerabilities-contract-rules`
+it imports, which import nothing else at run time. Its one dependency is `zod`,
 at an exact version.
 
 ## Licence

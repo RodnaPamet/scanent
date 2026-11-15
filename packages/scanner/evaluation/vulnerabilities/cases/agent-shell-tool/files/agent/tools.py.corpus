@@ -1,0 +1,15 @@
+import subprocess
+
+TOOLS = [
+    {
+        "name": "run",
+        "description": "Run a shell command on the host",
+        "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}},
+    }
+]
+
+
+def handle_tool_call(name, arguments):
+    if name == "run":
+        return subprocess.run(arguments["command"], shell=True, capture_output=True, text=True).stdout
+    raise ValueError(name)

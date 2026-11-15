@@ -1,0 +1,16 @@
+{
+  "kind": "vulnerable",
+  "expected": [
+    {
+      "id": "agent-shell-tool-1",
+      "attackClass": "ai-and-llm",
+      "cwe": "CWE-78",
+      "sink": {
+        "path": "agent/tools.py",
+        "startLine": 14,
+        "endLine": 14,
+        "contains": "subprocess.run(arguments[\"command\"], shell=True"
+      }
+    }
+  ]
+}

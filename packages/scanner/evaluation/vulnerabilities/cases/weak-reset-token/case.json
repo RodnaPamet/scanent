@@ -1,0 +1,16 @@
+{
+  "kind": "vulnerable",
+  "expected": [
+    {
+      "id": "weak-reset-token-1",
+      "attackClass": "cryptography-and-secrets",
+      "cwe": "CWE-338",
+      "sink": {
+        "path": "src/tokens.ts",
+        "startLine": 4,
+        "endLine": 4,
+        "contains": "Math.random()"
+      }
+    }
+  ]
+}

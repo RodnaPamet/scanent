@@ -1,0 +1,8 @@
+import express from 'express';
+
+export const login = express.Router();
+
+login.get('/login/done', (req, res) => {
+    const next = String(req.query.next ?? '/');
+    res.redirect(next);
+});

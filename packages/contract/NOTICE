@@ -24,6 +24,30 @@ against the CORE receipt canonicalization. Portions of pipelock governed by the
 Elastic License 2.0 are NOT used by this product.
 
 ------------------------------------------------------------------------
+Security audit method — cloudflare/security-audit-skill (MIT License)
+------------------------------------------------------------------------
+`packages/scanner/vendor/cloudflare-security-audit/` holds, unmodified, the
+Markdown instruction texts of Cloudflare's security-audit skill
+(https://github.com/cloudflare/security-audit-skill, path
+`skills/security-audit/`) at commit
+c1c8a8c1471069fb0e188eeaff69b8e8db6564a8, with its licence:
+
+  MIT License, Copyright (c) 2025-2026 Cloudflare, Inc.
+
+`SOURCE.json` beside them pins each file by SHA-256. The vulnerability
+scanner follows the method they describe (reconnaissance, hunting by attack
+class, adversarial validation, and the verdicts confirmed, needs_validation
+and rejected), and its attack classes are the ones `ATTACK-CLASSES.md` names.
+The skill's JavaScript validators are not included. scanent never runs the
+code it reviews, so every step of the method that would need running code
+ends as needs_validation.
+
+The vulnerability scanner labels its findings with the reporting vocabulary
+SnailSploit's Claude-Red (https://github.com/SnailSploit/Claude-Red, MIT
+License) uses: CWE ids, OWASP Top 10 and API Security Top 10 categories, and
+MITRE ATT&CK technique ids. No Claude-Red text is included.
+
+------------------------------------------------------------------------
 Run-time dependencies
 ------------------------------------------------------------------------
 scanent's source does not vendor these packages. The container image built

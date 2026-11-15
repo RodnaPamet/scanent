@@ -1,0 +1,16 @@
+{
+  "kind": "vulnerable",
+  "expected": [
+    {
+      "id": "cmd-injection-flask-1",
+      "attackClass": "injection",
+      "cwe": "CWE-78",
+      "sink": {
+        "path": "app.py",
+        "startLine": 10,
+        "endLine": 10,
+        "contains": "shell=True"
+      }
+    }
+  ]
+}

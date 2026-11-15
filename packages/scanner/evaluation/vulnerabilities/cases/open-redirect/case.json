@@ -1,0 +1,16 @@
+{
+  "kind": "vulnerable",
+  "expected": [
+    {
+      "id": "open-redirect-1",
+      "attackClass": "obvious-things",
+      "cwe": "CWE-601",
+      "sink": {
+        "path": "src/login.ts",
+        "startLine": 7,
+        "endLine": 7,
+        "contains": "res.redirect(next)"
+      }
+    }
+  ]
+}

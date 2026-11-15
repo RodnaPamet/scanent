@@ -658,6 +658,49 @@ class. Any `write` or `admin` level is a write whatever the name, because the
 level is GitHub's own statement that it may change what it names. A read of a
 name not in GitHub's table, projects and webhooks among them, is unknown.
 
+## The vulnerabilities contract
+
+The vulnerability scanner's report: what a static, model-assisted review of a
+client's code found, where each finding rests in the code, and what was not
+reviewed. It is defined and verified today; no scanent release writes it yet.
+The scanner that writes it is being built in steps
+([design](design/vulnerability-scanner.md)).
+
+| Id | State | What it adds |
+|---|---|---|
+| `scanent-vulnerabilities/1` | Accepted; not yet written by a release | The first vulnerabilities contract |
+
+**The same rules as the agent report.** The same byte limit, canonical JSON,
+signature and envelope checks in the same order (`verifySignedEnvelope`), then
+this contract's strict schema. The reference verifier is
+`verifyAndParseVulnerabilitiesReport`; neither of the other two verifiers
+reads this report, and it reads neither of theirs.
+
+**What it cannot carry, by its schema.** No code: every place is a locator,
+`code://<label>/<path>#L<start>-L<end>`, and what was sent to the model is
+listed the same way. No CRITICAL, and no more than a verdict allows: a
+`confirmed` finding is at most HIGH, a `needs_validation` one at most MEDIUM
+(`SEVERITY_CAP`). No rejected candidate as a record: those are counts. No
+clean bill it did not earn: `COMPLETE` needs at least one repository, every
+repository reviewed and nothing listed as not reviewed; a run that did not run
+sends nothing and finds nothing, and says why.
+
+| Member | Meaning |
+|---|---|
+| `run` | `COMPLETE`, `INCOMPLETE` or `NOT_RUN` with its reason; the model's provider, host, name and revision; the evaluation record that let it run; the budgets and what was used |
+| `repositories[]` | Each repository by label: `REVIEWED`, `PARTIAL` or `NOT_REVIEWED`, and how many files were selected |
+| `notReviewed[]` | Each place selected and not reviewed, with why |
+| `sent[]` | What was sent to the model, by place |
+| `counts` | Candidates found, rejected by the refutation, and model answers discarded |
+| `findings[]` | Each finding: attack class, trace (entry point, propagation, sink), CWE, OWASP Top 10 and API Top 10 categories, ATT&CK technique, verdict, confidence, severity, the condition, and a remediation or what would settle it |
+
+The planner, `planVulnerabilitiesScan`, says "no finding" only of a complete
+review of at least one repository; anything else with no finding is not
+concluded. How a model revision earns the right to run is
+`evaluationGate`: a record of its raw answers on the evaluation corpus, scored
+by `scoreEvaluation`, against a published floor. No floor is published yet, so
+no revision runs.
+
 ## Transport
 
 A consumer that takes reports over HTTP takes them as scanent sends them,
@@ -817,7 +860,7 @@ import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
 ```
 
 <!-- contract:package-modules -->
-`audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `harness-matrix-model`, `integrations-contract`, `integrations-contract-rules`, `integrations-findings`, `integrations-scopes`, `receipt-verification`
+`audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `harness-matrix-model`, `integrations-contract`, `integrations-contract-rules`, `integrations-findings`, `integrations-scopes`, `receipt-verification`, `vulnerabilities-contract`, `vulnerabilities-contract-rules`, `vulnerabilities-evaluation`, `vulnerabilities-findings`
 <!-- /contract:package-modules -->
 
 - The package holds compiled CommonJS and type declarations, for Node 22 or
@@ -826,7 +869,9 @@ import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
   one exception is `harness-matrix-model`: its only runtime import is
   `harness-ladder`, which imports nothing, so a page may import those two.
   The integrations planner is the same: `integrations-findings` imports only
-  `integrations-scopes` at run time, which imports nothing.
+  `integrations-scopes` at run time, which imports nothing. So is the
+  vulnerabilities planner: `vulnerabilities-findings` imports only
+  `vulnerabilities-contract-rules` at run time, which imports nothing.
 - Its one dependency is `zod`, at an exact version. A consumer that passes
   the exported schemas to its own `zod` needs that same version; with another
   one, npm installs a second copy for the package.

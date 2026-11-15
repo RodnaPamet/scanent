@@ -1,0 +1,16 @@
+{
+  "kind": "vulnerable",
+  "expected": [
+    {
+      "id": "idor-invoices-1",
+      "attackClass": "access-control",
+      "cwe": "CWE-639",
+      "sink": {
+        "path": "src/routes/invoices.ts",
+        "startLine": 8,
+        "endLine": 10,
+        "contains": "findUnique({ where: { id: req.params.id } })"
+      }
+    }
+  ]
+}

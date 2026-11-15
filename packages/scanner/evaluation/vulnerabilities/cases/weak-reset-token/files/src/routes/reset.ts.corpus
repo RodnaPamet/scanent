@@ -1,0 +1,13 @@
+import express from 'express';
+import { db } from '../db';
+import { newResetToken } from '../tokens';
+
+export const reset = express.Router();
+
+reset.post('/password/forgot', async (req, res) => {
+    const user = await db.user.findUnique({ where: { email: String(req.body.email) } });
+    if (user) {
+        await db.resetToken.create({ data: { userId: user.id, token: newResetToken() } });
+    }
+    res.status(202).end();
+});

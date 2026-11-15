@@ -225,6 +225,10 @@ describe('what npm pack puts in the package', () => {
             'integrations-findings.ts',
             'integrations-scopes.ts',
             'receipt-verification.ts',
+            'vulnerabilities-contract-rules.ts',
+            'vulnerabilities-contract.ts',
+            'vulnerabilities-evaluation.ts',
+            'vulnerabilities-findings.ts',
         ]);
         expect(listed).toHaveLength(MODULES.length * 2 + 4);
         expect(listed.filter((f) => !f.startsWith('dist/'))).toEqual(['LICENSE', 'NOTICE', 'README.md', 'package.json']);

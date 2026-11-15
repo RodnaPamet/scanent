@@ -1,0 +1,11 @@
+import express from 'express';
+import { pool } from '../db';
+
+export const users = express.Router();
+
+users.get('/users/search', async (req, res) => {
+    const name = String(req.query.name ?? '');
+    const sql = "SELECT id, email FROM users WHERE name = '" + name + "'";
+    const result = await pool.query(sql);
+    res.json(result.rows);
+});
