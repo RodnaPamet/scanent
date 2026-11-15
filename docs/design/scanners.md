@@ -1,21 +1,18 @@
 # Several scanners in one scanent
 
-> **Status: decided; steps 1 and 2 of the integrations scanner built (Entra,
-> Okta and GitHub), not released (2026-11-13).** The owner decided the shape:
-> one scanent with several scanners, the integrations scanner first, then a
-> vulnerability scanner, then a static, model-assisted adversarial reviewer
-> that sends nothing to a client's agents. The owner's answers to this page's
-> questions are under "Decisions" at the end. Built so far: the platform split
-> (scanners, one declared surface grouped by scanner, one signed report per
-> scanner), the contract `scanent-integrations/1` with its planner, and its
-> three readers: Entra (`entra-integrations`), Okta (`okta-integrations`) and
-> GitHub (`github-integrations`, with the organisation's webhooks by host),
-> each raising the decided findings its product's API can answer and listing
-> the rest as not concluded with the reason; run with the agent scanner or on
-> its own, compared run to run and by `scanent diff`, with `doctor` and `hosts`
-> grouped by scanner ([scanner.md](../scanner.md#the-integrations-scanner)).
-> Not built: Inflect's ingest for the integrations report, the Google
-> Workspace reader, the vulnerability scanner and the adversarial reviewer.
+> **Status: decided; the integrations scanner built and released (0.15.0,
+> posted to Inflect from 0.16.0); the vulnerability scanner designed, not built
+> (2026-11-15).** The owner decided the shape: one scanent with several
+> scanners, the integrations scanner first, then the vulnerability scanner,
+> which is also the adversarial reviewer: a static, model-assisted audit of
+> code scanent already reads, which sends nothing to a client's agents and runs
+> nothing it reads. The owner's answers to this page's questions are under
+> "Decisions" at the end. The integrations scanner reads Entra
+> (`entra-integrations`), Okta (`okta-integrations`) and GitHub
+> (`github-integrations`, with the organisation's webhooks by host)
+> ([scanner.md](../scanner.md#the-integrations-scanner)). Not built: the
+> Google Workspace reader and the vulnerability scanner
+> ([its design](vulnerability-scanner.md)).
 
 ## What exists today
 
@@ -108,42 +105,14 @@ The same rules as the agent scanner: a source read in part closes nothing, an
 empty inventory is a finding, and a webhook's URL is reported by host only,
 because its path and query can carry a secret.
 
-### The vulnerability scanner (second)
+### The vulnerability scanner, which is also the adversarial reviewer (second)
 
-It reads what the estate already knows, rather than carrying a vulnerability
-database into the image:
-
-- GitHub Dependabot alerts and code-scanning alerts, per repository (GET).
-- Lockfiles and SBOM files in repositories the `code` source already reads,
-  reported as package lists with their source; matching them to advisories is
-  the consumer's step, or a later version's.
-
-Its report feeds Inflect's existing scanner-finding tables through a signed
-ingest instead of an unsigned SARIF upload. Matching to assets is Inflect's.
-
-### The adversarial reviewer (third)
-
-A static review of what the agent scanner has already read: each agent's code,
-prompts, tool grants, model endpoints and configuration. A model reads them
-adversarially and reports paths it finds, for example a tool that can write
-reached from untrusted input, or a prompt with no boundary between instructions
-and data. **It sends nothing to a client's agents.** scanent stays read-only.
-
-What is new, and why it needs care:
-
-- **A model call leaves the site.** Its host is declared in the surface like
-  any other, it is off unless configured, and the report names the model and
-  where it ran. In an air-gapped site it runs only against a model the client
-  hosts.
-- **What is sent is code and configuration.** The same secret checks as the
-  report's apply before anything is sent, and what is sent is listed in the
-  report by locator, never by content.
-- **A model's finding is a suggestion.** It reaches the results as a finding a
-  person must confirm, at a severity the reviewer cannot raise above MEDIUM,
-  with the locator of the code it is about. It never changes an agent's level.
-- **It is evaluated before it is trusted.** A fixed set of seeded agents, some
-  with planted weaknesses and some without, is run on each model revision, and
-  its record (found, missed, invented) ships with the release.
+Decided on 2026-11-15 (decisions 9 to 12): a static, model-assisted audit of
+the code scanent already reads, which never runs that code and never sends a
+request to a system it describes. It replaces both the alert-reading
+vulnerability scanner and the separate adversarial reviewer this page first
+proposed. Its design, and the questions still open, are on its own page:
+[The vulnerability scanner](vulnerability-scanner.md).
 
 ## Decisions
 
@@ -182,3 +151,19 @@ Taken by the owner on 2026-11-13:
    with no apps is possible and asking to confirm the token can see
    installations. An empty Entra directory or Okta org stays HIGH
    (`EMPTY_INVENTORY_SEVERITY`, `packages/contract/src/integrations-findings.ts`).
+9. **The vulnerability scanner does not read GitHub's alerts** (2026-11-15).
+   It reviews code itself, following the method of Cloudflare's
+   `security-audit-skill` (MIT): reconnaissance, hunting by attack class, an
+   adversarial validation pass, and the verdicts `confirmed`,
+   `needs_validation` and `rejected`.
+10. **It never runs the code it reads and never touches a live system**
+    (2026-11-15). A lead that would need running code stays
+    `needs_validation`. From SnailSploit's `Claude-Red` (MIT) only the
+    reporting vocabulary is taken (CWE, OWASP Top 10 and API Top 10, MITRE
+    ATT&CK ids); none of its offensive techniques are shipped or sent to a
+    model.
+11. **It is the adversarial reviewer** (2026-11-15). One scanner, not two;
+    decision 5's rules about where its model runs apply to it.
+12. **Its findings go to Inflect's existing scanner tables** (2026-11-15),
+    `ScannerRun` and `ScannerFinding`, through a signed ingest with a key of
+    its own.

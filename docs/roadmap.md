@@ -82,10 +82,13 @@ to add sources that evidence H4 and H5 is an open product decision (issue 15).
 
 ## Other scanners
 
-scanent scans agents only. An integrations scanner, a vulnerability scanner
-and a static adversarial reviewer of agent code are proposed in
-[Several scanners in one scanent](design/scanners.md), which lists the
-decisions they need. None is built.
+scanent has two scanners: agents, and the third-party applications a
+directory has granted access to (integrations, from 0.15.0). The third, a
+vulnerability scanner that is also the adversarial reviewer, is designed and
+not built: a static, model-assisted audit of code scanent already reads, which
+runs nothing it reads and touches no live system
+([its design](design/vulnerability-scanner.md); the decisions are in
+[Several scanners in one scanent](design/scanners.md)).
 
 ## Packaging and distribution
 
