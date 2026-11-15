@@ -167,3 +167,13 @@ Taken by the owner on 2026-11-13:
 12. **Its findings go to Inflect's existing scanner tables** (2026-11-15),
     `ScannerRun` and `ScannerFinding`, through a signed ingest with a key of
     its own.
+13. **A confirmed finding may be HIGH** (2026-11-15). A `needs_validation`
+    finding stays at most MEDIUM, no model finding is CRITICAL, and a person
+    confirms each one. This narrows the earlier rule that a model's finding
+    never goes above MEDIUM, for the one case where the trace resolves in the
+    code and survived refutation.
+14. **The first model is Anthropic's Claude** (2026-11-15), with its key as a
+    `production` secret and its host in the declared surface.
+15. **Budgets and the evaluation floor are measured, then fixed** (2026-11-15):
+    on the evaluation corpus and on Inflect's own repository, and put to the
+    owner before the first release.
