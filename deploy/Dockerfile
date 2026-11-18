@@ -81,7 +81,7 @@ RUN --mount=type=secret,id=ca,required=false \
 # nothing to remove and nothing to start besides `node`. The same Node major as
 # the build stage; only compiled JavaScript crosses between the two, so the
 # C library of each stage is its own affair.
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:9fc11f6ee65993285c0fe3c4c9bbc4fd275fd4470572f58834ce490df91056e3 AS runtime
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:6abfcb367ebc291572c774c1592a986be2ab26a2486f73093401327495a5962a AS runtime
 
 # The base keeps `node` at /nodejs/bin, off the default path. The Compose
 # overlay and the chart start the egress proxy as `node <file>`, and so does
