@@ -177,3 +177,20 @@ Taken by the owner on 2026-11-13:
 15. **Budgets and the evaluation floor are measured, then fixed** (2026-11-15):
     on the evaluation corpus and on Inflect's own repository, and put to the
     owner before the first release.
+16. **A fourth finding kind: static rules over the agent surface** (2026-11-22),
+    taken from Cisco AI Defense's MCP, skill and A2A scanners (Apache-2.0; the
+    skill rules from the MIT Agent Threat Rules). Re-authored as scanent's own
+    TypeScript regular expressions, run where the text already is, reporting a
+    code and a locator and never the text. See
+    [agent-surface-rules.md](agent-surface-rules.md).
+17. **The strongest rule may be HIGH** (2026-11-22); every other rule is at
+    most MEDIUM, none is CRITICAL, and a person confirms each. The rule
+    declares its ceiling.
+18. **The rule findings are a report of their own** (2026-11-22),
+    `scanent-agent-rules/1`, with an Inflect ingest and tab of its own, as the
+    integrations report has.
+19. **An active flavour is a separate design** (2026-11-22). The owner asked
+    for a second scanent that probes a target and reports without damaging it.
+    It breaks the "reads and never acts" promise on purpose, so it is governed
+    on its own page, with an authorisation gate and a definition of "no
+    damage", before any code.

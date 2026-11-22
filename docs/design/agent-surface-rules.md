@@ -1,9 +1,9 @@
 # Rule-based findings over the agent surface
 
-> **Status: proposed, not built (2026-11-22).** The owner chose on 2026-11-22
+> **Status: approved, not built (2026-11-22).** The owner chose on 2026-11-22
 > to take Cisco AI Defense's static detection rules (MCP, skills, A2A) before
-> the vulnerability scanner's model step. This page is the design; its open
-> questions are for the owner, and nothing is built until they are answered.
+> the vulnerability scanner's model step, and answered this page's three
+> questions the same day (see "Decisions"). Building has not started.
 
 ## What it is
 
@@ -63,15 +63,18 @@ no new request is made, because the text is already read.
 A fixed corpus ships with the rules, as the vulnerability scanner's does:
 poisoned tools, injected skills and spoofed cards that must fire, and clean
 ones that must not. Each rule set's record (fired, missed, false on clean)
-ships with the release. The rules are vendored or re-authored at a pinned
-commit (open question 2), through scanent's text scan, attributed in NOTICE.
+ships with the release. Each rule is re-authored as scanent's own TypeScript
+regular expression (decision 2), citing the source rule id, through scanent's
+text scan, with Cisco's and the ATR set's attribution in NOTICE.
 
 ## In the contract
 
-The agent report (`inflect-agent-harness/4`) already carries `findings[]`. A
-new finding code is a planner change, not a schema change, if the codes fit the
-existing finding shape (open question 3). Inflect's ingest already reads the
-agent report's findings.
+A report of its own (decision 3), `scanent-agent-rules/1`, beside the agent,
+integrations and vulnerability reports: the same signature and envelope rules,
+a verifier that reads no other contract, and a planner of its own. Each finding
+is a code, the rule id that fired, the agent and the locator, and its severity.
+Inflect gains a signed ingest and a tab for it, with a key scope of its own, as
+the integrations report has.
 
 ## Order of work
 
@@ -81,23 +84,21 @@ agent report's findings.
 3. The A2A card rules.
 4. A release.
 
-## Open questions for the owner
+## Decisions (owner, 2026-11-22)
 
-1. **The severity cap.** A rule match over a description is weaker evidence
-   than the vulnerability scanner's refuted trace. Should a rule finding be
-   capped at MEDIUM (a person confirms, never HIGH on a pattern alone), or may
-   the strongest rules (an executable payload in a tool's output, a literal
-   "ignore previous instructions") reach HIGH?
-2. **Vendor the rules, or re-author them.** Vendor Cisco's YARA and the MIT
-   ATR signatures as data, pinned and attributed, and add a YARA engine
-   dependency — or re-express each rule as scanent's own TypeScript regex,
-   citing the source rule id, with no new dependency. Re-authoring keeps the
-   image dependency-free and the rules in one language; vendoring is faster and
-   stays byte-for-byte auditable against the source.
-3. **A new finding code, or a new report.** Put the rule findings in the agent
-   report's existing `findings[]` (one more code, no schema change, Inflect
-   ingests it today), or give them a contract of their own as the integrations
-   and vulnerability reports have.
+1. **Severity: HIGH for the strongest, MEDIUM for the rest.** An unambiguous
+   rule — an executable payload in a tool's output, a literal "ignore previous
+   instructions" — may raise a HIGH finding; every other rule is capped at
+   MEDIUM. No rule finding is CRITICAL, and a person confirms each one. Each
+   rule declares its own ceiling, and the planner holds it.
+2. **Re-authored in TypeScript, not vendored.** Each rule is scanent's own
+   regular expression, citing the Cisco or ATR rule id it came from, so the
+   image gains no YARA engine and the rules live in one language. Cisco's
+   Apache-2.0 notice and the ATR set's MIT notice go in NOTICE. A rule's test
+   asserts it against the source's own example where the source gives one.
+3. **Its own contract and ingest.** `scanent-agent-rules/1`, a report beside
+   the other three, signed with the same key, with its own Inflect ingest, key
+   scope and tab. The agent report is left unchanged.
 
 ## Not in this page
 
