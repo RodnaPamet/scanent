@@ -110,7 +110,7 @@ describe('through a source', () => {
         expect(result.ok).toBe(true);
         expect(agentsOf(result).body.agents).toHaveLength(1);
         const files = tree(out);
-        expect(Object.keys(files)).toHaveLength(8);
+        expect(Object.keys(files)).toHaveLength(10);
         for (const content of [...Object.values(files), ...printed, text()]) expect(content).not.toContain(canary);
         // Read as a viewer would: the PDF's inflated text, and the page's data as parsed JSON.
         const run = path.join(out, 'runs', agentsOf(result).body.scan.id);

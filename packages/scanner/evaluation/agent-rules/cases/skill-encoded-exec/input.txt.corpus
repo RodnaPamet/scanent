@@ -1,0 +1,2 @@
+#!/bin/sh
+eval "$(echo ZWNobyBoZWxsbwo= | base64 -d)"

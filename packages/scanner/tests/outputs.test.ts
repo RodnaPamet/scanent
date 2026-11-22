@@ -163,7 +163,7 @@ describe('4. delivery', () => {
             now: () => NOW,
             outputs: [{ kind: 'inflect' }, { kind: 'stdout' }, { kind: 'file', dir }],
             stdout: (text) => {
-                order.push('stdout');
+                if (order[order.length - 1] !== 'stdout') order.push('stdout');
                 printed.push(text);
             },
             file: {
@@ -184,13 +184,14 @@ describe('4. delivery', () => {
             { kind: 'stdout', ok: true },
             { kind: 'inflect', ok: true },
         ]);
-        // One scan, delivered three times: the same bytes everywhere.
-        expect(printed).toEqual([`${agentsOf(result).raw}\n`]);
+        // One scan, delivered three times: the same bytes everywhere. Stdout carries
+        // the agent-rules report over the example's skill on a line of its own.
+        expect(printed).toEqual([`${agentsOf(result).raw}\n`, expect.stringMatching(/^\{"contract":"scanent-agent-rules\/1",.*\}\n$/)]);
         const run = path.join(dir, 'runs', agentsOf(result).body.scan.id);
         expect(fs.readFileSync(path.join(run, RUN_FILE_NAMES.report), 'utf8')).toBe(agentsOf(result).raw);
         expect(verifyAndParseHarnessReport(agentsOf(result).raw, [PUBLIC_HEX])).toMatchObject({ ok: true });
-        expect(lines().map((l) => l.msg)).toEqual(['source read', 'report signed', 'results written', 'report ingested']);
-        expect(lines()[2]).toMatchObject({ dir: `runs/${agentsOf(result).body.scan.id}`, files: 7, removedRuns: 0 });
+        expect(lines().map((l) => l.msg)).toEqual(['source read', 'report signed', 'agent-rules report signed', 'results written', 'report ingested', 'agent-rules report not posted']);
+        expect(lines().find((l) => l.msg === 'results written')).toMatchObject({ dir: `runs/${agentsOf(result).body.scan.id}`, files: 9, removedRuns: 0 });
     });
 
     it('stdout alone writes the report and a newline, and logs nothing more than a scan does', async () => {
@@ -198,8 +199,8 @@ describe('4. delivery', () => {
         const printed: string[] = [];
         const result = await scanAndDeliver({ config: configOf(), env: ENV, log, outputs: [{ kind: 'stdout' }], stdout: (t) => printed.push(t), fetchImpl: noFetch });
         expect(result.ok).toBe(true);
-        expect(printed).toEqual([`${agentsOf(result).raw}\n`]);
-        expect(lines().map((l) => l.msg)).toEqual(['source read', 'report signed']);
+        expect(printed).toEqual([`${agentsOf(result).raw}\n`, expect.stringMatching(/^\{"contract":"scanent-agent-rules\/1",.*\}\n$/)]);
+        expect(lines().map((l) => l.msg)).toEqual(['source read', 'report signed', 'agent-rules report signed']);
     });
 
     it('the default stdout is the process\'s', async () => {
@@ -207,7 +208,7 @@ describe('4. delivery', () => {
         const spy = jest.spyOn(process.stdout, 'write').mockImplementation((chunk) => (out.push(String(chunk)), true));
         try {
             const result = await scanAndDeliver({ config: configOf(), env: ENV, log: capturedLog().log, outputs: [{ kind: 'stdout' }], fetchImpl: noFetch });
-            expect(out).toEqual([`${agentsOf(result).raw}\n`]);
+            expect(out).toEqual([`${agentsOf(result).raw}\n`, expect.stringMatching(/^\{"contract":"scanent-agent-rules\/1",.*\}\n$/)]);
         } finally {
             spy.mockRestore();
         }
@@ -239,7 +240,8 @@ describe('4. delivery', () => {
             { kind: 'stdout', ok: true },
             { kind: 'inflect', ok: true },
         ]);
-        expect(printed).toHaveLength(1);
+        // Both reports printed; one post, because the example names no agent-rules ingest key.
+        expect(printed).toHaveLength(2);
         expect(posted).toBe(1);
         const failed = lines().filter((l) => l.msg === 'output failed');
         expect(failed).toEqual([expect.objectContaining({ level: 'error', output: 'file', error: 'Error ENOSPC', scan: agentsOf(result).body.scan.id })]);
@@ -259,7 +261,7 @@ describe('4. delivery', () => {
         expect(failed.error).toMatch(new RegExp(`^results written to runs/${id}, but latest\\.json was not updated \\([A-Z]+\\); it does not name this run$`));
         expect(text()).not.toContain(dir);
         // The run is there, whole.
-        expect(fs.readdirSync(path.join(dir, 'runs', id))).toHaveLength(7);
+        expect(fs.readdirSync(path.join(dir, 'runs', id))).toHaveLength(9);
     });
 
     it('a failed post is one error line, and the file output still stands', async () => {
@@ -278,7 +280,7 @@ describe('4. delivery', () => {
             { kind: 'inflect', ok: false },
         ]);
         expect(lines().filter((l) => l.level === 'error')).toEqual([expect.objectContaining({ msg: 'output failed', output: 'inflect', error: 'TypeError' })]);
-        expect(Object.keys(tree(dir)).length).toBe(8);
+        expect(Object.keys(tree(dir)).length).toBe(10);
     });
 
     it('a refused post is not a delivery, and a thrown non-error is logged as unknown', async () => {

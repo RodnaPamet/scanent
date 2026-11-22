@@ -102,6 +102,14 @@ describe('the prompts give the answers a file would', () => {
         expect(plan.config.outputs?.map((o) => o.kind)).toEqual(['file', 'inflect']);
     });
 
+    it('a code-only estate with a tenant is offered the agent-rules key: its skills are that report\'s', async () => {
+        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y', 'https://tenant.example.com', 'acme', 'agt', 'n', 'y', '']);
+        const answers = await collectAnswers(s.io);
+        expect(s.asked).toContain('Also post the agent-rules report? It needs a key of its own, with admin:agent_rules_ingest [y/N] ');
+        expect(answers.inflect).toMatchObject({ agentRulesApiKeyEnv: 'INFLECT_AGENT_RULES_KEY' });
+        expect(planInit(answers).config.inflect?.agentRulesApiKeyEnv).toBe('INFLECT_AGENT_RULES_KEY');
+    });
+
     it('the integrations scanner is offered with Entra, and reads with the same application when asked to', async () => {
         const same = await collectAnswers(script(only('entra-sp', [GUID, GUID, 'y', 'y', 'y'])).io);
         expect(same.sources).toEqual([
@@ -174,9 +182,9 @@ describe('a secret-shaped answer', () => {
         ['the output directory', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', ''], ['', '', '', 'n']],
         ['the schedule', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', ''], ['', '', 'n']],
         ['the inventory path', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', ''], ['', 'n']],
-        ['the tenant URL', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y'], ['https://tenant.example.com', 'acme', 'agt', 'n']],
-        ['the tenant slug', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y', 'https://tenant.example.com'], ['acme', 'agt', 'n']],
-        ['the agent id', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y', 'https://tenant.example.com', 'acme'], ['agt', 'n']],
+        ['the tenant URL', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y'], ['https://tenant.example.com', 'acme', 'agt', 'n', 'n']],
+        ['the tenant slug', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y', 'https://tenant.example.com'], ['acme', 'agt', 'n', 'n']],
+        ['the agent id', ['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y', 'https://tenant.example.com', 'acme'], ['agt', 'n', 'n']],
     ];
 
     /**
@@ -280,7 +288,8 @@ describe('a secret-shaped answer', () => {
 
     it('says where the API key goes BEFORE the first question about the tenant, not after the last', async () => {
         const events: string[] = [];
-        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y', 'https://tenant.example.com', 'acme', 'agt', 'n']);
+        // The last 'n' declines the agent-rules report, which a code source makes.
+        const s = script(['acme-prod', 'n', 'n', 'n', 'n', 'n', 'n', 'n', 'y', 'app', '/estate/app', '', '', '', '', 'y', 'https://tenant.example.com', 'acme', 'agt', 'n', 'n']);
         await collectAnswers({
             ask: async (q) => {
                 events.push(`ask ${q}`);

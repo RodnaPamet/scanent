@@ -24,7 +24,7 @@ export function scoreAgentRulesLocally(input: AgentRulesScoreInput): LocalAgentR
         report: input.report,
         outcome: plan.outcome,
         population: input.body.population.map((p) => ({ kind: p.kind, status: p.status, reason: p.reason ?? null, subjects: p.subjects })),
-        servers: plan.servers.map((s) => ({ ref: s.ref, status: s.status, reason: s.reason ?? null, tools: s.tools })),
+        origins: plan.origins.map((o) => ({ ref: o.ref, status: o.status, reason: o.reason ?? null, subjects: o.subjects })),
         counts: { subjects: input.body.counts.subjects, flagged: input.body.counts.flagged, findings: plan.findings.length },
         findings: plan.findings.map((f) => ({
             code: f.code,
@@ -32,7 +32,7 @@ export function scoreAgentRulesLocally(input: AgentRulesScoreInput): LocalAgentR
             severity: f.severity,
             subjectKind: f.subjectKind,
             subjectRef: f.subjectRef,
-            serverRef: f.serverRef,
+            originRef: f.originRef,
             locator: f.locator,
             sourceRef: f.sourceRef,
         })),

@@ -246,6 +246,14 @@ it tools. A call that hands the model no tools is not an agent, and is not
 reported. For each agent it reports its tools, the AI model service it calls,
 and the **names** of the keys it uses.
 
+It also reads the **agent skills** in the folders: each `SKILL.md`, and the
+scripts kept beside it in the skill's folder. It looks in them for signs of an
+attack written in: an instruction telling the AI to ignore its rules, a command
+that opens a connection back to someone, a script that sends your keys away.
+What it finds goes in a report of its own, the agent-rules report: which rule
+fired and in which file, never the text. To leave skills out, set
+`"skills": false` on this source.
+
 When part of an agent is set up somewhere the scanner cannot follow, such as
 a tool list that another file builds, the agent is still reported, and the
 report names the file and the line it could not follow. The same is done for
@@ -286,7 +294,8 @@ the variable it goes in (`integrationsApiKeyEnv`, by default
 does not send the other. Without it the integrations report is kept and not
 sent; with the integrations scanner alone, it is the only key you need.
 
-To send the agent-rules report as well (made when you read MCP servers), create
+To send the agent-rules report as well (made when you read MCP servers or agent
+code, which holds skills), create
 a third key with the scope `admin:agent_rules_ingest` and no other, and name the
 variable it goes in (`agentRulesApiKeyEnv`, by default
 `INFLECT_AGENT_RULES_KEY`). Without it the agent-rules report is kept and not

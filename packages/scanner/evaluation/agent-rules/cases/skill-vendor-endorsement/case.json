@@ -1,0 +1,9 @@
+{
+  "kind": "skill",
+  "disposition": "poisoned",
+  "expected": [
+    {
+      "ruleId": "cisco-skill:vendor-endorsement"
+    }
+  ]
+}

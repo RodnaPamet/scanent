@@ -10,15 +10,15 @@
  *     read of a population that held something. A population read in part, with
  *     no finding, is NOT CONCLUDED, with the reason; a complete read of nothing
  *     is NOTHING_READ, never clean.
- *   • A FINDING IS CLOSED ONLY BY ITS OWN SERVER. `serversReadInFull` names the
- *     servers a consumer may close a finding against: those the report read
- *     COMPLETE. A server absent from the report, or read in part, closes
- *     nothing.
+ *   • A FINDING IS CLOSED ONLY BY ITS OWN ORIGIN. `originsReadInFull` names the
+ *     origins — MCP servers, code roots — a consumer may close a finding
+ *     against: those the report read COMPLETE. An origin absent from the
+ *     report, or read in part, closes nothing.
  *   • A FINDING IS A SUGGESTION. Each carries the rule that fired and where,
  *     never the text, and a person confirms it.
  */
 import { SUBJECT_KIND_TITLE, type AgentRuleFindingCode, type AgentRuleSeverity, type AgentRulesSubjectKind } from './agent-rules-contract-rules';
-import type { AgentRulesReportBody, AgentRuleFinding, AgentRulesServer } from './agent-rules-contract';
+import type { AgentRulesReportBody, AgentRuleFinding, AgentRulesOrigin } from './agent-rules-contract';
 
 export interface PlannedAgentRuleFinding {
     readonly code: AgentRuleFindingCode;
@@ -29,8 +29,8 @@ export interface PlannedAgentRuleFinding {
     readonly subjectKind: AgentRulesSubjectKind;
     readonly subjectKindTitle: string;
     readonly subjectRef: string;
-    /** The MCP server the subject was read from. */
-    readonly serverRef: string;
+    /** Where the subject was read from: an MCP server or a code root. */
+    readonly originRef: string;
     readonly locator: string;
 }
 
@@ -54,8 +54,8 @@ export interface AgentRulesPlan {
     readonly outcome: AgentRulesOutcome;
     readonly findings: readonly PlannedAgentRuleFinding[];
     readonly notConcluded: readonly AgentRulesNotConcluded[];
-    /** Every server the report read, in its order. */
-    readonly servers: readonly AgentRulesServer[];
+    /** Every origin the report read, in its order. */
+    readonly origins: readonly AgentRulesOrigin[];
     readonly subjects: number;
     readonly flagged: number;
 }
@@ -65,9 +65,9 @@ export function agentRuleFindingRef(f: Pick<AgentRuleFinding, 'ruleId' | 'locato
     return `agent-rule:${f.ruleId}@${f.locator}`;
 }
 
-/** The servers a report read in full: the only ones a finding may be closed against. */
-export function serversReadInFull(body: AgentRulesReportBody): ReadonlySet<string> {
-    return new Set(body.servers.filter((s) => s.status === 'COMPLETE').map((s) => s.ref));
+/** The origins a report read in full: the only ones a finding may be closed against. */
+export function originsReadInFull(body: AgentRulesReportBody): ReadonlySet<string> {
+    return new Set(body.origins.filter((o) => o.status === 'COMPLETE').map((o) => o.ref));
 }
 
 const SEVERITY_ORDER: readonly AgentRuleSeverity[] = ['HIGH', 'MEDIUM', 'LOW', 'INFO'];
@@ -81,7 +81,7 @@ function planned(f: AgentRuleFinding): PlannedAgentRuleFinding {
         subjectKind: f.subjectKind,
         subjectKindTitle: SUBJECT_KIND_TITLE[f.subjectKind],
         subjectRef: f.subjectRef,
-        serverRef: f.serverRef,
+        originRef: f.originRef,
         locator: f.locator,
     };
 }
@@ -104,7 +104,7 @@ export function planAgentRulesScan(body: AgentRulesReportBody): AgentRulesPlan {
     }
 
     const outcome = agentRulesOutcome(findings.length, body.population);
-    return { outcome, findings, notConcluded, servers: body.servers, subjects: body.counts.subjects, flagged: body.counts.flagged };
+    return { outcome, findings, notConcluded, origins: body.origins, subjects: body.counts.subjects, flagged: body.counts.flagged };
 }
 
 /**

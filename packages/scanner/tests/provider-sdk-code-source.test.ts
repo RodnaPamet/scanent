@@ -503,7 +503,7 @@ describe('3. a client that is handed in', () => {
 describe('4. ordinary code is not a model call', () => {
     it('the same method shapes in files that do not import the package: no agent, and nothing that failed to resolve', async () => {
         const result = await langchainCodeSource({ roots: [{ label: 'acme', path: estate(NOT_PROVIDER_SDK) }] }).read(context());
-        expect(result).toEqual({ kind: 'code', status: 'COMPLETE', rows: Object.keys(NOT_PROVIDER_SDK).length, observations: [] });
+        expect(result).toEqual({ kind: 'code', status: 'COMPLETE', rows: Object.keys(NOT_PROVIDER_SDK).length, observations: [], ruleFindings: [], ruleOrigins: [{ ref: 'code:acme', status: 'COMPLETE', subjects: 0 }], ruleSubjects: { skill: 0, 'skill-file': 0 } });
     });
 
     it('those files ARE parsed: each names a package, and holds the shapes', () => {
@@ -649,7 +649,7 @@ describe('6. its reports verify, and the switch turns all of it off', () => {
         expect(off).toEqual({ rows: on.rows, agents: [], problems: [] });
 
         const result = await langchainCodeSource({ roots: [{ label: 'acme', path: dir }], providerSdks: false }).read(context());
-        expect(result).toEqual({ kind: 'code', status: 'COMPLETE', rows: on.rows, observations: [] });
+        expect(result).toEqual({ kind: 'code', status: 'COMPLETE', rows: on.rows, observations: [], ruleFindings: [], ruleOrigins: [{ ref: 'code:acme', status: 'COMPLETE', subjects: 0 }], ruleSubjects: { skill: 0, 'skill-file': 0 } });
     });
 
     it('the switch is the configuration\'s: absent it is on, `false` turns it off, and nothing else is accepted', async () => {

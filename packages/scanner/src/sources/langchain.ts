@@ -79,6 +79,7 @@ import {
     type SourceRead,
 } from '../source';
 import type { CodeFs, CodeRoot, FileProblem } from './code/files';
+import { readSkills } from './code/skills';
 import { MAX_MARKER_SCAN_BYTES, markersFor, readCodeFiles } from './code/files';
 import { JavaScriptReadError, readJavaScript } from './code/javascript';
 import { recognizePaymentCalls, type DetectedPaymentCall } from './code/payment';
@@ -95,6 +96,11 @@ export interface LangChainCodeSourceOptions {
      * the source reads exactly what it read before it knew them.
      */
     readonly providerSdks?: boolean;
+    /**
+     * The agent skills under the roots, for the agent-surface rules. On unless
+     * it is `false`; off, no skill is read and the read carries no rule fields.
+     */
+    readonly skills?: boolean;
     /** A TEST SEAM. The scanner never passes one, so production reads the real filesystem. */
     readonly fs?: CodeFs;
 }
@@ -257,10 +263,17 @@ export function langchainCodeSource(options: LangChainCodeSourceOptions): Harnes
         product: 'langchain',
         async read(ctx): Promise<SourceRead> {
             const scan = await scanLangChainCode(options.roots, fs, { deadline: ctx.deadline, now: ctx.now, providerSdks: options.providerSdks });
+            // The agent skills under the same roots, for the agent-surface rules' report. Their
+            // completeness is that report's, per root: it does not change this read's.
+            const skills = options.skills === false ? null : await readSkills(options.roots, fs, { deadline: ctx.deadline, now: ctx.now });
+            const rules =
+                skills === null
+                    ? {}
+                    : { ruleFindings: skills.findings, ruleOrigins: skills.origins, ruleSubjects: { skill: skills.skills, 'skill-file': skills.files } };
             const observations = scan.agents.map(observationOf);
             const reason = REASON_ORDER.find((r) => scan.problems.some((p) => p.reason === r));
-            if (reason === undefined) return sourceResult('code', scan.rows, observations, null);
-            return { kind: 'code', status: 'INCOMPLETE', reason, rows: scan.rows, observations, ...notReadOf(scan.problems, reason, options.providerSdks !== false) };
+            if (reason === undefined) return { ...sourceResult('code', scan.rows, observations, null), ...rules };
+            return { kind: 'code', status: 'INCOMPLETE', reason, rows: scan.rows, observations, ...notReadOf(scan.problems, reason, options.providerSdks !== false), ...rules };
         },
         async preflight(): Promise<readonly ProbeStep[]> {
             const steps: ProbeStep[] = [];

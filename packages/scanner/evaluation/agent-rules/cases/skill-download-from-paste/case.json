@@ -1,0 +1,15 @@
+{
+  "kind": "skill-file",
+  "disposition": "poisoned",
+  "expected": [
+    {
+      "ruleId": "atr:2026-00121.download-from-paste"
+    },
+    {
+      "ruleId": "atr:2026-00121.download-and-run"
+    },
+    {
+      "ruleId": "cisco-skill:known-exfil-destination"
+    }
+  ]
+}

@@ -25,7 +25,7 @@
  *     which any string has a secret's shape.
  */
 import type { CriterionVerdict } from '@rodnapamet/scanent-contract/harness-ladder';
-import type { AgentRuleFindingCode, AgentRuleSeverity } from '@rodnapamet/scanent-contract/agent-rules-contract-rules';
+import type { AgentRuleFindingCode, AgentRuleSeverity, AgentRulesSubjectKind } from '@rodnapamet/scanent-contract/agent-rules-contract-rules';
 import type {
     HarnessPaymentCapability,
     HarnessReportAgent,
@@ -142,17 +142,18 @@ export interface SourceRead {
     /** The `mcp` source only: each server it read in full. */
     readonly mcpServers?: readonly McpServerRead[];
     /**
-     * The `mcp` source only: what the agent-surface rules found in the tools'
-     * own text, read where that text is held. A code, the rule, the subject and
-     * a locator — never the text. Findings on a server read in part are kept:
-     * what was read is real.
+     * The `mcp` and `code` sources: what the agent-surface rules found in an
+     * MCP tool's definition, or in a skill's SKILL.md and bundled scripts, read
+     * where that text is held. A code, the rule, the subject and a locator —
+     * never the text. Findings from an origin read in part are kept: what was
+     * read is real.
      */
-    readonly ruleFindings?: readonly McpRuleFinding[];
-    /** The `mcp` source only: each server, as the rules read it. */
-    readonly ruleServers?: readonly McpRuleServer[];
-    /** The `mcp` source only: how many tool definitions the rules were run over. */
-    readonly ruleSubjects?: number;
-    /** The `mcp` source only: fields longer than the rules scan, counted. Absent when none. */
+    readonly ruleFindings?: readonly RuleFinding[];
+    /** Each origin — an MCP server, a code root — as the rules read it. */
+    readonly ruleOrigins?: readonly RuleOrigin[];
+    /** How many subjects of each kind the rules were run over. A kind the source reads is present, `0` included. */
+    readonly ruleSubjects?: Readonly<Partial<Record<AgentRulesSubjectKind, number>>>;
+    /** Fields or files longer than the rules scan, counted. Absent when none. */
     readonly ruleTextTruncated?: number;
 }
 
@@ -189,25 +190,26 @@ export interface SourceContext {
  * tools it lists, as the report carries them. The report builder replaces a
  * `<key>:*` placeholder another source reported for that URL with these.
  */
-/** One agent-surface rule that fired on an MCP tool's text: no text, only where. */
-export interface McpRuleFinding {
+/** One agent-surface rule that fired on a subject's text: no text, only where. */
+export interface RuleFinding {
     readonly code: AgentRuleFindingCode;
     readonly ruleId: string;
     readonly severity: AgentRuleSeverity;
-    /** `mcp:<server url>:tool:<name>`, or a digest form when that is too long. */
+    readonly subjectKind: AgentRulesSubjectKind;
+    /** `mcp:<server url>:tool:<name>`, `code:<root label>/<path>`, or a digest form when that is too long. */
     readonly subjectRef: string;
-    /** The server it was read from: `mcp:<server url>`, or a digest form. */
-    readonly serverRef: string;
-    /** `mcp-tool:<subjectRef>#<field>`. */
+    /** Where it was read from: `mcp:<server url>`, `code:<root label>`, or a digest form. */
+    readonly originRef: string;
+    /** `<kind>:<subjectRef>#<field>`. */
     readonly locator: string;
 }
 
-/** One MCP server as the agent-surface rules read it: whether every tool was read whole, and how many. */
-export interface McpRuleServer {
+/** One origin — an MCP server, a code root — as the rules read it: whether every subject was read whole, and how many. */
+export interface RuleOrigin {
     readonly ref: string;
     readonly status: 'COMPLETE' | 'INCOMPLETE';
     readonly reason?: IncompleteReason;
-    readonly tools: number;
+    readonly subjects: number;
 }
 
 export interface McpServerRead {

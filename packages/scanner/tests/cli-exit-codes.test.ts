@@ -59,7 +59,8 @@ const printed = (raw: string) => {
 describe('1. scan --strict', () => {
     it('a complete run that found agents is 0', async () => {
         expect(await main(['scan', '--config', configWith([EXAMPLE]), '--strict'], ENV)).toBe(0);
-        expect(out).toHaveLength(1);
+        // The agent report and the agent-rules report.
+        expect(out).toHaveLength(2);
     });
 
     it('a delivered run with an incomplete source is 3 with --strict, and 0 without', async () => {

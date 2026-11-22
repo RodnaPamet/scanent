@@ -401,6 +401,39 @@ from a `langchain`, `langgraph` or Claude Agent SDK module counts, and a file
 that names none of those modules, and no provider's SDK (below), is not parsed
 at all.
 
+#### Agent skills, for the agent-surface rules
+
+The `code` source also reads the agent skills under its roots
+(`packages/scanner/src/sources/code/skills.ts`), for the agent-surface rules
+alone: nothing it finds enters the agent report. A **skill** is a directory
+holding a `SKILL.md` (exactly that name). The rules read its front matter
+(`frontMatter`, the block between the first two `---` lines) and the body after
+it (`instructions`), and every **script** in the skill's directory, at any
+depth down to the next directory that is a skill of its own (`content`). A
+script is a file whose extension is one of `.sh`, `.bash`, `.zsh`, `.ps1`,
+`.bat`, `.cmd`, `.py`, `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`, `.rb`, `.pl`,
+`.php`. The other files a skill bundles (reference Markdown, data) are not
+read, and a script outside any skill is code, not a skill's.
+
+The walk is the code source's own: sorted, read-only, never following a
+symbolic link, not entering a dependency or build directory (`node_modules`,
+`dist`, …), within the same per-file, file-count and total-size limits and the
+scan's deadline. Each root is an **origin**, `code:<root label>`: a root read in
+part — a directory, a `SKILL.md` or a script that could not be read, a symbolic
+link, a file over 1 MiB, the deadline — is `INCOMPLETE` with its reason, and
+its findings are kept. A root that holds no skill is a complete read of none.
+
+A rule that fires leaves as a code, the rule id, a severity, the subject and
+the field (`skill:code:<label>/<path>/SKILL.md#instructions`,
+`skill-file:code:<label>/<path>#content`), never the text. The rules
+(`runAgentRules`) are re-authored from Cisco AI Defense's `skill-scanner` and
+the Agent Threat Rules; each reads only its kinds, so a prompt-injection rule
+reads `SKILL.md` and never a script's comments. They make no request and run
+nothing.
+
+On unless the source says `"skills": false`. Off, the source reads no skill,
+and a scan with no `mcp` source signs no agent-rules report.
+
 #### Agents built directly on a model provider's SDK
 
 Many agents use no framework: they are a loop around one call that gives the
@@ -658,8 +691,9 @@ and, from 0.16.0, the integrations report to
 other scope. With no `integrationsApiKeyEnv` the integrations report is not
 posted, and the log says so once (`integrations report not posted`). `stdout`
 prints each report the run made, one per line, the agent report first. A run
-with an `mcp` source also signs the agent-rules report
-(`report.agent-rules.signed.json`, `scanent-agent-rules/1`): the `file` and
+with an `mcp` source, or a `code` source that reads skills, also signs the
+agent-rules report (`report.agent-rules.signed.json`, `scanent-agent-rules/1`):
+the `file` and
 `stdout` outputs carry it, and `inflect` posts it to
 `/api/t/<tenant>/admin/agents/agent-rule-scans` with the key
 `agentRulesApiKeyEnv` names, which holds `admin:agent_rules_ingest` and no other
@@ -929,7 +963,7 @@ control plane.
   `"agentRulesApiKeyEnv": "INFLECT_AGENT_RULES_KEY"` in the `inflect` block: a
   third API key bound to the scanner agent, with the `admin:agent_rules_ingest`
   scope and no other. It posts the agent-rules report, which a run with an `mcp`
-  source makes, and is never another report's key. Absent, that report is not
+  source or a skill-reading `code` source makes, and is never another report's key. Absent, that report is not
   posted.
 - `ENTRA_CLIENT_SECRET`: an Entra application holding the Microsoft Graph
   application permission `Application.Read.All`, which lists registrations and
@@ -1284,7 +1318,7 @@ integrations report is posted only when `integrationsApiKeyEnv` is given (at
 the prompts, the default is `INFLECT_INTEGRATIONS_KEY`), and answers of
 integrations sources alone with a tenant need it. The agent-rules report is
 posted only when `agentRulesApiKeyEnv` is given; the prompts offer it when an
-`mcp` source is answered, with the default `INFLECT_AGENT_RULES_KEY`.
+`mcp` or a `code` source is answered, with the default `INFLECT_AGENT_RULES_KEY`.
 
 What it will not do:
 
@@ -1392,7 +1426,7 @@ under `inflect-integrations`. A configuration with integrations sources, the
 `inflect` output and no `integrationsApiKeyEnv` gets one `not applicable`
 check there, saying the integrations report will not be posted. The
 agent-rules report's key is checked under `inflect-agent-rules`, in the agent
-scanner's group, and a configuration with an `mcp` source and no
+scanner's group, and a configuration with an `mcp` source or a skill-reading `code` source and no
 `agentRulesApiKeyEnv` gets one `not applicable` check there.
 
 The table is grouped by scanner: the local checks first, then

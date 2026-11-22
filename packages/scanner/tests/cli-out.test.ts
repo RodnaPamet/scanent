@@ -10,9 +10,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { verifyAndParseAgentRulesReport } from '@rodnapamet/scanent-contract/agent-rules-contract';
 import { LADDER_VERSION, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { CSV_BOM } from '@scanent/report/render/csv';
-import { RUN_FILE_NAMES } from '@scanent/report/render/files';
+import { AGENT_RULES_RUN_FILE_NAMES, RUN_FILE_NAMES } from '@scanent/report/render/files';
 import { INVENTORY_SCHEMA_ID } from '@scanent/report/results/inventory';
 import { LocalResultsSchema } from '@scanent/report/results/schema';
 import type { LocalResults } from '@scanent/report/results/types';
@@ -72,17 +73,19 @@ function resultsOf(run: string): LocalResults {
 }
 
 describe('scan --out', () => {
-    it('--out <dir> --dry-run prints the signed report, posts nothing and writes the seven files', async () => {
+    it('--out <dir> --dry-run prints the signed reports, posts nothing and writes the nine files', async () => {
         expect(await main(['scan', '--config', writeConfig(configJson()), '--out', outDir, '--dry-run'], LOCAL_ENV)).toBe(0);
         expect(fetched).not.toHaveBeenCalled();
 
-        expect(out).toHaveLength(1);
+        // The agent report, then the agent-rules report over the example's skill.
+        expect(out).toHaveLength(2);
         const raw = out[0].replace(/\n$/, '');
         expect(verifyAndParseHarnessReport(raw, [PUBLIC_HEX])).toMatchObject({ ok: true, complete: true });
+        expect(verifyAndParseAgentRulesReport(out[1].replace(/\n$/, ''), [PUBLIC_HEX])).toMatchObject({ ok: true, complete: true });
 
         const [run] = runs();
         expect(runs()).toHaveLength(1);
-        expect(fs.readdirSync(path.join(outDir, 'runs', run)).sort()).toEqual(Object.values(RUN_FILE_NAMES).sort());
+        expect(fs.readdirSync(path.join(outDir, 'runs', run)).sort()).toEqual([...Object.values(RUN_FILE_NAMES), ...Object.values(AGENT_RULES_RUN_FILE_NAMES)].sort());
         expect(read(run, RUN_FILE_NAMES.report)).toBe(raw);
 
         const results = resultsOf(run);
@@ -105,7 +108,7 @@ describe('scan --out', () => {
         // The checkout's path is in no file: a code root is reported by its label.
         for (const name of Object.values(RUN_FILE_NAMES)) expect(read(run, name)).not.toContain(REPO);
         const log = err.join('').trim().split('\n').map((l) => JSON.parse(l) as { msg: string });
-        expect(log.map((l) => l.msg)).toEqual(['source read', 'report signed', 'results written']);
+        expect(log.map((l) => l.msg)).toEqual(['source read', 'report signed', 'agent-rules report signed', 'results written']);
     });
 
     it('--out without --dry-run writes the files and posts, in that order', async () => {

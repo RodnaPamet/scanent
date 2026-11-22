@@ -94,11 +94,11 @@ describe('1-4. a poisoned tool, written to a directory', () => {
         expect(a?.report).toEqual({ file: AGENT_RULES_RUN_FILE_NAMES.report, sha256: createHash('sha256').update(read(AGENT_RULES_RUN_FILE_NAMES.report), 'utf8').digest('hex') });
         expect(a?.findings.map((f) => [f.code, f.ruleId, f.severity])).toEqual([['MCP_PROMPT_INJECTION', 'cisco-mcp:instruction-override', 'HIGH']]);
         expect(a?.counts).toEqual({ subjects: 4, flagged: 1, findings: 1 });
-        expect(a?.servers).toEqual([
-            { ref: `mcp:${MCP_CRM}`, status: 'COMPLETE', reason: null, tools: 3 },
-            { ref: `mcp:${MCP_TICKETS}`, status: 'COMPLETE', reason: null, tools: 1 },
+        expect(a?.origins).toEqual([
+            { ref: `mcp:${MCP_CRM}`, status: 'COMPLETE', reason: null, subjects: 3 },
+            { ref: `mcp:${MCP_TICKETS}`, status: 'COMPLETE', reason: null, subjects: 1 },
         ]);
-        expect(a?.findings[0].serverRef).toBe(`mcp:${MCP_CRM}`);
+        expect(a?.findings[0].originRef).toBe(`mcp:${MCP_CRM}`);
         expect(a?.notConcluded).toEqual([]);
         // The rules' findings are their own: none of them enters the agent findings.
         expect(results.findings.some((f) => f.code.startsWith('MCP_'))).toBe(false);
@@ -118,7 +118,7 @@ describe('1-4. a poisoned tool, written to a directory', () => {
         expect(page).toContain('<section id="agent-surface"');
         expect(page).toContain('<a href="#agent-surface">Agent surface</a>');
         expect(page).toContain('cisco-mcp:instruction-override');
-        expect(page).toContain('2 MCP servers, as the rules read them');
+        expect(page).toContain('2 places read: MCP servers and code roots, as the rules read them');
         expect(page).toContain('<strong>Complete.</strong> Every tool definition');
         expect(page).toContain(`content="${PAGE_CSP.replace(/'/g, '&#39;')}"`);
         // After the agent findings.
@@ -155,7 +155,7 @@ describe('3. what the page and the CSV say of a clean or a partial read', () => 
         expect(results.agentRules?.outcome).toBe('FINDINGS');
         expect(results.agentRules?.notConcluded).toEqual([{ scope: 'mcp-tool', why: 'POPULATION_INCOMPLETE', reason: 'PAGINATION_TORN' }]);
         const page = read(RUN_FILE_NAMES.summary);
-        expect(page).toContain('<strong>Incomplete:</strong> not every tool definition was read');
+        expect(page).toContain('<strong>Incomplete:</strong> not every tool definition the MCP servers list was read');
         expect(page).toContain('the listing changed while it was being read');
         expect(read(AGENT_RULES_RUN_FILE_NAMES.findings)).toContain('"NOT_CONCLUDED","POPULATION_INCOMPLETE","PAGINATION_TORN","mcp-tool"');
     });

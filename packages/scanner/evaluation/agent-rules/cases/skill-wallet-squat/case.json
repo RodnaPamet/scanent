@@ -1,0 +1,9 @@
+{
+  "kind": "skill",
+  "disposition": "poisoned",
+  "expected": [
+    {
+      "ruleId": "atr:2026-00124.wallet-name-squat"
+    }
+  ]
+}

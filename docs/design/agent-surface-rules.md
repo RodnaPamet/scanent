@@ -1,24 +1,32 @@
 # Rule-based findings over the agent surface
 
-> **Status: being built (2026-11-22). V1 and V2 are done.** V1: the contract
+> **Status: being built (2026-11-22). V1 to V4 are done.** V1: the contract
 > `scanent-agent-rules/1` and its verifier, the re-authored MCP rule set
 > (`packages/contract/src/agent-rules.ts`), the planner, the evaluation scorer
 > and the corpus (`packages/scanner/evaluation/agent-rules/`). V2: the rules run
 > in the `mcp` source, a scan signs `report.agent-rules.signed.json`, and the
 > file output scores it into `results.json`, an "Agent surface" section of
-> `summary.html` and `agent-rule-findings.csv`. It ships in 0.17.0. Not yet:
-> posting it to Inflect, which needs an ingest of its own (V3), the PDF, the
-> skill rules and the A2A card rules.
+> `summary.html` and `agent-rule-findings.csv`. V3: the report lists each
+> origin it read, and the `inflect` output posts it with a key of its own. V4:
+> the skill rules — the `code` source reads each `SKILL.md` under its roots and
+> the scripts bundled with it (`packages/scanner/src/sources/code/skills.ts`).
+> All of it ships in 0.17.0. Not yet: the PDF section and the A2A card rules.
 
 ## What it is
 
-A fourth kind of finding in the AGENT scanner — not a new scanner, not a new
-report. The agent scanner already reads an MCP server's tool definitions, a
-tenant's agent skills and A2A agent cards. Today it reads them for identity
-(what tools an agent has, what a card claims). This adds a pass that reads the
-SAME text for signs of attack written into it: a tool whose description hides a
-second behaviour (tool poisoning), a skill carrying a prompt injection or an
-exfiltration instruction, an agent card that spoofs another agent.
+A fourth kind of finding in the AGENT scanner — not a new scanner. The agent
+scanner reads an MCP server's tool definitions for identity (what tools an agent
+has). This adds a pass that reads the SAME text for signs of attack written into
+it — a tool whose description hides a second behaviour (tool poisoning) — and
+reads two things the scanner did not read before: an agent skill's `SKILL.md`
+and the scripts bundled with it, for a prompt injection, an executable payload
+or an exfiltration instruction; and, later, an A2A agent card that spoofs
+another agent.
+
+This page said, until V4, that the scanner already read skills and agent cards.
+It did not: no source read either one. The `mcp` source was the rules' only
+input until the `code` source learned to read skills (V4), and agent cards still
+need an input of their own.
 
 It is static and needs no model. Every check is a rule — a regular expression
 or a YARA-style pattern — run over text the scanner already holds. It never
@@ -84,10 +92,11 @@ the integrations report has.
 ## Order of work
 
 1. The rule format and the planner, with the MCP tool-poisoning and
-   injection rules first, and the evaluation corpus. No new input kind.
-2. The skill rules (scanent already scans skill text; these are new codes).
-3. The A2A card rules.
-4. A release.
+   injection rules first, and the evaluation corpus. No new input kind. (V1, V2)
+2. Each origin in the report, and the post to Inflect. (V3)
+3. The skill rules, read by the `code` source: a new input, and new codes. (V4)
+4. The A2A card rules, which need an input that reads agent cards.
+5. A release: 0.17.0 carries 1 to 3.
 
 ## Decisions (owner, 2026-11-22)
 
@@ -104,6 +113,20 @@ the integrations report has.
 3. **Its own contract and ingest.** `scanent-agent-rules/1`, a report beside
    the other three, signed with the same key, with its own Inflect ingest, key
    scope and tab. The agent report is left unchanged.
+4. **A finding closes only on positive evidence about where it was read.** The
+   report lists every origin — an MCP server, a code root — read in full or in
+   part, and a consumer closes a finding only when the same scanner read its
+   origin in full and did not raise it again. One list, `origins[]`, for both
+   families, named before 0.17.0 shipped so no consumer read the earlier
+   `servers[]`.
+5. **A skill is its `SKILL.md` and the scripts bundled with it.** The rules
+   read the front matter and the instructions of every `SKILL.md` under a code
+   root, and every script in its directory down to the next skill (by
+   extension: shell, PowerShell, batch, Python, JavaScript and TypeScript, Ruby,
+   Perl, PHP). The other files a skill bundles — reference Markdown, data — are
+   not read. On by default; `skills: false` on a `code` source turns it off.
+6. **Folded into 0.17.0.** The contract had not shipped, so the skill kinds,
+   the codes and the rename went into `/1` rather than a `/2`.
 
 ## Not in this page
 

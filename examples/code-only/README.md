@@ -1,8 +1,12 @@
 # Example: a code-only estate
 
-`estate/` holds one LangChain agent definition. The `code` source reads it from
-disk and makes no network request, so a scan of it works offline. The
-repository's README has the commands.
+`estate/` holds one LangChain agent definition and one agent skill
+(`support/skills/order-lookup/`: a `SKILL.md` and the script it runs). The
+`code` source reads both from disk and makes no network request, so a scan of
+it works offline: the agent goes into the agent report, and the skill is read by
+the agent-surface rules, whose report is the second one a scan prints. Neither
+the skill nor its script fires a rule. The repository's README has the
+commands.
 
 | File | What it is |
 |---|---|

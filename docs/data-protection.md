@@ -143,7 +143,7 @@ criminal convictions are not read.
 | The signed report (`report.signed.json`, or stdout, or posted to a tenant) | Your output directory; a tenant only if you configure one | Owner ids, as above. No declared inventory fields |
 | `results.json`, `agents.csv`, `summary.html`, `report.pdf` | Your output directory | Owner ids, and the inventory's declared `name`, `owner` and `purpose` |
 | `report.integrations.signed.json`, `integrations.csv`, `integration-findings.csv`, and the integrations section of `results.json`, `summary.html` and `report.pdf` | Your output directory, only when an integrations source is configured. The integrations report (`report.integrations.signed.json`, or stdout) is posted to a tenant only if you configure one and name its key (`integrationsApiKeyEnv`) | Application owners' object ids (Entra), application display names, labels and slugs, counts of people a grant was made for, and webhook target hosts. No consenting person's id, and no webhook URL |
-| `report.agent-rules.signed.json`, `agent-rule-findings.csv`, and the agent-rules section of `results.json` and `summary.html` | Your output directory, only when an `mcp` source is configured; stdout if you name it. Posted to a tenant only if you configure one and name its key (`agentRulesApiKeyEnv`) | Each finding's MCP server URL and tool name, or a digest in their place. No text of a tool's description or schema |
+| `report.agent-rules.signed.json`, `agent-rule-findings.csv`, and the agent-rules section of `results.json` and `summary.html` | Your output directory, when an `mcp` source or a skill-reading `code` source is configured; stdout if you name it. Posted to a tenant only if you configure one and name its key (`agentRulesApiKeyEnv`) | Each finding's MCP server URL and tool name, or a code root's label and the path of the skill or script under it, or a digest in their place. No text of a tool's description or schema, of a `SKILL.md`, or of a script |
 | `findings.csv` | Your output directory | Agent ids and credential references. A finding names an agent or a credential by its id; for the sources listed under "Indirectly" above, that id holds names your estate chose (a secret's name, a workflow file, a path), and a person's name written there is carried |
 | The log (stderr) | Wherever your platform sends a container's stderr | None by design: kinds, counts, scan ids, host names. No owner, no agent id (`docs/operations.md`) |
 | A support bundle | Where you write it, if you run the command | None by default: every name and id is replaced by a token. With `--include-identifiers`: agent ids, the estate's name, the tenant's host and slug, configured hosts, labels, paths, and the text of each doctor check |
@@ -165,7 +165,8 @@ runs as. Nothing is written outside the output directory.
   (`integrationsApiKeyEnv`); it then contains application owners' object ids
   and application names. The agent-rules report is posted there only when you
   name its key (`agentRulesApiKeyEnv`); it then contains MCP server URLs and
-  tool names, or digests in their place, and never a tool's text.
+  tool names, code root labels and the paths of skills and scripts under them,
+  or digests in their place, and never a tool's, a skill's or a script's text.
   Whether that is a transfer to a processor, and where that processor is, is a
   matter between you and whoever operates the tenant.
 - **No telemetry.** The scanner reports nothing to its authors and checks for

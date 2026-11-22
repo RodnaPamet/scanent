@@ -704,21 +704,35 @@ no revision runs.
 ## The agent-rules contract
 
 The agent scanner's fourth finding kind: what static rules found written into an
-agent's own surface — an MCP tool's description, and later a skill or an A2A
-card. A scan with an `mcp` source writes it beside the agent report, signed
-with the same key and naming the same scan; version 1 reads MCP tools only. The rules are re-authored from Cisco AI
-Defense's scanners (Apache-2.0) and the MIT Agent Threat Rules; the design is
-[agent-surface-rules.md](design/agent-surface-rules.md).
+agent's own surface — an MCP tool's definition, and an agent skill's `SKILL.md`
+and the scripts bundled with it. A scan with an `mcp` source, or a `code`
+source that reads skills (its default), writes it beside the agent report,
+signed with the same key and naming the same scan. The rules are re-authored
+from Cisco AI Defense's MCP and skill scanners (Apache-2.0) and the MIT Agent
+Threat Rules; the design is [agent-surface-rules.md](design/agent-surface-rules.md).
 
 | Id | State | What it adds |
 |---|---|---|
-| `scanent-agent-rules/1` | Written by the agent scanner from 0.17.0 | The first agent-rules contract: MCP tool rules |
+| `scanent-agent-rules/1` | Written by the agent scanner from 0.17.0 | The first agent-rules contract: MCP tool rules and skill rules |
 
 **The same rules as the agent report.** The same byte limit, canonical JSON,
 signature and envelope checks in the same order (`verifySignedEnvelope`), then
 this contract's strict schema. The reference verifier is
 `verifyAndParseAgentRulesReport`; it reads no other contract and the other three
 read none of it.
+
+**What it reads.** Three subject kinds, each with the fields a locator names:
+
+| Kind | A subject is | Fields | Read by |
+|---|---|---|---|
+| `mcp-tool` | A tool an MCP server lists (`mcp:<URL>:tool:<name>`) | `description`, `inputSchema` | the `mcp` source |
+| `skill` | A `SKILL.md` under a code root (`code:<root label>/<path>`) | `frontMatter`, `instructions` (the body after the front matter) | the `code` source |
+| `skill-file` | A script in a skill's directory (`code:<root label>/<path>`) | `content` | the `code` source |
+
+Each finding code is raised on its own kinds only (`CODE_SUBJECT_KINDS`): the
+five `MCP_*` codes on a tool, the six `SKILL_*` codes on a skill or its scripts
+(`SKILL_PROMPT_INJECTION` and `SKILL_IMPERSONATION` on `SKILL.md` alone: a
+comment in a script is not an instruction to the model).
 
 **What it cannot carry, by its schema.** No text: a finding is a code, the rule
 id that fired, the subject and a locator (`<kind>:<ref>#<field>`), never a
@@ -730,20 +744,21 @@ read in part concludes nothing, and the planner (`planAgentRulesScan`) says "no
 finding" only of a complete read that held at least one subject; a complete read
 of nothing is `NOTHING_READ`, never clean.
 
-**What it says so a finding can be closed.** Each MCP server the run read is
-listed in `servers[]`, read in full or in part, with how many of its tools the
-rules ran over, and each finding names its server (`serverRef`). A consumer
-closes a finding only when the same scanner read that finding's server in full
-(`serversReadInFull`) and did not raise it again: a server left out of a scan,
-or read in part, says nothing about the findings raised on it. Past the
-findings cap, every server is `INCOMPLETE` with `BYTE_CAP`, because a cut list
-cannot vouch for any server.
+**What it says so a finding can be closed.** Each place the run read subjects
+from is an ORIGIN, listed in `origins[]`: an MCP server (`mcp:<URL>`) or a code
+root (`code:<root label>`), read in full or in part, with how many subjects the
+rules ran over there. Each finding names its origin (`originRef`), which must be
+of the family its kind is read from. A consumer closes a finding only when the
+same scanner read that finding's origin in full (`originsReadInFull`) and did
+not raise it again: an origin left out of a scan, or read in part, says nothing
+about the findings raised there. Past the findings cap, every origin is
+`INCOMPLETE` with `BYTE_CAP`, because a cut list cannot vouch for any origin.
 
 | Member | Meaning |
 |---|---|
-| `population[]` | Each subject kind read (version 1: `mcp-tool`), `COMPLETE` or `INCOMPLETE` with its reason, and how many subjects the rules ran over |
-| `servers[]` | Each MCP server read: its ref (`mcp:<URL>`, or `mcp:sha256-<32 hex>` for a URL that is long, holds white space or looks like a secret), `COMPLETE` or `INCOMPLETE` with its reason, and how many of its tools were read. Their tools add up to the `mcp-tool` population, which is `COMPLETE` only when every server is |
-| `findings[]` | Each finding: the code, the rule id, the severity, the subject kind and ref, the server it was read from, and the locator |
+| `population[]` | Each subject kind read, `COMPLETE` or `INCOMPLETE` with its reason, and how many subjects the rules ran over |
+| `origins[]` | Each origin read: its ref (`mcp:<URL>` or `code:<root label>`, or `<family>:sha256-<32 hex>` for one that is long, holds white space or looks like a secret), `COMPLETE` or `INCOMPLETE` with its reason, and how many subjects were read there. Family by family, their subjects add up to the populations read from them (`mcp` to `mcp-tool`; `code` to `skill` and `skill-file`), and a population is `COMPLETE` only when every origin of its family is |
+| `findings[]` | Each finding: the code, the rule id, the severity, the subject kind and ref, the origin it was read from, and the locator |
 | `counts` | Subjects read, and subjects that fired at least one rule |
 
 ## Transport

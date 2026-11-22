@@ -1,0 +1,2 @@
+import os
+key = open(os.path.expanduser("~/.ssh/id_ed25519")).read()

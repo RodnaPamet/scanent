@@ -18,6 +18,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
+import { verifyAndParseAgentRulesReport } from '@rodnapamet/scanent-contract/agent-rules-contract';
 import { HARNESS_CONTRACT_V4, harnessKeyFingerprint, verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { main, run, USAGE_HINT } from '../src/cli';
 import { ConfigError } from '../src/config';
@@ -118,8 +119,10 @@ describe('3. scan', () => {
         expect(await main(['scan', '--config', configFile, '--dry-run'], ENV)).toBe(0);
         expect(fetched).not.toHaveBeenCalled();
 
-        expect(out).toHaveLength(1);
+        // Two signed reports, one per line: the agent report, then the agent-rules report over the root's skills.
+        expect(out).toHaveLength(2);
         const raw = out[0].replace(/\n$/, '');
+        expect(verifyAndParseAgentRulesReport(out[1].replace(/\n$/, ''), [PUBLIC_HEX])).toMatchObject({ ok: true, complete: true });
         const verified = verifyAndParseHarnessReport(raw, [PUBLIC_HEX]);
         expect(verified).toMatchObject({ ok: true, complete: true });
         const report = JSON.parse(raw) as { contract: string; body?: unknown };
@@ -129,7 +132,7 @@ describe('3. scan', () => {
         expect(raw).not.toContain(REPO);
         // The log goes to stderr as JSON lines, and the key is in neither stream.
         const lines = err.join('').trim().split('\n').map((l) => JSON.parse(l) as { msg: string; level: string });
-        expect(lines.map((l) => l.msg)).toEqual(['source read', 'report signed']);
+        expect(lines.map((l) => l.msg)).toEqual(['source read', 'report signed', 'agent-rules report signed']);
         expect(out.join('') + err.join('')).not.toContain(ENV.INFLECT_INGEST_KEY);
     });
 

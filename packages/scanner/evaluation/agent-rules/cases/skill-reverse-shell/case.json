@@ -1,0 +1,9 @@
+{
+  "kind": "skill-file",
+  "disposition": "poisoned",
+  "expected": [
+    {
+      "ruleId": "atr:2026-00121.reverse-shell"
+    }
+  ]
+}

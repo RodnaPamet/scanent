@@ -376,20 +376,25 @@ matrix, no agent finding, and no `agents.csv`.
 
 ### Agent surface
 
-Shown only when you configured an `mcp` source. Static rules are run over the
+Shown when you configured an `mcp` source, or a `code` source (which reads the
+agent skills in its folders unless told not to). Static rules are run over the
 text of each MCP tool definition the scan read, its description and its input
-schema, looking for an attack written into it: a hidden instruction to the
-model, an executable payload, an instruction to send data or take credentials.
-The section says first whether every tool definition was read: "No rule fired"
-appears only after a complete read, and an incomplete read keeps what it found
-and says nothing clean. Then how many definitions were read and how many
-fired a rule, and each finding: its severity, its code, the rule that fired and
-where (the server, the tool and the field).
+schema, and over each agent skill's `SKILL.md` and the scripts beside it,
+looking for an attack written into them: a hidden instruction to the model, an
+executable payload, an instruction to send data or take credentials, a claim to
+be vouched for by a model vendor. The section says first whether everything was
+read: "No rule fired" appears only after a complete read, and an incomplete
+read keeps what it found and says nothing clean. "Nothing was read" means the
+scan found no tool definition and no skill: that is not a clean result either.
+Then how many tool definitions, skills and scripts were read, each place read
+(an MCP server or a code folder) and whether it was read in full, and each
+finding: its severity, its code, the rule that fired and where (the tool or the
+file, and the field).
 
 A finding is a suggestion for you to confirm, not proof: a legitimate tool can
-describe reading a file. It never changes an agent's level, and the text it
-fired on is not in any output, so open the tool's definition on its server to
-judge it. The same rows are in `agent-rule-findings.csv`, and the signed report
+describe reading a file, and a skill about security can quote an attack. It
+never changes an agent's level, and the text it fired on is not in any output,
+so open the tool's definition on its server, or the skill's file, to judge it. The same rows are in `agent-rule-findings.csv`, and the signed report
 is `report.agent-rules.signed.json`, beside `report.signed.json`.
 
 ### Inventory

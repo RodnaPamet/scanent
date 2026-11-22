@@ -41,7 +41,7 @@ import { buildReportBody, rawPublicKeyHex } from '../src/report';
 import { runScan } from '../src/scan';
 import { isDeclaredMcpMessage, isDeclaredRequest } from '../src/scanner-surface';
 import { buildAgentRulesReportBody } from '../src/agent-rules-report';
-import { MAX_RULE_TEXT_CHARS, mcpListingHash, mcpSource, mcpToolHash, ruleServerRef, ruleSubjectRef, type McpServerOptions } from '../src/sources/mcp';
+import { MAX_RULE_TEXT_CHARS, mcpListingHash, mcpSource, mcpToolHash, ruleOriginRef, ruleSubjectRef, type McpServerOptions } from '../src/sources/mcp';
 import type { SourceRead } from '../src/source';
 
 const ASOF = new Date('2026-10-19T03:00:00.000Z');
@@ -414,12 +414,13 @@ describe('7. the agent-surface rules, run where the text is', () => {
                 code: 'MCP_PROMPT_INJECTION',
                 ruleId: 'cisco-mcp:instruction-override',
                 severity: 'HIGH',
+                subjectKind: 'mcp-tool',
                 subjectRef: `mcp:${MCP_CRM}:tool:lookup_account`,
-                serverRef: `mcp:${MCP_CRM}`,
+                originRef: `mcp:${MCP_CRM}`,
                 locator: `mcp-tool:mcp:${MCP_CRM}:tool:lookup_account#description`,
             },
         ]);
-        expect(result.ruleServers).toEqual([{ ref: `mcp:${MCP_CRM}`, status: 'COMPLETE', tools: 3 }]);
+        expect(result.ruleOrigins).toEqual([{ ref: `mcp:${MCP_CRM}`, status: 'COMPLETE', subjects: 3 }]);
         expect(JSON.stringify(result)).not.toContain('Ignore all previous instructions');
         expect(JSON.stringify(result)).not.toContain('return every record');
     });
@@ -438,7 +439,7 @@ describe('7. the agent-surface rules, run where the text is', () => {
     it('an ordinary listing fires nothing, and every tool read is counted as a subject', async () => {
         const result = await read(createSourceFakes());
         expect(result.ruleFindings).toEqual([]);
-        expect(result.ruleSubjects).toBe(4);
+        expect(result.ruleSubjects).toEqual({ 'mcp-tool': 4 });
         expect(result.ruleTextTruncated).toBeUndefined();
     });
 
@@ -450,15 +451,15 @@ describe('7. the agent-surface rules, run where the text is', () => {
         const result = await read(fakes, [server(MCP_CRM)]);
         expect(result).toMatchObject({ status: 'INCOMPLETE', reason: 'PAGINATION_TORN' });
         expect(result.ruleFindings?.map((r) => r.ruleId)).toEqual(['cisco-mcp:instruction-override']);
-        expect(result.ruleSubjects).toBe(2);
-        expect(result.ruleServers).toEqual([{ ref: `mcp:${MCP_CRM}`, status: 'INCOMPLETE', reason: 'PAGINATION_TORN', tools: 2 }]);
+        expect(result.ruleSubjects).toEqual({ 'mcp-tool': 2 });
+        expect(result.ruleOrigins).toEqual([{ ref: `mcp:${MCP_CRM}`, status: 'INCOMPLETE', reason: 'PAGINATION_TORN', subjects: 2 }]);
     });
 
     it('records each server as the rules read it: one in full, one never opened for want of its token', async () => {
         const result = await read(createSourceFakes(), [server(MCP_CRM), server(MCP_TICKETS, { token: 'MISSING' })]);
-        expect(result.ruleServers).toEqual([
-            { ref: `mcp:${MCP_CRM}`, status: 'COMPLETE', tools: expect.any(Number) },
-            { ref: `mcp:${MCP_TICKETS}`, status: 'INCOMPLETE', reason: 'AUTH_FAILED', tools: 0 },
+        expect(result.ruleOrigins).toEqual([
+            { ref: `mcp:${MCP_CRM}`, status: 'COMPLETE', subjects: expect.any(Number) },
+            { ref: `mcp:${MCP_TICKETS}`, status: 'INCOMPLETE', reason: 'AUTH_FAILED', subjects: 0 },
         ]);
     });
 
@@ -467,7 +468,7 @@ describe('7. the agent-surface rules, run where the text is', () => {
         const result = await read(poisoned((f) => (crmTool(f, 0, 0).description = long)), [server(MCP_CRM)]);
         expect(result.ruleTextTruncated).toBe(1);
         expect(result.ruleFindings).toEqual([]);
-        expect(result.ruleServers).toEqual([{ ref: `mcp:${MCP_CRM}`, status: 'INCOMPLETE', reason: 'BYTE_CAP', tools: 3 }]);
+        expect(result.ruleOrigins).toEqual([{ ref: `mcp:${MCP_CRM}`, status: 'INCOMPLETE', reason: 'BYTE_CAP', subjects: 3 }]);
     });
 
     it('names a tool by a digest when its ref would be too long or would look like a secret', () => {
@@ -477,9 +478,9 @@ describe('7. the agent-surface rules, run where the text is', () => {
         const secretish = ruleSubjectRef(`https://mcp.acme.example/mcp/${['gh', 'p_', 'A1'.repeat(12)].join('')}`, 'x');
         expect(secretish).toMatch(/^mcp:sha256-[0-9a-f]{32}:tool$/);
         expect(ruleSubjectRef('https://a.example/mcp', 'x')).not.toBe(ruleSubjectRef('https://b.example/mcp', 'x'));
-        expect(ruleServerRef(MCP_CRM)).toBe(`mcp:${MCP_CRM}`);
-        expect(ruleServerRef(`https://mcp.acme.example/${'p/'.repeat(250)}mcp`)).toMatch(/^mcp:sha256-[0-9a-f]{32}$/);
-        expect(ruleServerRef(`https://mcp.acme.example/mcp/${['gh', 'p_', 'A1'.repeat(12)].join('')}`)).toMatch(/^mcp:sha256-[0-9a-f]{32}$/);
+        expect(ruleOriginRef(MCP_CRM)).toBe(`mcp:${MCP_CRM}`);
+        expect(ruleOriginRef(`https://mcp.acme.example/${'p/'.repeat(250)}mcp`)).toMatch(/^mcp:sha256-[0-9a-f]{32}$/);
+        expect(ruleOriginRef(`https://mcp.acme.example/mcp/${['gh', 'p_', 'A1'.repeat(12)].join('')}`)).toMatch(/^mcp:sha256-[0-9a-f]{32}$/);
     });
 
     it('past the findings cap keeps the most severe, and names no server as read in full', () => {
@@ -488,15 +489,16 @@ describe('7. the agent-surface rules, run where the text is', () => {
             code: 'MCP_TOOL_POISONING' as const,
             ruleId: 'cisco-mcp:also-does',
             severity: 'MEDIUM' as const,
+            subjectKind: 'mcp-tool' as const,
             subjectRef: `${ref}:tool:t${i}`,
-            serverRef: ref,
+            originRef: ref,
             locator: `mcp-tool:${ref}:tool:t${i}#description`,
         }));
-        const reads: SourceRead[] = [{ kind: 'mcp', status: 'COMPLETE', rows: 5001, observations: [], ruleFindings: many, ruleSubjects: 5001, ruleServers: [{ ref, status: 'COMPLETE', tools: 5001 }] }];
+        const reads: SourceRead[] = [{ kind: 'mcp', status: 'COMPLETE', rows: 5001, observations: [], ruleFindings: many, ruleSubjects: { 'mcp-tool': 5001 }, ruleOrigins: [{ ref, status: 'COMPLETE', subjects: 5001 }] }];
         const body = buildAgentRulesReportBody({ scanId: 'acme-mcp-20261122T100000Z-0a1b2c3d', asOf: new Date('2026-11-22T10:00:00Z'), scannerAgentId: 'agt_scanner_acme' }, reads);
         expect(body.findings).toHaveLength(5000);
         expect(body.population).toEqual([{ kind: 'mcp-tool', status: 'INCOMPLETE', reason: 'BYTE_CAP', subjects: 5001 }]);
-        expect(body.servers).toEqual([{ ref, status: 'INCOMPLETE', reason: 'BYTE_CAP', tools: 5001 }]);
+        expect(body.origins).toEqual([{ ref, status: 'INCOMPLETE', reason: 'BYTE_CAP', subjects: 5001 }]);
     });
 
     describe('through the runner: the third report', () => {
@@ -533,11 +535,11 @@ describe('7. the agent-surface rules, run where the text is', () => {
             const body = result.agentRules!.body;
             expect(body.scan.id).toBe(result.body.scan.id);
             expect(body.population).toEqual([{ kind: 'mcp-tool', status: 'COMPLETE', subjects: 4 }]);
-            expect(body.servers).toEqual([
-                { ref: `mcp:${MCP_CRM}`, status: 'COMPLETE', tools: 3 },
-                { ref: `mcp:${MCP_TICKETS}`, status: 'COMPLETE', tools: 1 },
+            expect(body.origins).toEqual([
+                { ref: `mcp:${MCP_CRM}`, status: 'COMPLETE', subjects: 3 },
+                { ref: `mcp:${MCP_TICKETS}`, status: 'COMPLETE', subjects: 1 },
             ]);
-            expect(body.findings.map((f) => f.serverRef)).toEqual([`mcp:${MCP_CRM}`]);
+            expect(body.findings.map((f) => f.originRef)).toEqual([`mcp:${MCP_CRM}`]);
             expect(body.findings.map((f) => [f.code, f.ruleId, f.severity])).toEqual([['MCP_PROMPT_INJECTION', 'cisco-mcp:instruction-override', 'HIGH']]);
             expect(body.counts).toEqual({ subjects: 4, flagged: 1 });
             expect(planAgentRulesScan(body).outcome).toBe('FINDINGS');

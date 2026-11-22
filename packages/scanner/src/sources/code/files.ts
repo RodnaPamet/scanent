@@ -50,7 +50,7 @@ export const MAX_FILE_BYTES = 1024 * 1024;
 export const MAX_MARKER_SCAN_BYTES = 16 * 1024 * 1024;
 export const MAX_FILES = 20_000;
 export const MAX_TOTAL_BYTES = 128 * 1024 * 1024;
-const MAX_DIR_DEPTH = 32;
+export const MAX_DIR_DEPTH = 32;
 
 export const SOURCE_EXTENSIONS: readonly string[] = ['.py', '.js', '.mjs', '.cjs', '.jsx', '.ts', '.mts', '.cts', '.tsx'];
 export const SKIPPED_DIRECTORIES: readonly string[] = [
@@ -96,17 +96,17 @@ function isSourceFile(name: string): boolean {
     return SOURCE_EXTENSIONS.some((ext) => name.toLowerCase().endsWith(ext));
 }
 
-function reasonOf(err: unknown): IncompleteReason {
+export function reasonOf(err: unknown): IncompleteReason {
     const code = (err as { code?: unknown } | null)?.code;
     return code === 'EACCES' || code === 'EPERM' ? 'AUTH_FAILED' : 'UNREACHABLE';
 }
 
 /** A UTF-16 (or UTF-32 little-endian) byte-order mark: `FF FE` or `FE FF`. */
-function startsWithWideByteOrderMark(buf: Buffer): boolean {
+export function startsWithWideByteOrderMark(buf: Buffer): boolean {
     return buf.length >= 2 && ((buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff));
 }
 
-const join = (a: string, b: string) => (a.endsWith('/') ? `${a}${b}` : `${a}/${b}`);
+export const joinPath = (a: string, b: string) => (a.endsWith('/') ? `${a}${b}` : `${a}/${b}`);
 
 /**
  * Walk the roots, yielding each source file that names a framework or a
@@ -152,7 +152,7 @@ export async function readCodeFiles(
                 stopped = true;
                 return;
             }
-            const childAbs = join(abs, name);
+            const childAbs = joinPath(abs, name);
             const childRel = rel === '' ? name : `${rel}/${name}`;
             const at: CodeLocation = { label: root.label, path: childRel, line: 0 };
             let st: Awaited<ReturnType<CodeFs['lstat']>>;

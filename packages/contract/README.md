@@ -55,9 +55,9 @@ Each module is imported by its own path. There is no index module.
 | `@rodnapamet/scanent-contract/integrations-scopes` | Which Microsoft Graph permissions are high-privilege: `GRAPH_PERMISSION_CLASSES`, `classifyPermission` |
 | `@rodnapamet/scanent-contract/integrations-findings` | `planIntegrationsScan`: the integration findings, and what is not concluded |
 | `@rodnapamet/scanent-contract/agent-rules-contract` | The agent-rules scanner's report: `AgentRulesReportBodyV1Schema`, `verifyAndParseAgentRulesReport` |
-| `@rodnapamet/scanent-contract/agent-rules-contract-rules` | Its contract id, finding codes, severity ceilings and locators |
+| `@rodnapamet/scanent-contract/agent-rules-contract-rules` | Its contract id, subject kinds, finding codes and the kinds each is raised on, severity ceilings, locators and origin refs |
 | `@rodnapamet/scanent-contract/agent-rules` | `AGENT_RULES`, `runAgentRules`: the static rule set re-authored from Cisco / ATR |
-| `@rodnapamet/scanent-contract/agent-rules-findings` | `planAgentRulesScan`: the agent-rules findings, and what was not concluded |
+| `@rodnapamet/scanent-contract/agent-rules-findings` | `planAgentRulesScan`: the agent-rules findings, and what was not concluded; `originsReadInFull`: the origins a finding may be closed against |
 | `@rodnapamet/scanent-contract/agent-rules-evaluation` | `scoreAgentRules`: holds the rule set to its corpus |
 | `@rodnapamet/scanent-contract/vulnerabilities-contract` | The vulnerability scanner's report: `VulnerabilitiesReportBodyV1Schema`, `verifyAndParseVulnerabilitiesReport` |
 | `@rodnapamet/scanent-contract/vulnerabilities-contract-rules` | Its contract id, attack classes, severity cap and locators: `VULNERABILITIES_CONTRACT_V1`, `ATTACK_CLASSES`, `SEVERITY_CAP`, `capSeverity`, `parseCodeRange` |

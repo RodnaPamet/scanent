@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+rm -rf ./build
+ffmpeg -f concat -safe 0 -i list.txt -c copy out.mp4
+rsync -e ssh -avz ./build/ deploy@example.com:/srv/app/

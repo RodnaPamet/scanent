@@ -20,7 +20,7 @@ import type { IntegrationsReportBody } from '@rodnapamet/scanent-contract/integr
 
 import { DEFAULT_UNUSED_DAYS } from '@rodnapamet/scanent-contract/integrations-findings';
 
-import { inflectPosts, sourceCredentialEnv, type InflectConfig, type ScannerConfig } from './config';
+import { inflectPosts, runsAgentRules, sourceCredentialEnv, type InflectConfig, type ScannerConfig } from './config';
 import { customerHostCheckFor, type CustomerHostCheck, type ResolveHost } from './customer-host';
 import { createSourceWire, type FetchLike } from './http';
 import { buildAgentRulesReportBody, signAgentRulesReport } from './agent-rules-report';
@@ -156,7 +156,7 @@ export function buildSources(
         }
         if (s.kind === 'code') {
             // Reads files under its roots and holds no credential.
-            sources.push(langchainCodeSource({ roots: s.roots, providerSdks: s.providerSdks }));
+            sources.push(langchainCodeSource({ roots: s.roots, providerSdks: s.providerSdks, skills: s.skills }));
             continue;
         }
         if (s.kind === 'inflect-register') {
@@ -471,9 +471,9 @@ export async function runScanAll(deps: ScanDeps): Promise<RunScan> {
         log.info('report signed', { scan: body.scan.id, agents: body.agents.length, sources: body.population.sources.length });
         agents = { raw, body, sourceNotes: sourceNotesOf([...reads, ...unreadable]) };
     }
-    // The agent-surface rules ran inside the `mcp` source; their report is the third, with the same key and scan id.
+    // The agent-surface rules ran inside the `mcp` and `code` sources; their report is the third, with the same key and scan id.
     let agentRules: AgentRulesScan | null = null;
-    if (config.sources.some((s) => s.kind === 'mcp')) {
+    if (config.sources.some(runsAgentRules)) {
         const rulesBody = buildAgentRulesReportBody(identity, [...reads, ...unreadable]);
         const rulesRaw = signAgentRulesReport(rulesBody, keys);
         log.info('agent-rules report signed', { scan: rulesBody.scan.id, findings: rulesBody.findings.length, subjects: rulesBody.counts.subjects });

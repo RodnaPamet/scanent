@@ -15,10 +15,10 @@
 import type { LocalAgentRulesResults } from '../results/types';
 import { csvFile } from './csv';
 
-export const AGENT_RULE_FINDINGS_CSV_COLUMNS = ['severity', 'code', 'ruleId', 'subjectKind', 'subjectRef', 'serverRef', 'locator', 'sourceRef'] as const;
+export const AGENT_RULE_FINDINGS_CSV_COLUMNS = ['severity', 'code', 'ruleId', 'subjectKind', 'subjectRef', 'originRef', 'locator', 'sourceRef'] as const;
 
 export function renderAgentRuleFindingsCsv(a: LocalAgentRulesResults): string {
-    const rows: (readonly string[])[] = a.findings.map((f) => [f.severity, f.code, f.ruleId, f.subjectKind, f.subjectRef, f.serverRef, f.locator, f.sourceRef]);
+    const rows: (readonly string[])[] = a.findings.map((f) => [f.severity, f.code, f.ruleId, f.subjectKind, f.subjectRef, f.originRef, f.locator, f.sourceRef]);
     for (const n of a.notConcluded) rows.push(['NOT_CONCLUDED', n.why, n.reason, n.scope, '', '', '', '']);
     return csvFile(AGENT_RULE_FINDINGS_CSV_COLUMNS, rows);
 }

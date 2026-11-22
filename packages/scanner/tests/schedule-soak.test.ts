@@ -212,7 +212,7 @@ describe('2. scheduled scans of the example, written with retention', () => {
         const runs = readdirSync(join(dir, 'runs'));
         expect(runs).toHaveLength(RETAIN);
         for (const run of runs) {
-            expect(readdirSync(join(dir, 'runs', run)).sort()).toEqual(['agents.csv', 'findings.csv', 'manifest.json', 'report.pdf', 'report.signed.json', 'results.json', 'summary.html']);
+            expect(readdirSync(join(dir, 'runs', run)).sort()).toEqual(['agent-rule-findings.csv', 'agents.csv', 'findings.csv', 'manifest.json', 'report.agent-rules.signed.json', 'report.pdf', 'report.signed.json', 'results.json', 'summary.html']);
         }
     });
 

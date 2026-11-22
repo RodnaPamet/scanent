@@ -1,0 +1,9 @@
+{
+  "kind": "skill-file",
+  "disposition": "poisoned",
+  "expected": [
+    {
+      "ruleId": "cisco-skill:sensitive-permission-change"
+    }
+  ]
+}

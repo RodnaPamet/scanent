@@ -315,13 +315,13 @@ export const LocalAgentRulesResultsSchema: z.ZodType<LocalAgentRulesResults> = z
                 })
                 .strict(),
         ),
-        servers: z.array(
+        origins: z.array(
             z
                 .object({
                     ref: z.string().min(1).max(512),
                     status: z.enum(['COMPLETE', 'INCOMPLETE']),
                     reason: id.nullable(),
-                    tools: count,
+                    subjects: count,
                 })
                 .strict(),
         ),
@@ -334,7 +334,7 @@ export const LocalAgentRulesResultsSchema: z.ZodType<LocalAgentRulesResults> = z
                     severity: z.enum(AGENT_RULE_SEVERITIES),
                     subjectKind: z.enum(AGENT_RULES_SUBJECT_KINDS),
                     subjectRef: id,
-                    serverRef: z.string().min(1).max(512),
+                    originRef: z.string().min(1).max(512),
                     locator: z.string().min(1).max(512),
                     sourceRef: z.string().min(1).max(1024),
                 })

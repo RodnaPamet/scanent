@@ -175,7 +175,8 @@ describe('through the command line', () => {
     it('scan --dry-run signs with a key given only as a file, and the report verifies', async () => {
         const keyFile = file('signing-key.pem', pem, 0o444);
         expect(await main(['scan', '--config', configFile, '--dry-run'], { SCANNER_SIGNING_KEY_FILE: keyFile })).toBe(0);
-        expect(verifyAndParseHarnessReport(out.join('').trim(), [rawPublicKeyHex(publicKey)])).toMatchObject({ ok: true });
+        // The first line is the agent report; the second is the agent-rules report over the root's skills.
+        expect(verifyAndParseHarnessReport(out.join('').trim().split('\n')[0], [rawPublicKeyHex(publicKey)])).toMatchObject({ ok: true });
     });
 
     it('public-key reads the key from its file', async () => {

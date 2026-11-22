@@ -245,6 +245,13 @@ const CodeSourceConfigSchema = z
          * reports what it did before it recognised them.
          */
         providerSdks: z.boolean().optional(),
+        /**
+         * The agent skills under the roots — each `SKILL.md` and the scripts
+         * bundled with it — read by the agent-surface rules, whose findings
+         * are the agent-rules report. Read unless this is `false`. Off, the
+         * source reads no skill and the scan signs no agent-rules report for it.
+         */
+        skills: z.boolean().optional(),
     })
     .strict();
 
@@ -669,6 +676,15 @@ export function mcpTokenEnvNames(source: Extract<SourceConfig, { kind: 'mcp' }>)
  * its key. `…WithoutKey` is a report the run makes and the output does not
  * post, because no key for it is named.
  */
+/**
+ * Whether a configured source runs the agent-surface rules, so that the scan
+ * signs an agent-rules report: every `mcp` source, and a `code` source unless
+ * it says `skills: false`.
+ */
+export function runsAgentRules(source: { readonly kind: string; readonly skills?: boolean }): boolean {
+    return source.kind === 'mcp' || (source.kind === 'code' && source.skills !== false);
+}
+
 export function inflectPosts(config: ScannerConfig): {
     readonly agents: boolean;
     readonly integrations: boolean;
@@ -679,14 +695,14 @@ export function inflectPosts(config: ScannerConfig): {
     const agents = config.sources.some((s) => isAgentSourceKind(s.kind));
     const integrationsSources = config.sources.some((s) => isIntegrationsSourceKind(s.kind));
     const keyed = config.inflect?.integrationsApiKeyEnv !== undefined;
-    const mcp = config.sources.some((s) => s.kind === 'mcp');
+    const rules = config.sources.some(runsAgentRules);
     const rulesKeyed = config.inflect?.agentRulesApiKeyEnv !== undefined;
     return {
         agents,
         integrations: integrationsSources && keyed,
         integrationsWithoutKey: integrationsSources && !keyed,
-        agentRules: mcp && rulesKeyed,
-        agentRulesWithoutKey: mcp && !rulesKeyed,
+        agentRules: rules && rulesKeyed,
+        agentRulesWithoutKey: rules && !rulesKeyed,
     };
 }
 

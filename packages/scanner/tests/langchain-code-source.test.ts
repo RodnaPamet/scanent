@@ -428,7 +428,8 @@ describe('4. what cannot be read or resolved is INCOMPLETE with its reason, neve
 
     it('a tree with no agent in it is a COMPLETE read of nothing — the ingest calls an empty scan EMPTY_SCAN', async () => {
         const result = await read(langchainCodeSource({ roots: [{ label: 'acme', path: estate({ 'README.py': '# nothing here\n' }) }] }));
-        expect(result).toEqual({ kind: 'code', status: 'COMPLETE', rows: 1, observations: [] });
+        // No skill either: the read's rule fields say so, a complete read of no skill under the root.
+        expect(result).toEqual({ kind: 'code', status: 'COMPLETE', rows: 1, observations: [], ruleFindings: [], ruleOrigins: [{ ref: 'code:acme', status: 'COMPLETE', subjects: 0 }], ruleSubjects: { skill: 0, 'skill-file': 0 } });
     });
 });
 

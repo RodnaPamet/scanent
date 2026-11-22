@@ -176,7 +176,9 @@ npx scanent public-key --config /tmp/scanent-example.json
 npx scanent scan --dry-run --config /tmp/scanent-example.json
 ```
 
-`--dry-run` prints the signed report on stdout and posts nothing; the log is
+`--dry-run` prints each signed report on stdout, one per line, and posts
+nothing: the agent report, then the agent-rules report, the static rules run
+over the example's agent skill (`estate/support/skills/order-lookup/`). The log is
 JSON lines on stderr. The `code` source reads local files only, so this example
 makes no network request. Without `--dry-run` the scanner posts the report to
 the tenant the configuration's `inflect` block names.
@@ -240,7 +242,10 @@ exists is ever overwritten except the `latest.json` pointer:
     findings.csv               one row per finding
     results.json               everything above, as data (schema scanent-results/1)
     report.signed.json         the signed report, byte for byte what would be posted
-    manifest.json              the names, sizes and SHA-256 of the other six
+    report.agent-rules.signed.json   the agent-rules report, when the scan read
+                               MCP servers or agent skills
+    agent-rule-findings.csv    one row per rule that fired, beside it
+    manifest.json              the names, sizes and SHA-256 of the other files
 ```
 
 `summary.html` is one self-contained file: its data, its one script and its
