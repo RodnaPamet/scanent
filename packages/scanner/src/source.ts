@@ -25,6 +25,7 @@
  *     which any string has a secret's shape.
  */
 import type { CriterionVerdict } from '@rodnapamet/scanent-contract/harness-ladder';
+import type { AgentRuleFindingCode, AgentRuleSeverity } from '@rodnapamet/scanent-contract/agent-rules-contract-rules';
 import type {
     HarnessPaymentCapability,
     HarnessReportAgent,
@@ -140,6 +141,17 @@ export interface SourceRead {
     readonly unboundCredentials?: readonly string[];
     /** The `mcp` source only: each server it read in full. */
     readonly mcpServers?: readonly McpServerRead[];
+    /**
+     * The `mcp` source only: what the agent-surface rules found in the tools'
+     * own text, read where that text is held. A code, the rule, the subject and
+     * a locator — never the text. Findings on a server read in part are kept:
+     * what was read is real.
+     */
+    readonly ruleFindings?: readonly McpRuleFinding[];
+    /** The `mcp` source only: how many tool definitions the rules were run over. */
+    readonly ruleSubjects?: number;
+    /** The `mcp` source only: fields longer than the rules scan, counted. Absent when none. */
+    readonly ruleTextTruncated?: number;
 }
 
 export interface SourceContext {
@@ -175,6 +187,17 @@ export interface SourceContext {
  * tools it lists, as the report carries them. The report builder replaces a
  * `<key>:*` placeholder another source reported for that URL with these.
  */
+/** One agent-surface rule that fired on an MCP tool's text: no text, only where. */
+export interface McpRuleFinding {
+    readonly code: AgentRuleFindingCode;
+    readonly ruleId: string;
+    readonly severity: AgentRuleSeverity;
+    /** `mcp:<server url>:tool:<name>`, or a digest form when that is too long. */
+    readonly subjectRef: string;
+    /** `mcp-tool:<subjectRef>#<field>`. */
+    readonly locator: string;
+}
+
 export interface McpServerRead {
     readonly label: string;
     readonly url: string;

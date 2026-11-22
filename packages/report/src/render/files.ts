@@ -27,6 +27,17 @@ export const INTEGRATION_RUN_FILE_NAMES = {
 } as const;
 
 /**
+ * The files the agent-surface rules add to a run that configured an `mcp`
+ * source, and only to such a run: the signed `scanent-agent-rules/1` report
+ * and its findings for a spreadsheet. The rules run inside the agent scanner,
+ * so these are written beside the agent files, never in a run without them.
+ */
+export const AGENT_RULES_RUN_FILE_NAMES = {
+    report: 'report.agent-rules.signed.json',
+    findings: 'agent-rule-findings.csv',
+} as const;
+
+/**
  * The files of a run in which only the integrations scanner ran: its signed
  * report and its CSVs, and the results, page, PDF and manifest every run has.
  * No agent file: no agent scan ran, and an empty `agents.csv` would read as one

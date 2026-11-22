@@ -28,6 +28,13 @@
  * live (SHA-256 over each tool's name and hash, in name order), so a server
  * whose tools changed after the estate pinned them reads as unpinned.
  *
+ * THE AGENT-SURFACE RULES. While a tool's definition is held here, the
+ * rules (`runAgentRules`) are run over its description and its input schema,
+ * and only what fired leaves: a code, the rule, the tool and the field. The
+ * text never does. Each field is scanned up to `MAX_RULE_TEXT_CHARS`; a field
+ * longer than that is counted, so the agent-rules report does not claim the
+ * text was read whole.
+ *
  * AUTHENTICATION. A server may take a read token, named by
  * an environment variable and sent as a bearer token with the three messages
  * above and nothing else. For Inflect's own `/api/mcp` that is a key holding
@@ -43,7 +50,9 @@
 import { createHash } from 'crypto';
 
 import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
+import { runAgentRules } from '@rodnapamet/scanent-contract/agent-rules';
 import { MAX_AGENTS, MAX_TOOLS_PER_AGENT } from '@rodnapamet/scanent-contract/harness-contract';
+import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract-rules';
 
 import {
     assertResolvesReachable,
@@ -60,6 +69,7 @@ import {
     sourceResult,
     SourceReadError,
     type HarnessSource,
+    type McpRuleFinding,
     type McpServerRead,
     type Observation,
     type ObservedTool,
@@ -112,6 +122,31 @@ function readOnlyHintOf(definition: Record<string, unknown>): boolean | null {
     return typeof hint === 'boolean' ? hint : null;
 }
 
+/** How much of one field the rules scan. A field past it is counted, not scanned whole. */
+export const MAX_RULE_TEXT_CHARS = 65_536;
+
+/** Room for `mcp-tool:` and `#inputSchema` around a ref, inside the contract's 480. */
+const MAX_RULE_REF_CHARS = 400;
+
+/**
+ * The subject a rule finding names: the tool under its server, as the agent
+ * report names the server. A ref too long for a locator, or one that would have
+ * the shape of a secret, is a digest of the two instead.
+ */
+export function ruleSubjectRef(url: string, name: string): string {
+    const full = `mcp:${url}:tool:${name}`;
+    if (full.length <= MAX_RULE_REF_CHARS && !/\s/.test(full) && !looksLikeSecret(full)) return full;
+    return `mcp:sha256-${sha256(`${url}\u0000${name}`).slice(0, 32)}:tool`;
+}
+
+/** The two fields of a definition the rules read, each as text. */
+function ruleFieldsOf(definition: Record<string, unknown>): { field: 'description' | 'inputSchema'; text: string }[] {
+    const out: { field: 'description' | 'inputSchema'; text: string }[] = [];
+    if (typeof definition.description === 'string' && definition.description !== '') out.push({ field: 'description', text: definition.description });
+    if (definition.inputSchema !== undefined && definition.inputSchema !== null) out.push({ field: 'inputSchema', text: JSON.stringify(definition.inputSchema) });
+    return out;
+}
+
 export function mcpSource(opts: McpSourceOptions): HarnessSource {
     const resolve = opts.resolveHost ?? resolveWithDns;
     const check: CustomerHostCheck = opts.checkHost ?? assertResolvesReachable;
@@ -122,6 +157,9 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
         async read(ctx: SourceContext): Promise<SourceRead> {
             const observations: Observation[] = [];
             const fullyRead: McpServerRead[] = [];
+            const ruleFindings: McpRuleFinding[] = [];
+            let ruleSubjects = 0;
+            let ruleTextTruncated = 0;
             let rows = 0;
             let stoppedBy: unknown = null;
 
@@ -167,6 +205,15 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                                 }
                                 const manifestHash = mcpToolHash(definition);
                                 hashes.push({ name, manifestHash });
+                                // The rules run here, where the text is, and only what fired leaves.
+                                ruleSubjects += 1;
+                                const subjectRef = ruleSubjectRef(server.url, name);
+                                for (const { field, text } of ruleFieldsOf(definition)) {
+                                    if (text.length > MAX_RULE_TEXT_CHARS) ruleTextTruncated += 1;
+                                    for (const m of runAgentRules(text.slice(0, MAX_RULE_TEXT_CHARS), 'mcp-tool')) {
+                                        ruleFindings.push({ code: m.code, ruleId: m.ruleId, severity: m.severity, subjectRef, locator: `mcp-tool:${subjectRef}#${field}` });
+                                    }
+                                }
                                 byName.set(name, {
                                     server: server.url,
                                     name,
@@ -206,7 +253,13 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                 }
             }
 
-            return { ...sourceResult('mcp', rows, observations, stoppedBy), mcpServers: fullyRead };
+            return {
+                ...sourceResult('mcp', rows, observations, stoppedBy),
+                mcpServers: fullyRead,
+                ruleFindings,
+                ruleSubjects,
+                ...(ruleTextTruncated > 0 ? { ruleTextTruncated } : {}),
+            };
         },
         async preflight(ctx: SourceContext): Promise<readonly ProbeStep[]> {
             const steps: ProbeStep[] = [];

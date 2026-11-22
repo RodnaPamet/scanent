@@ -95,6 +95,20 @@ decision 2):
   `discoveredVia`, but only for a server read in full. A partial read replaces
   nothing, and the placeholder stays, counting as a write.
 
+**The agent-surface rules run here, where the text is.** For each tool the
+source reads, static rules (`runAgentRules`, re-authored from Cisco AI
+Defense's `mcp-scanner` and the Agent Threat Rules) run over its description
+and the JSON of its input schema, each up to 65,536 characters. A rule that
+fires leaves the source as a code, the rule id, a severity, the tool and the
+field (`mcp-tool:<ref>#description`), never the text. A field longer than the
+cap is not read past it, and the population then says `BYTE_CAP`. The run
+signs these into a report of its own, `report.agent-rules.signed.json` under
+`scanent-agent-rules/1` ([contract.md](contract.md#the-agent-rules-contract)),
+with the same key and scan id as the agent report: "no finding" is said only
+of a complete read, a partial read keeps its findings, and a finding is a
+suggestion a person confirms, never a change to an agent's level. The rules
+make no request.
+
 A server may take a read token (owner decision 6): `readTokenEnv`, sent as a
 bearer token with the three messages above and nothing else. For Inflect's own
 `/api/mcp` it is an API key holding `mcp:read` and no other MCP scope. A
@@ -643,7 +657,11 @@ and, from 0.16.0, the integrations report to
 `integrationsApiKeyEnv` names, which holds `admin:integrations_ingest` and no
 other scope. With no `integrationsApiKeyEnv` the integrations report is not
 posted, and the log says so once (`integrations report not posted`). `stdout`
-prints each report the run made, one per line, the agent report first.
+prints each report the run made, one per line, the agent report first. A run
+with an `mcp` source also signs the agent-rules report
+(`report.agent-rules.signed.json`, `scanent-agent-rules/1`): the `file` and
+`stdout` outputs carry it, and `inflect` does not post it, for no ingest reads
+it yet.
 
 ### `entra-integrations`
 
@@ -1750,6 +1768,9 @@ The file output writes one directory per run and a pointer to the newest:
       report.integrations.signed.json, integrations.csv, integration-findings.csv
                                  only for a run with an integrations source; the
                                  manifest then names nine
+      report.agent-rules.signed.json, agent-rule-findings.csv
+                                 only for a run with an mcp source: the
+                                 agent-surface rules' report and its findings
 ```
 
 A run of the integrations scanner alone holds `report.integrations.signed.json`,

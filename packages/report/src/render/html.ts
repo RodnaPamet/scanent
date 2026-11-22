@@ -50,6 +50,7 @@ import {
 } from '@rodnapamet/scanent-contract/harness-matrix-model';
 
 import type { IntegrationsOnlyResults, LocalAgentResult, LocalCriterionCell, LocalFinding, LocalResults } from '../results/types';
+import { agentRulesSection } from './agent-rules-page';
 import { html, htmlText, scriptElement, type HtmlValue, type SafeHtml } from './escape';
 import { INTEGRATIONS_ONLY_RUN_FILE_NAMES, RUN_FILE_NAMES } from './files';
 import { harnessMatrixOfResults } from './matrix-of-results';
@@ -904,6 +905,8 @@ export function renderSummaryHtml(results: LocalResults, context: SummaryContext
     // Present only for a run that configured an integrations source: an agents-only page is what it was.
     const integrations = r.integrations;
     const integrationsSections = integrations === undefined ? [] : [['integrations', 'Integrations', integrationsSection(integrations, context.integrationsPrevious)] as const];
+    // Present only for a run that configured an `mcp` source. Static, so the page's policy does not change with it.
+    const agentRulesSections = r.agentRules === undefined ? [] : [['agent-surface', 'Agent surface', agentRulesSection(r.agentRules)] as const];
     const sections: readonly (readonly [string, string, SafeHtml])[] = r.estate.empty
         ? [
               ['completeness', 'Completeness', completeness(r)],
@@ -911,6 +914,7 @@ export function renderSummaryHtml(results: LocalResults, context: SummaryContext
               ['summary', 'Summary', emptyEstate(r)],
               ...driftSection,
               ['findings', 'Findings', findings(r)],
+              ...agentRulesSections,
               ...integrationsSections,
               ...(r.inventory === null ? [] : [['inventory', 'Inventory', inventory(r)] as const]),
               ['provenance', 'Provenance', provenance(r)],
@@ -929,6 +933,7 @@ export function renderSummaryHtml(results: LocalResults, context: SummaryContext
               ...(r.estate.payingAgents === undefined ? [] : [['payments', 'Payment capabilities', payments(r)] as const]),
               ['orphans', 'Orphan credentials', orphans(r)],
               ['findings', 'Findings', findings(r)],
+              ...agentRulesSections,
               ...integrationsSections,
               ...(r.inventory === null ? [] : [['inventory', 'Inventory', inventory(r)] as const]),
               ['provenance', 'Provenance', provenance(r)],

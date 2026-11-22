@@ -1,10 +1,14 @@
 # Rule-based findings over the agent surface
 
-> **Status: being built (2026-11-22). V1 is done:** the contract
+> **Status: being built (2026-11-22). V1 and V2 are done.** V1: the contract
 > `scanent-agent-rules/1` and its verifier, the re-authored MCP rule set
 > (`packages/contract/src/agent-rules.ts`), the planner, the evaluation scorer
-> and the corpus (`packages/scanner/evaluation/agent-rules/`). No release writes
-> the report yet, and the rules are not yet wired into a scan (V2).
+> and the corpus (`packages/scanner/evaluation/agent-rules/`). V2: the rules run
+> in the `mcp` source, a scan signs `report.agent-rules.signed.json`, and the
+> file output scores it into `results.json`, an "Agent surface" section of
+> `summary.html` and `agent-rule-findings.csv`. It ships in 0.17.0. Not yet:
+> posting it to Inflect, which needs an ingest of its own (V3), the PDF, the
+> skill rules and the A2A card rules.
 
 ## What it is
 

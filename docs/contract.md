@@ -705,14 +705,14 @@ no revision runs.
 
 The agent scanner's fourth finding kind: what static rules found written into an
 agent's own surface — an MCP tool's description, and later a skill or an A2A
-card. It is defined and verified today; no scanent release writes it yet, and
-version 1 reads MCP tools only. The rules are re-authored from Cisco AI
+card. A scan with an `mcp` source writes it beside the agent report, signed
+with the same key and naming the same scan; version 1 reads MCP tools only. The rules are re-authored from Cisco AI
 Defense's scanners (Apache-2.0) and the MIT Agent Threat Rules; the design is
 [agent-surface-rules.md](design/agent-surface-rules.md).
 
 | Id | State | What it adds |
 |---|---|---|
-| `scanent-agent-rules/1` | Accepted; not yet written by a release | The first agent-rules contract: MCP tool rules |
+| `scanent-agent-rules/1` | Written by the agent scanner from 0.17.0 | The first agent-rules contract: MCP tool rules |
 
 **The same rules as the agent report.** The same byte limit, canonical JSON,
 signature and envelope checks in the same order (`verifySignedEnvelope`), then

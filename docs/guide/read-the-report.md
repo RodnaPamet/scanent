@@ -374,6 +374,24 @@ the agent scanner did not run, and hold only this section, the provenance and
 the limits. Nothing on them is an agent result: there is no estate, no
 matrix, no agent finding, and no `agents.csv`.
 
+### Agent surface
+
+Shown only when you configured an `mcp` source. Static rules are run over the
+text of each MCP tool definition the scan read, its description and its input
+schema, looking for an attack written into it: a hidden instruction to the
+model, an executable payload, an instruction to send data or take credentials.
+The section says first whether every tool definition was read: "No rule fired"
+appears only after a complete read, and an incomplete read keeps what it found
+and says nothing clean. Then how many definitions were read and how many
+fired a rule, and each finding: its severity, its code, the rule that fired and
+where (the server, the tool and the field).
+
+A finding is a suggestion for you to confirm, not proof: a legitimate tool can
+describe reading a file. It never changes an agent's level, and the text it
+fired on is not in any output, so open the tool's definition on its server to
+judge it. The same rows are in `agent-rule-findings.csv`, and the signed report
+is `report.agent-rules.signed.json`, beside `report.signed.json`.
+
 ### Inventory
 
 Shown only when you gave an inventory. How many lines it has, how many

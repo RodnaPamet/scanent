@@ -23,6 +23,7 @@ import { DEFAULT_UNUSED_DAYS } from '@rodnapamet/scanent-contract/integrations-f
 import { inflectPosts, sourceCredentialEnv, type InflectConfig, type ScannerConfig } from './config';
 import { customerHostCheckFor, type CustomerHostCheck, type ResolveHost } from './customer-host';
 import { createSourceWire, type FetchLike } from './http';
+import { buildAgentRulesReportBody, signAgentRulesReport } from './agent-rules-report';
 import { buildIntegrationsReportBody, signIntegrationsReport } from './integrations-report';
 import type { IntegrationsSource, IntegrationsSourceRead } from './integrations-source';
 import type { ScannerLog } from './log';
@@ -30,6 +31,7 @@ import { postIntegrationsReport, postReport, type IntegrationsPostResult, type P
 import { buildReportBody, signReport } from './report';
 import { isAgentSourceKind } from './scanners';
 import type { SourceNote } from '@scanent/report/results/types';
+import type { AgentRulesReportBody } from '@rodnapamet/scanent-contract/agent-rules-contract';
 
 import {
     MAX_NOT_READ_LOCATIONS,
@@ -294,6 +296,17 @@ export interface IntegrationsScan {
     readonly unusedDays: number;
 }
 
+/**
+ * The agent-surface rules' part of one run, present only when an `mcp` source
+ * is configured: its signed report and its body. The rules run inside the
+ * `mcp` source over each tool's own text; this report carries what fired and
+ * never the text.
+ */
+export interface AgentRulesScan {
+    readonly raw: string;
+    readonly body: AgentRulesReportBody;
+}
+
 /** The agent scanner's part of one run: its signed report, its body, and the sources' own words about a read that stopped. */
 export interface AgentScan {
     readonly raw: string;
@@ -304,6 +317,8 @@ export interface AgentScan {
 export interface ScanResult extends AgentScan {
     /** Absent unless an integrations source is configured: an agents-only run is what it was before scanners. */
     readonly integrations?: IntegrationsScan;
+    /** Absent unless an `mcp` source is configured. */
+    readonly agentRules?: AgentRulesScan;
 }
 
 /**
@@ -317,6 +332,8 @@ export interface RunScan {
     readonly asOf: string;
     readonly agents: AgentScan | null;
     readonly integrations: IntegrationsScan | null;
+    /** Null unless an `mcp` source is configured. */
+    readonly agentRules: AgentRulesScan | null;
 }
 
 /**
@@ -346,7 +363,11 @@ export function integrationsSourceNotesOf(reads: readonly IntegrationsSourceRead
 export async function runScan(deps: ScanDeps): Promise<ScanResult> {
     const run = await runScanAll(deps);
     if (run.agents === null) throw new Error('the configuration has no agent source: the agent scanner did not run');
-    return run.integrations === null ? run.agents : { ...run.agents, integrations: run.integrations };
+    return {
+        ...run.agents,
+        ...(run.integrations === null ? {} : { integrations: run.integrations }),
+        ...(run.agentRules === null ? {} : { agentRules: run.agentRules }),
+    };
 }
 
 /** Read every configured source of every scanner, build each scanner's report and sign it with the one key. */
@@ -450,7 +471,15 @@ export async function runScanAll(deps: ScanDeps): Promise<RunScan> {
         log.info('report signed', { scan: body.scan.id, agents: body.agents.length, sources: body.population.sources.length });
         agents = { raw, body, sourceNotes: sourceNotesOf([...reads, ...unreadable]) };
     }
-    if (integrationReads.length === 0) return { scanId: identity.scanId, asOf: asOf.toISOString(), agents, integrations: null };
+    // The agent-surface rules ran inside the `mcp` source; their report is the third, with the same key and scan id.
+    let agentRules: AgentRulesScan | null = null;
+    if (config.sources.some((s) => s.kind === 'mcp')) {
+        const rulesBody = buildAgentRulesReportBody(identity, [...reads, ...unreadable]);
+        const rulesRaw = signAgentRulesReport(rulesBody, keys);
+        log.info('agent-rules report signed', { scan: rulesBody.scan.id, findings: rulesBody.findings.length, subjects: rulesBody.counts.subjects });
+        agentRules = { raw: rulesRaw, body: rulesBody };
+    }
+    if (integrationReads.length === 0) return { scanId: identity.scanId, asOf: asOf.toISOString(), agents, integrations: null, agentRules };
 
     // One report per scanner: the same key, the same scan id.
     const integrationsBody = buildIntegrationsReportBody(identity, integrationReads);
@@ -461,6 +490,7 @@ export async function runScanAll(deps: ScanDeps): Promise<RunScan> {
         scanId: identity.scanId,
         asOf: asOf.toISOString(),
         agents,
+        agentRules,
         integrations: {
             raw: integrationsRaw,
             body: integrationsBody,

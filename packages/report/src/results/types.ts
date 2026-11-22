@@ -29,6 +29,8 @@ import type { CriterionReaders, HarnessMatrixCoverage, VerdictBasis } from '@rod
 import type { ApplicationOrigin, ConsentType, GitHubPermissionLevel, OwnerKind, SignInReadState } from '@rodnapamet/scanent-contract/integrations-contract-rules';
 import type { IntegrationFindingCode, IntegrationNotConcludedWhy, PermissionVia } from '@rodnapamet/scanent-contract/integrations-findings';
 import type { PermissionClass } from '@rodnapamet/scanent-contract/integrations-scopes';
+import type { AgentRuleFindingCode, AgentRuleSeverity, AgentRulesSubjectKind } from '@rodnapamet/scanent-contract/agent-rules-contract-rules';
+import type { AgentRulesNotConcludedWhy, AgentRulesOutcome } from '@rodnapamet/scanent-contract/agent-rules-findings';
 
 import type { ParsedInventory } from './inventory';
 
@@ -329,6 +331,45 @@ export interface LocalResults {
      * every file written before the member existed, is read as it was written.
      */
     readonly integrations?: LocalIntegrationsResults;
+    /**
+     * The agent-surface rules' results: present only when the run configured an
+     * `mcp` source. OPTIONAL, so every file written before the member existed is
+     * read as it was written.
+     */
+    readonly agentRules?: LocalAgentRulesResults;
+}
+
+// ── The agent-surface rules ──
+
+/** One rule that fired: where, never the text. */
+export interface LocalAgentRuleFinding {
+    readonly code: AgentRuleFindingCode;
+    readonly ruleId: string;
+    readonly severity: AgentRuleSeverity;
+    readonly subjectKind: AgentRulesSubjectKind;
+    readonly subjectRef: string;
+    readonly locator: string;
+    /** Stable across scans of the same text. */
+    readonly sourceRef: string;
+}
+
+/** The agent-surface rules' section of `results.json`. */
+export interface LocalAgentRulesResults {
+    /** The signed report's file in the run, and the SHA-256 of its bytes. */
+    readonly report: { readonly file: string; readonly sha256: string };
+    /** The answer about the surface as a whole: findings, a clean complete read, or not concluded. */
+    readonly outcome: AgentRulesOutcome;
+    readonly population: readonly {
+        readonly kind: AgentRulesSubjectKind;
+        readonly status: 'COMPLETE' | 'INCOMPLETE';
+        /** The contract's reason when INCOMPLETE; null when COMPLETE. */
+        readonly reason: string | null;
+        readonly subjects: number;
+    }[];
+    readonly counts: { readonly subjects: number; readonly flagged: number; readonly findings: number };
+    /** In the planner's order: most severe first. */
+    readonly findings: readonly LocalAgentRuleFinding[];
+    readonly notConcluded: readonly { readonly scope: AgentRulesSubjectKind; readonly why: AgentRulesNotConcludedWhy; readonly reason: string }[];
 }
 
 // ── The integrations scanner ──

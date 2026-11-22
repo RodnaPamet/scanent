@@ -9,6 +9,10 @@
  *                                     integrations source,
  *                                     report.integrations.signed.json,
  *                                     integrations.csv, integration-findings.csv
+ *                                     and, only for a run that configured an
+ *                                     mcp source,
+ *                                     report.agent-rules.signed.json,
+ *                                     agent-rule-findings.csv
  *
  * Which scanners ran follows from the sources configured. A run in which only
  * the integrations scanner ran holds its own files and the files every run has
@@ -39,8 +43,9 @@ import { dirname, join } from 'path';
 
 import { looksLikeSecret } from '@rodnapamet/scanent-contract/harness-contract';
 import { firstSecretShapedMember } from '@rodnapamet/scanent-contract/harness-findings';
+import { renderAgentRuleFindingsCsv } from '@scanent/report/render/agent-rules-csv';
 import { renderAgentsCsv, renderFindingsCsv } from '@scanent/report/render/csv';
-import { INTEGRATION_RUN_FILE_NAMES, INTEGRATIONS_ONLY_RUN_FILE_NAMES, RUN_FILE_NAMES } from '@scanent/report/render/files';
+import { AGENT_RULES_RUN_FILE_NAMES, INTEGRATION_RUN_FILE_NAMES, INTEGRATIONS_ONLY_RUN_FILE_NAMES, RUN_FILE_NAMES } from '@scanent/report/render/files';
 import { renderIntegrationsOnlyHtml, renderSummaryHtml } from '@scanent/report/render/html';
 import { renderIntegrationFindingsCsv, renderIntegrationsCsv } from '@scanent/report/render/integrations-csv';
 import { integrationsPageData } from '@scanent/report/render/integrations-page';
@@ -157,9 +162,14 @@ export function renderRunFiles(
     context: SummaryContext = {},
     /** The signed integrations report: given exactly when the results hold an integrations section. */
     integrationsRaw?: string,
+    /** The signed agent-rules report: given exactly when the results hold an agent-rules section. */
+    agentRulesRaw?: string,
 ): RunFile[] {
     if ((results.integrations === undefined) !== (integrationsRaw === undefined)) {
         throw new Error('the integrations report and the integrations results come together or not at all');
+    }
+    if ((results.agentRules === undefined) !== (agentRulesRaw === undefined)) {
+        throw new Error('the agent-rules report and the agent-rules results come together or not at all');
     }
     assertNoSecretShape(results, RUN_FILE_NAMES.results);
     assertNoSecretShape(summaryPageData(results, context), RUN_FILE_NAMES.summary);
@@ -175,6 +185,12 @@ export function renderRunFiles(
     const pdf = (renderers.pdf ?? renderReportPdf)(results, context);
     assertNoSecretShape(pdf.text, RUN_FILE_NAMES.pdf);
     const agentFiles: RunFile[] = [{ name: RUN_FILE_NAMES.report, content: raw }, ...texts, { name: RUN_FILE_NAMES.pdf, content: pdf.bytes }];
+    // The agent-surface rules' files, beside the agent scanner's: the rules run inside it.
+    if (results.agentRules !== undefined && agentRulesRaw !== undefined) {
+        const rulesCsv = { name: AGENT_RULES_RUN_FILE_NAMES.findings, content: renderAgentRuleFindingsCsv(results.agentRules) };
+        assertNoSecretShape(textAsRead(rulesCsv), rulesCsv.name);
+        agentFiles.push({ name: AGENT_RULES_RUN_FILE_NAMES.report, content: agentRulesRaw }, rulesCsv);
+    }
     if (results.integrations === undefined || integrationsRaw === undefined) return agentFiles;
     // The integrations scanner's files, after the agent scanner's, each checked as every text file is.
     const integrationTexts = [
@@ -343,6 +359,8 @@ export function writeRun(
               readonly integrationsRaw?: string;
               /** The previous run's integrations, compared or not, for a run whose results hold an integrations section. */
               readonly integrationsPrevious?: IntegrationsPreviousRun | null;
+              /** The signed agent-rules report, for a run whose results hold an agent-rules section. */
+              readonly agentRulesRaw?: string;
           }
         | {
               /** A run in which only the integrations scanner ran. */
@@ -365,7 +383,7 @@ export function writeRun(
             ...(run.previous === undefined ? {} : { previous: run.previous }),
             ...(run.integrationsPrevious === undefined ? {} : { integrationsPrevious: run.integrationsPrevious }),
         };
-        files = renderRunFiles(run.raw, run.results, deps.renderers, context, run.integrationsRaw);
+        files = renderRunFiles(run.raw, run.results, deps.renderers, context, run.integrationsRaw, run.agentRulesRaw);
         pointer = {
             scanId,
             dir: `runs/${scanId}`,

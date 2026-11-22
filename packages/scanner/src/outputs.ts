@@ -20,6 +20,10 @@
  * integrations report with `integrationsApiKeyEnv`. With no key for the
  * integrations report it is not posted, and the log says so once. The
  * configuration refuses an `inflect` output that would post nothing.
+ *
+ * The agent-rules report, made by a run that configured an `mcp` source, goes
+ * to the file and stdout outputs only: no Inflect ingest reads it yet, so it
+ * is not posted.
  */
 import type { ParsedInventory } from '@scanent/report/results/inventory';
 
@@ -136,6 +140,7 @@ export async function scanAndDeliver(deps: DeliverDeps): Promise<DeliveryResult>
                         inventory,
                         sourceNotes: agents.sourceNotes,
                         ...(integrations === null ? {} : { integrations }),
+                        ...(scan.agentRules === null ? {} : { agentRules: scan.agentRules }),
                     });
                     // The run the directory names as its latest, read before this one replaces the pointer.
                     const previous = previousRunOf(output.dir, results);
@@ -154,6 +159,7 @@ export async function scanAndDeliver(deps: DeliverDeps): Promise<DeliveryResult>
                             previous,
                             ...(integrations === null ? {} : { integrationsRaw: integrations.raw }),
                             ...(integrationsPrevious === undefined ? {} : { integrationsPrevious }),
+                            ...(scan.agentRules === null ? {} : { agentRulesRaw: scan.agentRules.raw }),
                         },
                         deps.file,
                     );
@@ -173,6 +179,7 @@ export async function scanAndDeliver(deps: DeliverDeps): Promise<DeliveryResult>
                 const print = deps.stdout ?? ((text) => void process.stdout.write(text));
                 if (agents !== null) print(`${agents.raw}\n`);
                 if (scan.integrations !== null) print(`${scan.integrations.raw}\n`);
+                if (scan.agentRules !== null) print(`${scan.agentRules.raw}\n`);
                 ok = true;
             } else {
                 // `targets` is set whenever this output is in effect. Each report to its own ingest, with its own key.

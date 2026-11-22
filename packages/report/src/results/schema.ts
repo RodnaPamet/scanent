@@ -52,12 +52,14 @@ import {
     PERMISSION_VIAS,
 } from '@rodnapamet/scanent-contract/integrations-findings';
 import { PERMISSION_CLASSES } from '@rodnapamet/scanent-contract/integrations-scopes';
+import { AGENT_RULE_SEVERITIES, AGENT_RULES_FINDING_CODES, AGENT_RULES_SUBJECT_KINDS } from '@rodnapamet/scanent-contract/agent-rules-contract-rules';
 
 import {
     INTEGRATIONS_ONLY_RESULTS_SCHEMA,
     MODEL_SIGNS,
     RESULTS_SCHEMA,
     type IntegrationsOnlyResults,
+    type LocalAgentRulesResults,
     type LocalIntegrationsResults,
     type LocalResults,
     type RunResults,
@@ -297,6 +299,47 @@ const IntegrationFindingSchema = z
     })
     .strict();
 
+/** The agent-surface rules' section: where each rule fired, never the text. */
+export const LocalAgentRulesResultsSchema: z.ZodType<LocalAgentRulesResults> = z
+    .object({
+        report: z.object({ file: z.string().min(1).max(256), sha256: sha256Hex }).strict(),
+        outcome: z.enum(['FINDINGS', 'NO_FINDING_ON_A_COMPLETE_READ', 'NOT_CONCLUDED']),
+        population: z.array(
+            z
+                .object({
+                    kind: z.enum(AGENT_RULES_SUBJECT_KINDS),
+                    status: z.enum(['COMPLETE', 'INCOMPLETE']),
+                    reason: id.nullable(),
+                    subjects: count,
+                })
+                .strict(),
+        ),
+        counts: z.object({ subjects: count, flagged: count, findings: count }).strict(),
+        findings: z.array(
+            z
+                .object({
+                    code: z.enum(AGENT_RULES_FINDING_CODES),
+                    ruleId: id,
+                    severity: z.enum(AGENT_RULE_SEVERITIES),
+                    subjectKind: z.enum(AGENT_RULES_SUBJECT_KINDS),
+                    subjectRef: id,
+                    locator: z.string().min(1).max(512),
+                    sourceRef: z.string().min(1).max(1024),
+                })
+                .strict(),
+        ),
+        notConcluded: z.array(
+            z.object({ scope: z.enum(AGENT_RULES_SUBJECT_KINDS), why: z.enum(['POPULATION_INCOMPLETE']), reason: id }).strict(),
+        ),
+    })
+    .strict()
+    .superRefine((a, ctx) => {
+        if (a.counts.findings !== a.findings.length) ctx.addIssue({ code: 'custom', message: 'counts.findings is the findings listed', path: ['counts', 'findings'] });
+        const complete = a.population.length > 0 && a.population.every((p) => p.status === 'COMPLETE');
+        const want = a.findings.length > 0 ? 'FINDINGS' : complete ? 'NO_FINDING_ON_A_COMPLETE_READ' : 'NOT_CONCLUDED';
+        if (a.outcome !== want) ctx.addIssue({ code: 'custom', message: 'the outcome follows the findings and the population', path: ['outcome'] });
+    });
+
 export const LocalIntegrationsResultsSchema: z.ZodType<LocalIntegrationsResults> = z
     .object({
         contract: z.enum(INTEGRATIONS_CONTRACT_IDS),
@@ -451,6 +494,8 @@ export const LocalResultsSchema: z.ZodType<LocalResults> = z
         findings: z.array(FindingSchema),
         // Added with the integrations scanner, and optional: an agents-only run, and a file written before it, carries none.
         integrations: LocalIntegrationsResultsSchema.optional(),
+        // Added with the agent-surface rules, and optional: a run with no mcp source, and a file written before it, carries none.
+        agentRules: LocalAgentRulesResultsSchema.optional(),
     })
     .strict()
     .superRefine((r, ctx) => {

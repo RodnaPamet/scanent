@@ -14,7 +14,8 @@ import { createHash } from 'crypto';
 
 import { harnessKeyFingerprint, type HarnessReportBody } from '@rodnapamet/scanent-contract/harness-contract';
 import type { ParsedInventory } from '@scanent/report/results/inventory';
-import { INTEGRATION_RUN_FILE_NAMES } from '@scanent/report/render/files';
+import { AGENT_RULES_RUN_FILE_NAMES, INTEGRATION_RUN_FILE_NAMES } from '@scanent/report/render/files';
+import { scoreAgentRulesLocally } from '@scanent/report/results/agent-rules';
 import { scoreIntegrationsLocally } from '@scanent/report/results/integrations';
 import { scoreReportLocally } from '@scanent/report/results/score';
 import { INTEGRATIONS_ONLY_RESULTS_SCHEMA, type IntegrationsOnlyResults, type LocalResults, type SourceNote } from '@scanent/report/results/types';
@@ -22,7 +23,7 @@ import { INTEGRATIONS_ONLY_RESULTS_SCHEMA, type IntegrationsOnlyResults, type Lo
 import type { ScannerConfig } from './config';
 import { configuredSourceKinds, CRITERION_READERS } from './criterion-readers';
 import { loadInventoryFile, type InventoryFileDeps } from './inventory-file';
-import type { IntegrationsScan } from './scan';
+import type { AgentRulesScan, IntegrationsScan } from './scan';
 
 /**
  * The inventory a configuration names, or null when it names none. Throws
@@ -60,6 +61,8 @@ export function scoreScanLocally(scan: {
     readonly sourceNotes?: readonly SourceNote[];
     /** `runScan`'s integrations part, for a run that configured an integrations source. */
     readonly integrations?: Pick<IntegrationsScan, 'raw' | 'body' | 'sourceNotes' | 'unusedDays'>;
+    /** `runScan`'s agent-rules part, for a run that configured an `mcp` source. */
+    readonly agentRules?: AgentRulesScan;
 }): LocalResults {
     const signerKey = signerKeyOf(scan.raw);
     const fingerprint = signerKey === null ? null : harnessKeyFingerprint(signerKey);
@@ -79,11 +82,23 @@ export function scoreScanLocally(scan: {
             },
         },
     });
+    // The agent-surface rules' section: its own report, scored by its own planner. Nothing of it enters the agent results.
+    const a = scan.agentRules;
+    const withRules: LocalResults =
+        a === undefined
+            ? results
+            : {
+                  ...results,
+                  agentRules: scoreAgentRulesLocally({
+                      body: a.body,
+                      report: { file: AGENT_RULES_RUN_FILE_NAMES.report, sha256: createHash('sha256').update(a.raw, 'utf8').digest('hex') },
+                  }),
+              };
     const i = scan.integrations;
-    if (i === undefined) return results;
+    if (i === undefined) return withRules;
     // The integrations scanner's section: its own report, scored by its own planner. Nothing of it enters the agent results.
     return {
-        ...results,
+        ...withRules,
         integrations: scoreIntegrationsLocally({
             body: i.body,
             unusedDays: i.unusedDays,
