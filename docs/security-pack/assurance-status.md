@@ -64,6 +64,13 @@ What it does not show:
   There is no independent inventory of that estate to count against.
   Agreement with the earlier scanner shows that the extraction changed
   nothing; both could miss the same thing.
+- One false positive has since been found by use rather than by
+  measurement (issue 33). An Agent SDK agent set to
+  `permissionMode: "dontAsk"` was reported as able to call every tool of
+  its MCP server, when the SDK lets it call only the one tool its
+  `allowedTools` approves. Its consumer raised one HIGH finding on it. The
+  `code` source now narrows such an agent's tools to what `allowedTools`
+  approves, under the conditions `docs/scanner.md` states.
 - It was the maker's estate, read by the maker. It says nothing about a
   client's directory, its size, its proxy or its approval process.
 - An agent built directly on a model provider's SDK was not recognised by the

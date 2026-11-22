@@ -366,6 +366,52 @@ interface StringList {
 }
 
 /** One Agent SDK agent, as read. */
+/**
+ * When `allowedTools` is the whole set an Agent SDK agent can call, what it
+ * approves; null when it is not, and the tools stay as the options configure them.
+ *
+ * Under `permissionMode: 'dontAsk'` the SDK denies every call that would
+ * otherwise prompt, and only three things pre-approve one: `allowedTools`,
+ * an allow rule in a settings file, and a PreToolUse hook. So `allowedTools`
+ * restricts only when the other two are shut: `settingSources` is the literal
+ * `[]` and there is no hook. Anything the reader could not see whole (spread
+ * options, a list built elsewhere, an unanchored `*` or `mcp__*`) keeps the
+ * configured set. A server stays whole when `allowedTools` approves it whole:
+ * a glob after `mcp__<server>__`, or a bare `mcp__<server>`, which the SDK's
+ * documentation does not describe and so is taken at its widest. What code
+ * cannot see is an endpoint-managed policy, which loads regardless and can add
+ * allow rules: the set is what the code allows.
+ */
+export function dontAskRestricts(o: {
+    readonly open: boolean;
+    readonly permissionMode: AgentSdkOptionFacts['permissionMode'];
+    readonly allowed: StringList;
+    readonly allowedGiven: boolean;
+    readonly settingSources: AgentSdkOptionFacts['settingSources'];
+    readonly hooks: AgentSdkOptionFacts['hooks'];
+}): { readonly builtins: ReadonlySet<string>; readonly wholeServers: ReadonlySet<string> } | null {
+    if (o.open || !o.allowedGiven || !o.allowed.complete) return null;
+    if (o.permissionMode === null || o.permissionMode.mode !== 'dontAsk') return null;
+    if (o.settingSources === null || o.settingSources.state !== 'EMPTY') return null;
+    if (o.hooks === null || o.hooks.present) return null;
+    const builtins = new Set<string>();
+    const wholeServers = new Set<string>();
+    for (const { value } of o.allowed.items) {
+        const mcpTool = /^mcp__(.+?)__(.+)$/.exec(value);
+        if (mcpTool !== null && !mcpTool[1].includes('*')) {
+            if (mcpTool[2].includes('*')) wholeServers.add(mcpTool[1]);
+            continue;
+        }
+        if (value.includes('*')) return null;
+        if (value.startsWith('mcp__')) {
+            wholeServers.add(value.slice('mcp__'.length));
+            continue;
+        }
+        builtins.add(value.split('(')[0].trim());
+    }
+    return { builtins, wholeServers };
+}
+
 interface SdkAgentRead {
     readonly r: Resolved;
     readonly facts: AgentSdkOptionFacts;
@@ -1106,7 +1152,8 @@ class Recognizer {
             if (tool !== null) r.tools.push({ name: tool, kind: 'builtin', server: locatorOf(toolsExpr), at: agentAt });
         }
 
-        // `allowedTools` auto-approves; it does not restrict. Its MCP names are tools of their server.
+        // `allowedTools` auto-approves; on its own it does not restrict (see
+        // `dontAskRestricts` below for when it does). Its MCP names are tools of their server.
         const allowedExpr = get('allowedTools');
         const allowed: StringList = allowedExpr === undefined ? { items: [], complete: !options.open } : this.stringList(allowedExpr);
         let wildcard = false;
@@ -1216,6 +1263,21 @@ class Recognizer {
             }
         }
 
+        // Under `dontAsk` the SDK denies every call nothing pre-approved, so when
+        // nothing but `allowedTools` can pre-approve, it is the reachable set.
+        const restriction = dontAskRestricts({ open: options.open, permissionMode, allowed, allowedGiven: allowedExpr !== undefined, settingSources, hooks });
+        let reachableBuiltins = effective;
+        if (restriction !== null) {
+            reachableBuiltins = effective.filter((n) => restriction.builtins.has(n));
+            const serverRows = new Set([...mcp.servers.keys()].filter((label) => !restriction.wholeServers.has(label)).map((label) => `${label}:*`));
+            const kept = r.tools.filter((t) => {
+                if (t.kind === 'mcp') return !serverRows.has(t.name);
+                if (t.kind === 'builtin') return restriction.builtins.has(t.name);
+                return true;
+            });
+            r.tools.splice(0, r.tools.length, ...kept);
+        }
+
         const facts: AgentSdkOptionFacts = {
             permissionMode,
             settingSources,
@@ -1223,7 +1285,7 @@ class Recognizer {
                 ? { present: true, at: locatorOf(allowedExpr) }
                 : allowed.complete ? { present: false, at: locatorOf(allowedExpr) } : null,
             shellOrFetch: (() => {
-                const names = SDK_SHELL_OR_FETCH.filter((n) => effective.includes(n));
+                const names = SDK_SHELL_OR_FETCH.filter((n) => reachableBuiltins.includes(n));
                 // A name seen is callable unless a removal went unread; none seen
                 // means none only when every list was read whole.
                 if (names.length > 0 && disallowed.complete) return { names, at: locatorOf(toolsExpr) };

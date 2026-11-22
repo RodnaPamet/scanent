@@ -142,10 +142,9 @@ describe('1. SDK agents, their tools, model, credentials and option verdicts', (
         expect(scan.agents).toHaveLength(2);
         const ts = byName.get('options')!;
         for (const agent of scan.agents) {
-            // The server it is configured with, then the names `allowedTools`
-            // approves on it: Inflect's, and no other server's.
+            // `dontAsk`, settings files off and no hook: the names `allowedTools`
+            // approves are all it can call, so the server is not reported whole.
             expect(agent.tools.map((t) => [t.kind, t.name, t.server])).toEqual([
-                ['mcp', 'inflect:*', 'https://inflect.acme.example'],
                 ['mcp', 'list_risks', 'https://inflect.acme.example'],
                 ['mcp', 'propose_risks', 'https://inflect.acme.example'],
             ]);
@@ -218,12 +217,9 @@ describe('1. SDK agents, their tools, model, credentials and option verdicts', (
         const { byName } = await agentsIn(AGENT_SDK_PY);
         const triage = byName.get('options')!;
         expect(triage).toMatchObject({ language: 'python', discoveredId: 'code:acme/triage/agent.py#options', subagents: 1 });
-        expect(toolsOf(triage)).toEqual([
-            ['mcp', 'inflect:*', 'https://inflect.acme.example'],
-            ['builtin', 'Read', loc('triage/agent.py', 7)],
-            ['builtin', 'Grep', loc('triage/agent.py', 7)],
-            ['mcp', 'list_findings', 'https://inflect.acme.example'],
-        ]);
+        // `dontAsk` with settings off and no hook: Read and Grep are turned on
+        // but nothing approves them, so only the approved MCP tool is reachable.
+        expect(toolsOf(triage)).toEqual([['mcp', 'list_findings', 'https://inflect.acme.example']]);
         expect(triage.models.map((m) => m.model)).toEqual(['claude-opus-5-5']);
         expect(verdictsOf(triage)).toEqual([['H3.payloads_guarded', false, loc('triage/agent.py', 24)]]);
     });
@@ -277,6 +273,89 @@ narrowed_options = ClaudeAgentOptions(disallowed_tools=["Bash", "WebFetch", "Wri
             expect(isHarnessCriterionId(v.criterion)).toBe(true);
             expect(Object.values(AGENT_SDK_OPTION_CRITERIA)).toContain(v.criterion);
         }
+    });
+});
+
+describe('1b. under `dontAsk`, `allowedTools` is what the agent can call, when nothing else can approve', () => {
+    /** One TypeScript agent with the wizard's options, `over` replacing or adding option lines. */
+    const ts = (over: Record<string, string | null> = {}) => {
+        const opts: Record<string, string | null> = {
+            mcpServers: `{ inflect: { type: "http", url: "https://inflect.acme.example/api/mcp" } }`,
+            allowedTools: `["mcp__inflect__list_risks"]`,
+            tools: `[]`,
+            settingSources: `[]`,
+            strictMcpConfig: `true`,
+            permissionMode: `"dontAsk"`,
+            ...over,
+        };
+        const lines = Object.entries(opts)
+            .filter(([, v]) => v !== null)
+            .map(([k, v]) => `  ${k}: ${v},`);
+        return [
+            `import { query } from "@anthropic-ai/claude-agent-sdk";`,
+            `const extra = {};`,
+            `const names = ["mcp__inflect__list_risks"];`,
+            `const options = {`,
+            ...lines,
+            `};`,
+            `for await (const m of query({ prompt: "x", options })) {}`,
+        ].join('\n');
+    };
+    const toolNames = async (src: string) => {
+        const { byName } = await agentsIn({ 'a/agent.ts': src });
+        return byName.get('options')!.tools.map((t) => t.name);
+    };
+
+    it('the wizard\'s shape reports only the approved tool', async () => {
+        expect(await toolNames(ts())).toEqual(['list_risks']);
+    });
+
+    it('each condition removed gives back the server whole', async () => {
+        const whole = ['inflect:*', 'list_risks'];
+        expect(await toolNames(ts({ permissionMode: null }))).toEqual(whole);
+        expect(await toolNames(ts({ permissionMode: `"default"` }))).toEqual(whole);
+        expect(await toolNames(ts({ settingSources: null }))).toEqual(whole);
+        expect(await toolNames(ts({ settingSources: `["project"]` }))).toEqual(whole);
+        expect(await toolNames(ts({ hooks: `{ PreToolUse: [] }` }))).toEqual(whole);
+        expect(await toolNames(ts({ '...extra': '' }).replace('  ...extra: ,', '  ...extra,'))).toEqual(whole);
+        expect(await toolNames(ts({ allowedTools: `[...names]` }))).toEqual(['inflect:*']);
+        expect(await toolNames(ts({ allowedTools: `["mcp__inflect__list_risks", "*"]` }))).toEqual(whole);
+    });
+
+    it('a glob after the server\'s prefix, or the server\'s bare name, approves it whole', async () => {
+        expect(await toolNames(ts({ allowedTools: `["mcp__inflect__*"]` }))).toEqual(['inflect:*']);
+        expect(await toolNames(ts({ allowedTools: `["mcp__inflect__get_*", "mcp__inflect__list_risks"]` }))).toEqual(['inflect:*', 'list_risks']);
+        expect(await toolNames(ts({ allowedTools: `["mcp__inflect"]` }))).toEqual(['inflect:*']);
+    });
+
+    it('built-ins nothing approves are dropped, and the shell-or-fetch option follows', async () => {
+        const { byName } = await agentsIn({ 'a/agent.ts': ts({ tools: `["Bash", "Read", "WebFetch"]`, allowedTools: `["Read", "mcp__inflect__list_risks"]` }) });
+        const agent = byName.get('options')!;
+        expect(agent.tools.map((t) => [t.kind, t.name])).toEqual([
+            ['builtin', 'Read'],
+            ['mcp', 'list_risks'],
+        ]);
+        expect(agent.sdkOptions?.shellOrFetch).toMatchObject({ names: [] });
+        const { byName: scoped } = await agentsIn({ 'b/agent.ts': ts({ tools: `["Bash", "Read"]`, allowedTools: `["Bash(git status)"]` }) });
+        expect(scoped.get('options')!.tools.map((t) => t.name)).toEqual(['Bash']);
+        expect(scoped.get('options')!.sdkOptions?.shellOrFetch).toMatchObject({ names: ['Bash'] });
+    });
+
+    it('Python: `permission_mode="dontAsk"` restricts the same way', async () => {
+        const py = [
+            'from claude_agent_sdk import ClaudeAgentOptions, query',
+            'options = ClaudeAgentOptions(',
+            '    mcp_servers={"inflect": {"type": "http", "url": "https://inflect.acme.example/api/mcp"}},',
+            '    allowed_tools=["mcp__inflect__list_risks"],',
+            '    tools=[],',
+            '    setting_sources=[],',
+            '    permission_mode="dontAsk",',
+            ')',
+        ].join('\n');
+        const { byName } = await agentsIn({ 'p/agent.py': py });
+        expect(byName.get('options')!.tools.map((t) => t.name)).toEqual(['list_risks']);
+        const { byName: off } = await agentsIn({ 'q/agent.py': py.replace('    setting_sources=[],\n', '') });
+        expect(off.get('options')!.tools.map((t) => t.name)).toEqual(['inflect:*', 'list_risks']);
     });
 });
 

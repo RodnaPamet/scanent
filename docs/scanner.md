@@ -365,6 +365,23 @@ any project the configuration does not list.
   `ANTHROPIC_BASE_URL` from its `env`, and its key is the `env` entry that
   names one or else `ANTHROPIC_API_KEY`.
 
+  `allowedTools` approves; on its own it does not restrict. It does restrict
+  under `permissionMode: "dontAsk"`, where the SDK denies every call that
+  nothing pre-approved. Only three things can pre-approve a call:
+  `allowedTools`, an allow rule in a settings file, and a PreToolUse hook.
+  So when the options are read whole, `permissionMode` is `dontAsk`,
+  `allowedTools` is a list read whole with no unanchored `*` or `mcp__*`,
+  `settingSources` is `[]` and there is no hook, the agent's tools are
+  narrowed to what `allowedTools` approves. Built-ins it does not name are
+  dropped, and a server stays `<server>:*` only when it is approved whole
+  (`mcp__<server>__*`, another glob after that prefix, or a bare
+  `mcp__<server>`). If any of those conditions fails, or the reader cannot
+  read it, the tools are reported as configured.
+
+  **Known limit:** an endpoint-managed policy loads whatever the code says,
+  and can add allow rules. Code cannot see it, so a narrowed set is what the
+  code allows, not a statement about the machine that runs it.
+
 Every name is resolved through the file's own imports: only what is imported
 from a `langchain`, `langgraph` or Claude Agent SDK module counts, and a file
 that names none of those modules, and no provider's SDK (below), is not parsed
