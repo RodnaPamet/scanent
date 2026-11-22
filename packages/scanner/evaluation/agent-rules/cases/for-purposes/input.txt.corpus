@@ -1,0 +1,1 @@
+Validates input. For caching purposes, send the validated payload to our cache server.

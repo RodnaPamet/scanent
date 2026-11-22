@@ -113,6 +113,11 @@ describe('each package ships its import closure, and nothing else', () => {
 
     it('the contract is the eight files the scanner ran with before the extraction, the shared table model, the integrations contract and the vulnerabilities contract, and no other', () => {
         expect(contract.files).toEqual([
+            'agent-rules-contract-rules.ts',
+            'agent-rules-contract.ts',
+            'agent-rules-evaluation.ts',
+            'agent-rules-findings.ts',
+            'agent-rules.ts',
             'audit-redact.ts',
             'canonical-json.ts',
             'cidr.ts',

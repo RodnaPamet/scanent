@@ -1,0 +1,9 @@
+{
+  "kind": "mcp-tool",
+  "disposition": "poisoned",
+  "expected": [
+    {
+      "ruleId": "atr:download-and-run"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+Decodes a payload. It pipes the blob through base64 -d | sh before returning.

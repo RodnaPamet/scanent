@@ -701,6 +701,40 @@ concluded. How a model revision earns the right to run is
 by `scoreEvaluation`, against a published floor. No floor is published yet, so
 no revision runs.
 
+## The agent-rules contract
+
+The agent scanner's fourth finding kind: what static rules found written into an
+agent's own surface — an MCP tool's description, and later a skill or an A2A
+card. It is defined and verified today; no scanent release writes it yet, and
+version 1 reads MCP tools only. The rules are re-authored from Cisco AI
+Defense's scanners (Apache-2.0) and the MIT Agent Threat Rules; the design is
+[agent-surface-rules.md](design/agent-surface-rules.md).
+
+| Id | State | What it adds |
+|---|---|---|
+| `scanent-agent-rules/1` | Accepted; not yet written by a release | The first agent-rules contract: MCP tool rules |
+
+**The same rules as the agent report.** The same byte limit, canonical JSON,
+signature and envelope checks in the same order (`verifySignedEnvelope`), then
+this contract's strict schema. The reference verifier is
+`verifyAndParseAgentRulesReport`; it reads no other contract and the other three
+read none of it.
+
+**What it cannot carry, by its schema.** No text: a finding is a code, the rule
+id that fired, the subject and a locator (`<kind>:<ref>#<field>`), never a
+description or an excerpt — the rules run where the text is and only the finding
+leaves. No CRITICAL, and no more than a code allows: each finding code has a
+ceiling (`SEVERITY_CEILING`; the executable-payload and prompt-injection codes
+may reach HIGH, the rest MEDIUM). No clean bill it did not earn: a population
+read in part concludes nothing, and the planner (`planAgentRulesScan`) says "no
+finding" only of a complete read.
+
+| Member | Meaning |
+|---|---|
+| `population[]` | Each subject kind read (version 1: `mcp-tool`), `COMPLETE` or `INCOMPLETE` with its reason, and how many subjects the rules ran over |
+| `findings[]` | Each finding: the code, the rule id, the severity, the subject kind and ref, and the locator |
+| `counts` | Subjects read, and subjects that fired at least one rule |
+
 ## Transport
 
 A consumer that takes reports over HTTP takes them as scanent sends them,
@@ -860,7 +894,7 @@ import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
 ```
 
 <!-- contract:package-modules -->
-`audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `harness-matrix-model`, `integrations-contract`, `integrations-contract-rules`, `integrations-findings`, `integrations-scopes`, `receipt-verification`, `vulnerabilities-contract`, `vulnerabilities-contract-rules`, `vulnerabilities-evaluation`, `vulnerabilities-findings`
+`agent-rules`, `agent-rules-contract`, `agent-rules-contract-rules`, `agent-rules-evaluation`, `agent-rules-findings`, `audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `harness-matrix-model`, `integrations-contract`, `integrations-contract-rules`, `integrations-findings`, `integrations-scopes`, `receipt-verification`, `vulnerabilities-contract`, `vulnerabilities-contract-rules`, `vulnerabilities-evaluation`, `vulnerabilities-findings`
 <!-- /contract:package-modules -->
 
 - The package holds compiled CommonJS and type declarations, for Node 22 or
@@ -870,7 +904,9 @@ import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
   `harness-ladder`, which imports nothing, so a page may import those two.
   The integrations planner is the same: `integrations-findings` imports only
   `integrations-scopes` at run time, which imports nothing. So is the
-  vulnerabilities planner: `vulnerabilities-findings` imports only
+  agent-rules planner and rule set (`agent-rules-findings`, `agent-rules`)
+  import only `agent-rules-contract-rules` at run time, which imports nothing.
+  So is the vulnerabilities planner: `vulnerabilities-findings` imports only
   `vulnerabilities-contract-rules` at run time, which imports nothing.
 - Its one dependency is `zod`, at an exact version. A consumer that passes
   the exported schemas to its own `zod` needs that same version; with another

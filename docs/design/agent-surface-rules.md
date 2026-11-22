@@ -1,9 +1,10 @@
 # Rule-based findings over the agent surface
 
-> **Status: approved, not built (2026-11-22).** The owner chose on 2026-11-22
-> to take Cisco AI Defense's static detection rules (MCP, skills, A2A) before
-> the vulnerability scanner's model step, and answered this page's three
-> questions the same day (see "Decisions"). Building has not started.
+> **Status: being built (2026-11-22). V1 is done:** the contract
+> `scanent-agent-rules/1` and its verifier, the re-authored MCP rule set
+> (`packages/contract/src/agent-rules.ts`), the planner, the evaluation scorer
+> and the corpus (`packages/scanner/evaluation/agent-rules/`). No release writes
+> the report yet, and the rules are not yet wired into a scan (V2).
 
 ## What it is
 

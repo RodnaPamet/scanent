@@ -24,6 +24,26 @@ against the CORE receipt canonicalization. Portions of pipelock governed by the
 Elastic License 2.0 are NOT used by this product.
 
 ------------------------------------------------------------------------
+Agent-surface detection rules — Cisco AI Defense scanners and Agent Threat Rules
+------------------------------------------------------------------------
+`packages/contract/src/agent-rules.ts` holds scanent's own regular
+expressions, each re-authored from a public detection rule and citing it in
+its `source` field. No rule file is copied verbatim. The sources are:
+
+  cisco-ai-defense/mcp-scanner    Apache License 2.0, Copyright (c) Cisco
+  (https://github.com/cisco-ai-defense/mcp-scanner)   Systems, Inc.
+  cisco-ai-defense/skill-scanner  Apache License 2.0
+  cisco-ai-defense/a2a-scanner    Apache License 2.0
+
+  Agent-Threat-Rule/agent-threat-rules   MIT License
+  (https://github.com/Agent-Threat-Rule/agent-threat-rules), which the
+  Cisco skill-scanner bundles and which some scanent rules (`atr:*`) are
+  re-authored from.
+
+Version 1 re-authors the MCP rules only. The detection logic is scanent's;
+the sources are credited for the attack patterns they describe.
+
+------------------------------------------------------------------------
 Security audit method — cloudflare/security-audit-skill (MIT License)
 ------------------------------------------------------------------------
 `packages/scanner/vendor/cloudflare-security-audit/` holds, unmodified, the

