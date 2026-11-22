@@ -285,10 +285,10 @@ describe('docs/security-pack/assurance-status.md', () => {
     it('says what has not been done before what has, and names each item', () => {
         expect(text.indexOf('## What has not been done')).toBeGreaterThan(0);
         expect(text.indexOf('## What has not been done')).toBeLessThan(text.indexOf('## What has been done'));
-        for (const heading of ['### One pilot, on the maker\'s own estate, and none at a client', '### No external penetration test, no independent review', '### No long soak', '### One signed release, checked once, by its maker']) {
+        for (const heading of ['### One pilot, on the maker\'s own estate, and none at a client', '### No external penetration test, no independent review', '### No long soak', '### Signed releases, checked only by their maker']) {
             expect(notDone).toContain(heading);
         }
-        for (const phrase of ['False positives and false negatives are not measured', '72-hour', 'is the only complete release', 'never run']) expect(notDone).toContain(phrase);
+        for (const phrase of ['False positives and false negatives are not measured', '72-hour', 'Only their maker has checked them', 'never run']) expect(notDone).toContain(phrase);
     });
 
     it('agrees with the threat model, which still lists the same four', () => {

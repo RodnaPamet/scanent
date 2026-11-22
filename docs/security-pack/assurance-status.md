@@ -10,11 +10,11 @@ production.**
 
 | | Status |
 |---|---|
-| Run against a real estate | **Once, on the maker's own estate** (Inflect's): Entra ID, GitHub Actions, Google Cloud, an Inflect register and one repository of source code. **Not at a client**, and not for Okta, Azure Key Vault, LangSmith or an MCP server |
+| Run against a real estate | **On the maker's own estate only** (Inflect's). The agent scanner read Entra ID, GitHub Actions, Google Cloud, an Inflect register and one repository of source code. The integrations scanner read Entra ID and a GitHub organisation, and its findings were checked by hand. **Not at a client**, and not for Okta, Azure Key Vault, LangSmith or an MCP server |
 | External penetration test | **Not done** |
 | Independent code review | **Not done** |
 | 72-hour soak | **Not done.** A 75-minute soak has been run. The 72-hour one is required before 1.0 (owner decision, 2026-11-12) |
-| Signed release | **Not done.** No release, no tag, no published image or package exists. The release workflow has been run by hand, which signs and publishes nothing |
+| Signed release | **Done, and checked only by its maker.** 0.13.2, 0.14.0, 0.15.0 and 0.16.0 were released by the workflow, signed, with SBOMs and provenance, and each was verified once as a client would. Nobody else has verified one |
 | Any security certification of the product | **None.** None is claimed |
 
 Do not describe scanent to anyone as battle-tested, pilot-proven,
@@ -106,6 +106,20 @@ What it does not show:
   ran through an egress proxy of the scanner's own kind. It has not been
   confirmed against a real corporate proxy (issue 18).
 
+The integrations scanner was run on the same estate on 2026-11-14, from
+0.16.0, on the production machine: Microsoft Entra ID and one GitHub
+organisation, each read in full, 9 applications (4 and 5). Its report was
+posted to Inflect and ingested there. The owner then checked every finding
+on the 9 by hand against Entra and GitHub, and every application in both
+against the report:
+
+- **No false positive and no false negative**: every finding was right, and
+  no application was missed.
+- It was the maker's estate, checked by the maker, and small. It says
+  nothing about a directory of thousands of applications.
+- Sign-in activity was not read (`readSignInActivity` off), so the unused
+  finding was not concluded for any application. Okta was not read.
+
 ### No external penetration test, no independent review
 
 An internal adversarial review was carried out during hardening. Issue 20
@@ -123,10 +137,11 @@ soak of at least one hour.
 The longest run so far: a 75-minute soak was run on 2026-11-13 at commit `7437554`: 75 scans, one a minute, none failed and none started late (the latest by 64 ms), and resident memory was 110 MiB after the first scan and 110 MiB after the last. It soaks the `code` source and the file
 output only, and reaches no network.
 
-### One signed release, checked once, by its maker
+### Signed releases, checked only by their maker
 
-0.13.2, released on 2026-11-13, is the only complete release, and only its
-maker has checked it as a client would. It is the first complete release
+0.13.2, released on 2026-11-13, was the first complete release; 0.14.0,
+0.15.0 and 0.16.0 followed the same way. Only their maker has checked them as
+a client would. The first complete release is 0.13.2
 (https://github.com/RodnaPamet/scanent/releases/tag/v0.13.2). Its tag was made
 by `.github/workflows/auto-release.yml` and every job of the release workflow
 passed. Two tags before it were cut from the same scanner code and stopped
