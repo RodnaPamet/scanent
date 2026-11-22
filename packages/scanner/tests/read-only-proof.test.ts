@@ -284,6 +284,21 @@ describe('the one post: a signed report to the tenant, and nothing else', () => 
         for (const request of recorder.requests) seen.push({ row: 'ingest', via: 'scan', request, cls: classifyRequest(request, hosts) });
     });
 
+    it('with an mcp source and the agent-rules key, scanAndPost also posts the agent-rules report to its own ingest, and nothing else that is not a read', async () => {
+        const base = estateConfig([ESTATE_SOURCES.mcp]);
+        const config = parseScannerConfig({ ...base, inflect: { ...(base.inflect as object), agentRulesApiKeyEnv: 'INFLECT_AGENT_RULES_KEY' } });
+        const hosts = configuredHostsOf(config);
+        const world = worldFor();
+        const recorder = recordRequests(world.fetchImpl);
+        const result = await scanAndPost({ config, env: { ...estateEnv(), INFLECT_AGENT_RULES_KEY: 'agent-rules-key' }, log: quiet, fetchImpl: recorder.fetchImpl, resolveHost: PUBLIC_RESOLVER, now: () => NOW });
+        expect(result.ok).toBe(true);
+        expect(readOnlyProblems(recorder.requests, hosts)).toEqual([]);
+        const posts = recorder.requests.filter((r) => classifyRequest(r, hosts) === 'INGEST_POST');
+        expect(posts.map((p) => p.pathname)).toEqual(['/api/t/acme/admin/agents/harness-scans', '/api/t/acme/admin/agents/agent-rule-scans']);
+        expect(posts[1].body).toBe(world.fakes.agentRulesPosted[0]);
+        for (const request of recorder.requests) seen.push({ row: 'ingest', via: 'scan', request, cls: classifyRequest(request, hosts) });
+    });
+
     it('the same post to another host is not declared: the ingest is the configured tenant and nowhere else', () => {
         const hosts = configuredHostsOf(parseScannerConfig(estateConfig([ESTATE_SOURCES.code])));
         const elsewhere: RecordedRequest = {

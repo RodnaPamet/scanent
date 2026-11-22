@@ -72,6 +72,13 @@ export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-sc
  */
 export const INTEGRATIONS_INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/integration-scans';
 
+/**
+ * The agent-rules report's ingest route, beside the other two: the same tenant,
+ * the same method and body (the signed report), a key of its own. The report is
+ * the agent scanner's, made by a run with an `mcp` source.
+ */
+export const AGENT_RULES_INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/agent-rule-scans';
+
 export const SCANNER_SURFACE = {
     name: SCANNER_NAME,
     version: SCANNER_VERSION,
@@ -193,11 +200,12 @@ export const SCANNER_SURFACE = {
             scopes: [OPENSHELL_READ_SCOPE, OPENSHELL_PROFILE_SCOPE],
         },
     ],
-    // The two posts: each scanner's signed report to its own ingest on the
-    // configured tenant. No other path is ever posted to.
+    // The three posts: each signed report to its own ingest on the configured
+    // tenant. No other path is ever posted to.
     sends: [
         { method: 'POST', path: INGEST_PATH_TEMPLATE, report: 'agents' },
         { method: 'POST', path: INTEGRATIONS_INGEST_PATH_TEMPLATE, report: 'integrations' },
+        { method: 'POST', path: AGENT_RULES_INGEST_PATH_TEMPLATE, report: 'agent-rules' },
     ],
     // The egress proof, only when the configuration names a
     // proxy: two CONNECTs to it — the Inflect host, which it must admit, and

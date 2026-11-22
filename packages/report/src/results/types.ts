@@ -349,6 +349,8 @@ export interface LocalAgentRuleFinding {
     readonly subjectKind: AgentRulesSubjectKind;
     readonly subjectRef: string;
     readonly locator: string;
+    /** The MCP server the subject was read from. */
+    readonly serverRef: string;
     /** Stable across scans of the same text. */
     readonly sourceRef: string;
 }
@@ -366,6 +368,8 @@ export interface LocalAgentRulesResults {
         readonly reason: string | null;
         readonly subjects: number;
     }[];
+    /** Each MCP server the rules read, and whether every tool was read whole. */
+    readonly servers: readonly { readonly ref: string; readonly status: 'COMPLETE' | 'INCOMPLETE'; readonly reason: string | null; readonly tools: number }[];
     readonly counts: { readonly subjects: number; readonly flagged: number; readonly findings: number };
     /** In the planner's order: most severe first. */
     readonly findings: readonly LocalAgentRuleFinding[];

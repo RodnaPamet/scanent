@@ -148,6 +148,8 @@ export interface SourceRead {
      * what was read is real.
      */
     readonly ruleFindings?: readonly McpRuleFinding[];
+    /** The `mcp` source only: each server, as the rules read it. */
+    readonly ruleServers?: readonly McpRuleServer[];
     /** The `mcp` source only: how many tool definitions the rules were run over. */
     readonly ruleSubjects?: number;
     /** The `mcp` source only: fields longer than the rules scan, counted. Absent when none. */
@@ -194,8 +196,18 @@ export interface McpRuleFinding {
     readonly severity: AgentRuleSeverity;
     /** `mcp:<server url>:tool:<name>`, or a digest form when that is too long. */
     readonly subjectRef: string;
+    /** The server it was read from: `mcp:<server url>`, or a digest form. */
+    readonly serverRef: string;
     /** `mcp-tool:<subjectRef>#<field>`. */
     readonly locator: string;
+}
+
+/** One MCP server as the agent-surface rules read it: whether every tool was read whole, and how many. */
+export interface McpRuleServer {
+    readonly ref: string;
+    readonly status: 'COMPLETE' | 'INCOMPLETE';
+    readonly reason?: IncompleteReason;
+    readonly tools: number;
 }
 
 export interface McpServerRead {

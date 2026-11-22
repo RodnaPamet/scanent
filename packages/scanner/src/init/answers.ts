@@ -50,6 +50,8 @@ export const InitAnswersSchema = z
                 apiKeyEnv: envName.optional(),
                 /** The variable that holds the integrations report's key. Absent, that report is not posted. */
                 integrationsApiKeyEnv: envName.optional(),
+                /** The variable that holds the agent-rules report's key. Absent, that report is not posted. */
+                agentRulesApiKeyEnv: envName.optional(),
             })
             .strict()
             .nullable()

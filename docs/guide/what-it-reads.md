@@ -286,6 +286,12 @@ the variable it goes in (`integrationsApiKeyEnv`, by default
 does not send the other. Without it the integrations report is kept and not
 sent; with the integrations scanner alone, it is the only key you need.
 
+To send the agent-rules report as well (made when you read MCP servers), create
+a third key with the scope `admin:agent_rules_ingest` and no other, and name the
+variable it goes in (`agentRulesApiKeyEnv`, by default
+`INFLECT_AGENT_RULES_KEY`). Without it the agent-rules report is kept and not
+sent.
+
 ### Microsoft Entra ID, for integrations
 
 This is the second scanner in the same program: the **integrations scanner**.

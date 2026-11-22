@@ -27,7 +27,7 @@ import { buildAgentRulesReportBody, signAgentRulesReport } from './agent-rules-r
 import { buildIntegrationsReportBody, signIntegrationsReport } from './integrations-report';
 import type { IntegrationsSource, IntegrationsSourceRead } from './integrations-source';
 import type { ScannerLog } from './log';
-import { postIntegrationsReport, postReport, type IntegrationsPostResult, type PostResult } from './post';
+import { postAgentRulesReport, postIntegrationsReport, postReport, type AgentRulesPostResult, type IntegrationsPostResult, type PostResult } from './post';
 import { buildReportBody, signReport } from './report';
 import { isAgentSourceKind } from './scanners';
 import type { SourceNote } from '@scanent/report/results/types';
@@ -525,10 +525,23 @@ export function integrationsIngestTarget(config: ScannerConfig, env: Env): Inges
     return { inflect: config.inflect, apiKey: requiredEnv(env, name, 'the integrations ingest API key') };
 }
 
+/**
+ * The `inflect` block and the agent-rules report's ingest key: null when the
+ * configuration names none (the report is then not posted), a refusal when it
+ * names one that is not set.
+ */
+export function agentRulesIngestTarget(config: ScannerConfig, env: Env): IngestTarget | null {
+    if (config.inflect === undefined) throw new Error('the configuration has no inflect block to post to');
+    const name = config.inflect.agentRulesApiKeyEnv;
+    if (name === undefined) return null;
+    return { inflect: config.inflect, apiKey: requiredEnv(env, name, 'the agent-rules ingest API key') };
+}
+
 /** The keys the `inflect` output posts with: one per report it posts, null for a report it does not. */
 export interface InflectTargets {
     readonly agents: IngestTarget | null;
     readonly integrations: IngestTarget | null;
+    readonly agentRules: IngestTarget | null;
 }
 
 /**
@@ -542,8 +555,9 @@ export function inflectTargets(config: ScannerConfig, env: Env): InflectTargets 
     const posts = inflectPosts(config);
     const agents = posts.agents ? ingestTarget(config, env) : null;
     const integrations = posts.integrations ? integrationsIngestTarget(config, env) : null;
+    const agentRules = posts.agentRules ? agentRulesIngestTarget(config, env) : null;
     if (agents === null && integrations === null) throw new Error('the inflect output has no report to post: name inflect.integrationsApiKeyEnv to post the integrations report');
-    return { agents, integrations };
+    return { agents, integrations, agentRules };
 }
 
 /** Post one signed report to the tenant's ingest, and log the answer. */
@@ -588,12 +602,34 @@ export async function postSignedIntegrationsReport(
     return result;
 }
 
+/** Post the signed agent-rules report to the tenant's ingest for it, and log the answer: counts and the refusal code only. */
+export async function postSignedAgentRulesReport(
+    deps: Pick<ScanDeps, 'fetchImpl' | 'log'>,
+    target: IngestTarget,
+    scan: { readonly raw: string; readonly body: AgentRulesReportBody },
+): Promise<AgentRulesPostResult> {
+    const result = await postAgentRulesReport({
+        baseUrl: target.inflect.baseUrl,
+        tenantSlug: target.inflect.tenantSlug,
+        apiKey: target.apiKey,
+        raw: scan.raw,
+        fetchImpl: deps.fetchImpl ?? ((url, init) => fetch(url, init)),
+    });
+    if (result.ok) {
+        deps.log.info('agent-rules report ingested', { scan: scan.body.scan.id, complete: result.complete, findings: result.findingCount });
+    } else {
+        deps.log.error('agent-rules report refused', { scan: scan.body.scan.id, status: result.status, refusal: result.refusal });
+    }
+    return result;
+}
+
 /** What the `inflect` output did with one run: each report's answer, null for a report it did not post. */
 export interface InflectDelivery {
     /** True only when every report it posted was accepted. */
     readonly ok: boolean;
     readonly agents: PostResult | null;
     readonly integrations: IntegrationsPostResult | null;
+    readonly agentRules: AgentRulesPostResult | null;
 }
 
 /** A failed post, by its name and code: never its message, which can carry a URL. */
@@ -607,14 +643,14 @@ function errorName(err: unknown): string {
 
 /**
  * Post one run's reports to the tenant: the agent report, then the
- * integrations report, each with its own key. An integrations report with no
- * key configured is not posted, and the log says so, once.
+ * integrations report, then the agent-rules report, each with its own key. A
+ * report with no key configured is not posted, and the log says so, once.
  *
- * Each post is attempted whatever happened to the other. A post the wire
- * could not make throws: the agent report's is thrown after the integrations
- * report was attempted, as it was before there were two reports; the
- * integrations report's is logged as `integrations post failed` and counts as
- * not delivered.
+ * Each post is attempted whatever happened to the others. A post the wire
+ * could not make throws: the agent report's is thrown after the others were
+ * attempted, as it was before there were three reports; the integrations and
+ * agent-rules reports' are logged (`integrations post failed`,
+ * `agent-rules post failed`) and count as not delivered.
  */
 export async function postToInflect(deps: Pick<ScanDeps, 'fetchImpl' | 'log'>, targets: InflectTargets, run: RunScan): Promise<InflectDelivery> {
     let agents: PostResult | null = null;
@@ -644,9 +680,25 @@ export async function postToInflect(deps: Pick<ScanDeps, 'fetchImpl' | 'log'>, t
             }
         }
     }
+    let agentRules: AgentRulesPostResult | null = null;
+    let agentRulesOk = true;
+    if (run.agentRules !== null) {
+        if (targets.agentRules === null) {
+            deps.log.info('agent-rules report not posted', { scan: run.scanId, reason: 'no agent-rules ingest key is configured (inflect.agentRulesApiKeyEnv)' });
+        } else {
+            attempted = true;
+            try {
+                agentRules = await postSignedAgentRulesReport(deps, targets.agentRules, run.agentRules);
+                agentRulesOk = agentRules.ok;
+            } catch (err) {
+                agentRulesOk = false;
+                deps.log.error('agent-rules post failed', { scan: run.scanId, error: errorName(err) });
+            }
+        }
+    }
     if (thrown !== null) throw thrown.err;
     if (!attempted) throw new Error('the inflect output had no report to post');
-    return { ok: (agents === null || agents.ok) && integrationsOk, agents, integrations };
+    return { ok: (agents === null || agents.ok) && integrationsOk && agentRulesOk, agents, integrations, agentRules };
 }
 
 /**

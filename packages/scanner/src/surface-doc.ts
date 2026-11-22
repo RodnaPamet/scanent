@@ -314,20 +314,21 @@ export function renderNetworkAndPermissionsMarkdown(): string {
     }
     lines.push('');
 
-    // ── The two posts ──
-    const SEND_SAYS: Readonly<Record<'agents' | 'integrations', string>> = {
+    // ── The three posts ──
+    const SEND_SAYS: Readonly<Record<'agents' | 'integrations' | 'agent-rules', string>> = {
         agents: `${SCANNER_TITLE.agents}'s report, with the key \`inflect.apiKeyEnv\` names (\`admin:harness_ingest\`). Only when an agent source is configured`,
         integrations: `${SCANNER_TITLE.integrations}'s report, with the key \`inflect.integrationsApiKeyEnv\` names (\`admin:integrations_ingest\`). Only when an integrations source is configured and that variable is named; without it the report is not posted, and the scanner says so in its log`,
+        'agent-rules': `${SCANNER_TITLE.agents}'s agent-rules report (\`scanent-agent-rules/1\`), with the key \`inflect.agentRulesApiKeyEnv\` names (\`admin:agent_rules_ingest\`). Only when an \`mcp\` source is configured and that variable is named; without it the report is not posted, and the scanner says so in its log`,
     };
     lines.push(
-        '## The two posts',
+        '## The three posts',
         '',
         'Only when the `inflect` output is in effect, each signed report is posted to the tenant you configure,',
         'to the ingest for it, with a key of its own:',
         '',
         ...s.sends.map((send) => `- \`${send.method} ${send.path}\`: ${SEND_SAYS[send.report]}.`),
         '',
-        `The body is the signed report, byte for byte what the file output writes as \`${SCANNER_REPORT_FILE.agents}\` or \`${SCANNER_REPORT_FILE.integrations}\`.`,
+        `The body is the signed report, byte for byte what the file output writes as \`${SCANNER_REPORT_FILE.agents}\`, \`${SCANNER_REPORT_FILE.integrations}\` or \`report.agent-rules.signed.json\`.`,
         'No other path is posted to.',
         'With no `inflect` output (`--out`, `--dry-run`, or a configuration that names no tenant) nothing is posted anywhere.',
         '',

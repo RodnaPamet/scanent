@@ -70,6 +70,7 @@ import {
     SourceReadError,
     type HarnessSource,
     type McpRuleFinding,
+    type McpRuleServer,
     type McpServerRead,
     type Observation,
     type ObservedTool,
@@ -139,6 +140,18 @@ export function ruleSubjectRef(url: string, name: string): string {
     return `mcp:sha256-${sha256(`${url}\u0000${name}`).slice(0, 32)}:tool`;
 }
 
+/**
+ * A server as a rule finding names it: `mcp:<configured URL>`, or a digest of
+ * the URL when it is long, holds white space or has the shape of a secret. The
+ * same URL gives the same ref in every scan, which is what lets a consumer close
+ * a finding against the server that raised it.
+ */
+export function ruleServerRef(url: string): string {
+    const full = `mcp:${url}`;
+    if (full.length <= MAX_RULE_REF_CHARS && !/\s/.test(full) && !looksLikeSecret(full)) return full;
+    return `mcp:sha256-${sha256(url).slice(0, 32)}`;
+}
+
 /** The two fields of a definition the rules read, each as text. */
 function ruleFieldsOf(definition: Record<string, unknown>): { field: 'description' | 'inputSchema'; text: string }[] {
     const out: { field: 'description' | 'inputSchema'; text: string }[] = [];
@@ -158,6 +171,7 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
             const observations: Observation[] = [];
             const fullyRead: McpServerRead[] = [];
             const ruleFindings: McpRuleFinding[] = [];
+            const ruleServers: McpRuleServer[] = [];
             let ruleSubjects = 0;
             let ruleTextTruncated = 0;
             let rows = 0;
@@ -170,6 +184,10 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                 // Tools read so far from this server, by name: what WAS read is real.
                 const byName = new Map<string, ObservedTool>();
                 const hashes: { name: string; manifestHash: string }[] = [];
+                const serverRef = ruleServerRef(server.url);
+                let serverTools = 0;
+                let serverTruncated = false;
+                let serverStop: unknown = null;
                 let complete = false;
                 try {
                     if (server.token === 'MISSING') throw new SourceReadError('AUTH_FAILED', 'the read token is not set');
@@ -207,11 +225,15 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                                 hashes.push({ name, manifestHash });
                                 // The rules run here, where the text is, and only what fired leaves.
                                 ruleSubjects += 1;
+                                serverTools += 1;
                                 const subjectRef = ruleSubjectRef(server.url, name);
                                 for (const { field, text } of ruleFieldsOf(definition)) {
-                                    if (text.length > MAX_RULE_TEXT_CHARS) ruleTextTruncated += 1;
+                                    if (text.length > MAX_RULE_TEXT_CHARS) {
+                                        ruleTextTruncated += 1;
+                                        serverTruncated = true;
+                                    }
                                     for (const m of runAgentRules(text.slice(0, MAX_RULE_TEXT_CHARS), 'mcp-tool')) {
-                                        ruleFindings.push({ code: m.code, ruleId: m.ruleId, severity: m.severity, subjectRef, locator: `mcp-tool:${subjectRef}#${field}` });
+                                        ruleFindings.push({ code: m.code, ruleId: m.ruleId, severity: m.severity, subjectRef, serverRef, locator: `mcp-tool:${subjectRef}#${field}` });
                                     }
                                 }
                                 byName.set(name, {
@@ -227,8 +249,18 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                     }
                     complete = true;
                 } catch (err) {
+                    serverStop = err;
                     if (stoppedBy === null) stoppedBy = err;
                 }
+                // The server as the rules read it: complete only when every tool was read and no field was cut.
+                const stopped = serverStop === null ? null : sourceResult('mcp', 0, [], serverStop);
+                ruleServers.push(
+                    stopped !== null
+                        ? { ref: serverRef, status: 'INCOMPLETE', reason: stopped.reason ?? 'UNREACHABLE', tools: serverTools }
+                        : serverTruncated
+                          ? { ref: serverRef, status: 'INCOMPLETE', reason: 'BYTE_CAP', tools: serverTools }
+                          : { ref: serverRef, status: 'COMPLETE', tools: serverTools },
+                );
 
                 // Pinned only against the whole listing, read live: a partial one
                 // cannot match a pin, and is never resolved into a placeholder.
@@ -257,6 +289,7 @@ export function mcpSource(opts: McpSourceOptions): HarnessSource {
                 ...sourceResult('mcp', rows, observations, stoppedBy),
                 mcpServers: fullyRead,
                 ruleFindings,
+                ruleServers,
                 ruleSubjects,
                 ...(ruleTextTruncated > 0 ? { ruleTextTruncated } : {}),
             };

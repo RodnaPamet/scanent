@@ -795,6 +795,12 @@ export interface Fakes {
     readonly integrationsIngestAuth: string[];
     /** The integrations report's ingest's answer; defaults to a 201 shaped as the tenant's. */
     integrationsIngest: (raw: string) => Answer;
+    /** Raw bodies the agent-rules report's ingest received, in order. */
+    readonly agentRulesPosted: string[];
+    /** Authorization headers the agent-rules report's ingest received. */
+    readonly agentRulesIngestAuth: string[];
+    /** The agent-rules report's ingest's answer; defaults to a 201 shaped as the tenant's. */
+    agentRulesIngest: (raw: string) => Answer;
 }
 
 /**
@@ -829,6 +835,8 @@ export function createSourceFakes(opts: {
     const ingestAuth: string[] = [];
     const integrationsPosted: string[] = [];
     const integrationsIngestAuth: string[] = [];
+    const agentRulesPosted: string[] = [];
+    const agentRulesIngestAuth: string[] = [];
 
     const fakes: Fakes = {
         log,
@@ -840,6 +848,10 @@ export function createSourceFakes(opts: {
         integrationsIngestAuth,
         integrationsIngest: () =>
             json({ scanId: 'tpa_scan_row', scanRef: 'scan-ref', complete: true, applicationCount: 3, findingsOpened: 2, findingsReopened: 0, findingsResolved: 0 }, 201),
+        agentRulesPosted,
+        agentRulesIngestAuth,
+        agentRulesIngest: () =>
+            json({ scanId: 'ars_scan_row', scanRef: 'scan-ref', complete: true, findingCount: 1, findingsOpened: 1, findingsReopened: 0, findingsResolved: 0 }, 201),
         fetchImpl: async (url: string, init: RequestInit) => {
             const u = new URL(url);
             const method = (init.method ?? 'GET').toUpperCase();
@@ -991,6 +1003,11 @@ export function createSourceFakes(opts: {
                 integrationsPosted.push(String(body));
                 integrationsIngestAuth.push(headers.get('authorization') ?? '');
                 return fakes.integrationsIngest(String(body));
+            }
+            if (method === 'POST' && /^\/api\/t\/[^/]+\/admin\/agents\/agent-rule-scans$/.test(u.pathname)) {
+                agentRulesPosted.push(String(body));
+                agentRulesIngestAuth.push(headers.get('authorization') ?? '');
+                return fakes.agentRulesIngest(String(body));
             }
             return json({ error: 'not found' }, 404);
         }

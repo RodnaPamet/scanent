@@ -226,7 +226,7 @@ describe('4. the whole run stays on the declared surface', () => {
     it('reports an ingest refusal by its code', async () => {
         const { deps, fakes } = setup();
         fakes.ingest = () => ({ status: 409, body: { error: { message: 'harness_report_refused: REPLAY: scan x is already ingested' } } });
-        expect(await scanAndPost(deps)).toEqual({ ok: false, agents: { ok: false, status: 409, refusal: 'REPLAY', complete: null, agentCount: null }, integrations: null });
+        expect(await scanAndPost(deps)).toEqual({ ok: false, agents: { ok: false, status: 409, refusal: 'REPLAY', complete: null, agentCount: null }, integrations: null, agentRules: null });
     });
 });
 

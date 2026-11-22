@@ -14,7 +14,7 @@ Scanner `inflect-agent-harness-scanner`, version 0.16.0. One image holds 2 scann
 A run reads only the sources its configuration names, and writes one signed report for each scanner
 whose sources it names, all with the same key and the same scan id.
 
-Manifest hash: `sha256:db1c8b3819cfe1480dbf144b64c18af1e194999084760810adef392e858dc1ae`
+Manifest hash: `sha256:cbcb38328a4ec88fbe3a82a538d0777486fa99aee994884bab1789a8cc58efde`
 
 The hash is SHA-256 over the canonical JSON of the declared surface, every scanner's requests in one.
 A scanner that can reach anything this page does not list has a different hash, and every report it
@@ -360,15 +360,16 @@ written or logged.
 | `gcp-iam` | `POST https://oauth2.googleapis.com/token` | JWT bearer (RFC 7523): an assertion signed with the service-account key |
 | `entra-integrations` | `POST https://login.microsoftonline.com/{directoryId}/oauth2/v2.0/token` | client credentials |
 
-## The two posts
+## The three posts
 
 Only when the `inflect` output is in effect, each signed report is posted to the tenant you configure,
 to the ingest for it, with a key of its own:
 
 - `POST /api/t/{tenantSlug}/admin/agents/harness-scans`: The agent scanner's report, with the key `inflect.apiKeyEnv` names (`admin:harness_ingest`). Only when an agent source is configured.
 - `POST /api/t/{tenantSlug}/admin/agents/integration-scans`: The integrations scanner's report, with the key `inflect.integrationsApiKeyEnv` names (`admin:integrations_ingest`). Only when an integrations source is configured and that variable is named; without it the report is not posted, and the scanner says so in its log.
+- `POST /api/t/{tenantSlug}/admin/agents/agent-rule-scans`: The agent scanner's agent-rules report (`scanent-agent-rules/1`), with the key `inflect.agentRulesApiKeyEnv` names (`admin:agent_rules_ingest`). Only when an `mcp` source is configured and that variable is named; without it the report is not posted, and the scanner says so in its log.
 
-The body is the signed report, byte for byte what the file output writes as `report.signed.json` or `report.integrations.signed.json`.
+The body is the signed report, byte for byte what the file output writes as `report.signed.json`, `report.integrations.signed.json` or `report.agent-rules.signed.json`.
 No other path is posted to.
 With no `inflect` output (`--out`, `--dry-run`, or a configuration that names no tenant) nothing is posted anywhere.
 

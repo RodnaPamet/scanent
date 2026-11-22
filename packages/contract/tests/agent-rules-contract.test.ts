@@ -20,11 +20,12 @@ import {
     withinCeiling,
     type AgentRuleFinding,
 } from '../src/agent-rules-contract';
-import { planAgentRulesScan } from '../src/agent-rules-findings';
+import { agentRuleFindingRef, agentRulesOutcome, planAgentRulesScan, serversReadInFull } from '../src/agent-rules-findings';
 
 const keys = generateKeyPairSync('ed25519');
 const PUBLIC = keys.publicKey.export({ format: 'der', type: 'spki' }).subarray(12).toString('hex');
 const HASH = `sha256:${'a'.repeat(64)}`;
+const SERVER = 'mcp:https://srv.example/api/mcp';
 
 function signed(b: unknown): string {
     const wire = JSON.parse(JSON.stringify(b)) as Record<string, unknown>;
@@ -42,15 +43,20 @@ function finding(over: Partial<AgentRuleFinding> = {}): AgentRuleFinding {
         severity: 'HIGH',
         subjectKind: 'mcp-tool',
         subjectRef: 'mcp:https://srv.example/api/mcp:tool:format_doc',
+        serverRef: SERVER,
         locator: 'mcp-tool:mcp:https://srv.example/api/mcp:tool:format_doc#description',
         ...over,
     };
 }
+/** A body whose one server matches its first population, unless `servers` is given. */
 function body(over: Record<string, unknown> = {}) {
+    const population: { kind?: string; status: string; reason?: string; subjects: number }[] = (over.population as never) ?? [{ kind: 'mcp-tool', status: 'COMPLETE', subjects: 12 }];
+    const p = population[0];
     return {
         contract: 'scanent-agent-rules/1',
         scan: { id: 'scan-1', asOf: '2026-11-22T10:00:00.000Z', scanner: { agentId: 'agt', version: '0.16.0', manifestHash: HASH } },
-        population: [{ kind: 'mcp-tool', status: 'COMPLETE', subjects: 12 }],
+        population,
+        servers: [p.status === 'COMPLETE' ? { ref: SERVER, status: 'COMPLETE', tools: p.subjects } : { ref: SERVER, status: 'INCOMPLETE', reason: p.reason ?? 'TIME_BOX', tools: p.subjects }],
         findings: [finding()],
         counts: { subjects: 12, flagged: 1 },
         ...over,
@@ -130,6 +136,43 @@ describe('the strict schema', () => {
     });
 });
 
+describe('the servers', () => {
+    const other = 'mcp:https://other.example/mcp';
+
+    it('accepts two servers that add up to the population, a finding on each', () => {
+        const servers = [
+            { ref: SERVER, status: 'COMPLETE', tools: 5 },
+            { ref: other, status: 'COMPLETE', tools: 7 },
+        ];
+        expect(issuesOf(body({ servers, findings: [finding(), finding({ serverRef: other, subjectRef: 'mcp:https://other.example/mcp:tool:x', locator: 'mcp-tool:mcp:https://other.example/mcp:tool:x#description' })], counts: { subjects: 12, flagged: 2 } }))).toEqual([]);
+    });
+
+    it('refuses a finding on a server it does not list, a server listed twice, and tools that do not add up', () => {
+        expect(issuesOf(body({ findings: [finding({ serverRef: other })] }))).toEqual(['findings.0.serverRef: a finding names a server the report lists']);
+        expect(issuesOf(body({ servers: [{ ref: SERVER, status: 'COMPLETE', tools: 6 }, { ref: SERVER, status: 'COMPLETE', tools: 6 }] }))).toContain('servers: each server appears once');
+        expect(issuesOf(body({ servers: [{ ref: SERVER, status: 'COMPLETE', tools: 11 }] }))).toEqual(['servers: the servers’ tools add up to the mcp-tool population']);
+    });
+
+    it('holds the population to its servers: complete only if every server is, incomplete only if one is not', () => {
+        const partial = [
+            { ref: SERVER, status: 'COMPLETE', tools: 6 },
+            { ref: other, status: 'INCOMPLETE', reason: 'AUTH_FAILED', tools: 6 },
+        ];
+        expect(issuesOf(body({ servers: partial }))).toEqual(['population: a COMPLETE mcp-tool population has every server read in full']);
+        expect(issuesOf(body({ servers: partial, population: [{ kind: 'mcp-tool', status: 'INCOMPLETE', reason: 'AUTH_FAILED', subjects: 12 }] }))).toEqual([]);
+        expect(issuesOf(body({ servers: [{ ref: SERVER, status: 'COMPLETE', tools: 12 }], population: [{ kind: 'mcp-tool', status: 'INCOMPLETE', reason: 'TIME_BOX', subjects: 12 }] }))).toEqual([
+            'servers: an INCOMPLETE mcp-tool population has a server read in part',
+        ]);
+    });
+
+    it('makes an incomplete server name its reason, and refuses a server ref that is not one or looks like a secret', () => {
+        expect(issuesOf(body({ servers: [{ ref: SERVER, status: 'INCOMPLETE', tools: 12 }], population: [{ kind: 'mcp-tool', status: 'INCOMPLETE', reason: 'TIME_BOX', subjects: 12 }] }))).not.toEqual([]);
+        expect(issuesOf(body({ servers: [{ ref: 'https://srv.example/api/mcp', status: 'COMPLETE', tools: 12 }], findings: [], counts: { subjects: 12, flagged: 0 } }))).not.toEqual([]);
+        const token = ['gh', 'p_', 'A1'.repeat(12)].join('');
+        expect(issuesOf(body({ servers: [{ ref: `mcp:https://srv.example/${token}`, status: 'COMPLETE', tools: 12 }], findings: [], counts: { subjects: 12, flagged: 0 } }))).not.toEqual([]);
+    });
+});
+
 describe('verifyAndParseAgentRulesReport', () => {
     it('accepts a signed report and says whether it is complete', () => {
         expect(verifyAndParseAgentRulesReport(signed(body()), [PUBLIC])).toMatchObject({ ok: true, complete: true });
@@ -169,6 +212,31 @@ describe('planAgentRulesScan', () => {
         expect(plan.outcome).toBe('FINDINGS');
         expect(plan.findings.map((x) => x.ruleId)).toEqual(['cisco-mcp:reverse-shell', 'cisco-mcp:also-does', 'cisco-mcp:upload-external']);
         expect(plan.findings[0].sourceRef).toBe('agent-rule:cisco-mcp:reverse-shell@mcp-tool:a#description');
+        expect(plan.findings[0].serverRef).toBe(SERVER);
+        expect(agentRuleFindingRef({ ruleId: 'cisco-mcp:reverse-shell', locator: 'mcp-tool:a#description' })).toBe(plan.findings[0].sourceRef);
+    });
+
+    it('names only the servers read in full as ones a finding may be closed against', () => {
+        const other = 'mcp:https://other.example/mcp';
+        const b = body({
+            servers: [
+                { ref: SERVER, status: 'COMPLETE', tools: 6 },
+                { ref: other, status: 'INCOMPLETE', reason: 'AUTH_FAILED', tools: 6 },
+            ],
+            population: [{ kind: 'mcp-tool', status: 'INCOMPLETE', reason: 'AUTH_FAILED', subjects: 12 }],
+        });
+        expect([...serversReadInFull(b as never)]).toEqual([SERVER]);
+        expect(planAgentRulesScan(b as never).servers.map((s) => s.ref)).toEqual([SERVER, other]);
+    });
+
+    it('never calls a complete read of nothing clean', () => {
+        const empty = body({ population: [{ kind: 'mcp-tool', status: 'COMPLETE', subjects: 0 }], servers: [], findings: [], counts: { subjects: 0, flagged: 0 } });
+        expect(issuesOf(empty)).toEqual([]);
+        expect(planAgentRulesScan(empty as never).outcome).toBe('NOTHING_READ');
+        expect(agentRulesOutcome(0, [{ status: 'COMPLETE', subjects: 0 }])).toBe('NOTHING_READ');
+        expect(agentRulesOutcome(0, [])).toBe('NOT_CONCLUDED');
+        expect(agentRulesOutcome(0, [{ status: 'INCOMPLETE', subjects: 0 }])).toBe('NOT_CONCLUDED');
+        expect(agentRulesOutcome(1, [{ status: 'INCOMPLETE', subjects: 0 }])).toBe('FINDINGS');
     });
 
     it('calls "no finding" clean only on a complete read, and says what was not concluded otherwise', () => {

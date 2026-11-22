@@ -570,7 +570,7 @@ describe('7. grouped by scanner', () => {
 
     it('an agents-only estate: one group, every source scope and the ingest in it, and the local checks outside it', async () => {
         const report = await doctor(createDoctorWorld());
-        expect(report.scanners).toEqual([{ scanner: 'agents', scopes: [...NETWORK_SCOPES.slice(0, 6), 'mcp:crm', 'mcp:tickets', 'code', 'inflect-register', 'inflect'] }]);
+        expect(report.scanners).toEqual([{ scanner: 'agents', scopes: [...NETWORK_SCOPES.slice(0, 6), 'mcp:crm', 'mcp:tickets', 'code', 'inflect-register', 'inflect', 'inflect-agent-rules'] }]);
         const text = renderDoctorText(report);
         expect(text.indexOf('local\n')).toBeLessThan(text.indexOf('== The agent scanner =='));
         expect(text).not.toContain('== The integrations scanner ==');

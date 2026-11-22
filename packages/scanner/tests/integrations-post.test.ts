@@ -131,11 +131,12 @@ describe('1. the route and the answer', () => {
     });
 });
 
-describe('2. the surface: two posts, and no third', () => {
-    it('declares exactly the two ingest routes, one per report', () => {
+describe('2. the surface: three posts, and no fourth', () => {
+    it('declares exactly the three ingest routes, one per report', () => {
         expect(SCANNER_SURFACE.sends).toEqual([
             { method: 'POST', path: '/api/t/{tenantSlug}/admin/agents/harness-scans', report: 'agents' },
             { method: 'POST', path: '/api/t/{tenantSlug}/admin/agents/integration-scans', report: 'integrations' },
+            { method: 'POST', path: '/api/t/{tenantSlug}/admin/agents/agent-rule-scans', report: 'agent-rules' },
         ]);
         expect(INGEST_PATH_TEMPLATE).toBe('/api/t/{tenantSlug}/admin/agents/harness-scans');
         expect(INTEGRATIONS_INGEST_PATH_TEMPLATE).toBe('/api/t/{tenantSlug}/admin/agents/integration-scans');
@@ -200,7 +201,7 @@ describe('3. the configuration', () => {
 
     it('integrations sources alone post with the integrations key and need no agent key; without it, posting is refused', () => {
         expect(integrationsOnly().inflect?.apiKeyEnv).toBeUndefined();
-        expect(inflectPosts(integrationsOnly())).toEqual({ agents: false, integrations: true, integrationsWithoutKey: false });
+        expect(inflectPosts(integrationsOnly())).toEqual({ agents: false, integrations: true, integrationsWithoutKey: false, agentRules: false, agentRulesWithoutKey: false });
         expect(() => integrationsOnly({})).toThrow('outputs: custom');
         // With the file output, a tenant that only egress needs names no key at all.
         expect(parseScannerConfig({ ...estateConfig([INTEGRATIONS_ESTATE_SOURCE], { outputs: [{ kind: 'file', dir: '/out' }] }), inflect: { baseUrl: INGEST, tenantSlug: 'acme' } }).inflect).toEqual({ baseUrl: INGEST, tenantSlug: 'acme' });
@@ -234,11 +235,12 @@ describe('3. the configuration', () => {
         expect(inflectTargets(MIXED(), envWithKey())).toEqual({
             agents: { inflect: MIXED().inflect, apiKey: INGEST_KEY_VALUE },
             integrations: { inflect: MIXED().inflect, apiKey: INTEGRATIONS_KEY_VALUE },
+            agentRules: null,
         });
         expect(inflectTargets(MIXED_NO_KEY(), estateEnv()).integrations).toBeNull();
         expect(inflectTargets(integrationsOnly(), { [KEY_ENV]: INTEGRATIONS_KEY_VALUE }).agents).toBeNull();
         // An agents-only configuration that names the key does not need it set: there is no integrations report.
-        expect(inflectTargets(configWith([ESTATE_SOURCES['entra-sp']], { integrationsApiKeyEnv: KEY_ENV }), estateEnv())).toEqual({ agents: { inflect: expect.any(Object), apiKey: INGEST_KEY_VALUE }, integrations: null });
+        expect(inflectTargets(configWith([ESTATE_SOURCES['entra-sp']], { integrationsApiKeyEnv: KEY_ENV }), estateEnv())).toEqual({ agents: { inflect: expect.any(Object), apiKey: INGEST_KEY_VALUE }, integrations: null, agentRules: null });
         expect(integrationsIngestTarget(MIXED_NO_KEY(), estateEnv())).toBeNull();
         const { inflect: _inflect, ...noTenant } = estateConfig([INTEGRATIONS_ESTATE_SOURCE], { outputs: [{ kind: 'stdout' }] });
         expect(() => integrationsIngestTarget(parseScannerConfig(noTenant), estateEnv())).toThrow('the configuration has no inflect block to post to');
@@ -388,6 +390,7 @@ describe('5. the scheduled path', () => {
             ok: true,
             agents: { ok: true, status: 201, refusal: null, complete: true, agentCount: 1 },
             integrations: { ok: true, status: 201, refusal: null, complete: true, applicationCount: 3 },
+            agentRules: null,
         });
         expect(world.fakes.integrationsIngestAuth).toEqual([`Bearer ${INTEGRATIONS_KEY_VALUE}`]);
     });

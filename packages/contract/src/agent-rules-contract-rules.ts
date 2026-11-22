@@ -115,3 +115,13 @@ export const AGENT_RULE_LOCATOR = /^(mcp-tool):\S{1,480}#[a-zA-Z][a-zA-Z0-9]{0,4
 
 export const MAX_AGENT_RULE_FINDINGS = 5000;
 export const MAX_SUBJECTS_READ = 100000;
+/** The most MCP servers one report names. */
+export const MAX_SERVERS_READ = 1000;
+
+/**
+ * An MCP server, as a report names it: `mcp:<configured URL>`, or
+ * `mcp:sha256-<32 hex>` when the URL is long, holds white space or has the
+ * shape of a secret. The same in every report a scanner signs, so a consumer
+ * can tell that two scans read the same server.
+ */
+export const AGENT_RULE_SERVER_REF = /^mcp:\S{1,400}$/;

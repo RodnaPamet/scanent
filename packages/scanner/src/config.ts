@@ -442,6 +442,14 @@ export const ScannerConfigSchema = z
                  * not posted, and the log says so.
                  */
                 integrationsApiKeyEnv: envName.optional(),
+                /**
+                 * An API key with the `admin:agent_rules_ingest` scope and no
+                 * other: it posts the agent-rules report, which a run with an
+                 * `mcp` source makes. A key of its own, never another report's.
+                 * Absent, the agent-rules report is not posted, and the log says
+                 * so.
+                 */
+                agentRulesApiKeyEnv: envName.optional(),
             })
             .strict()
             .optional(),
@@ -534,6 +542,14 @@ export const ScannerConfigSchema = z
                 code: 'custom',
                 message: 'the integrations report is posted with a key of its own: integrationsApiKeyEnv must name another variable than apiKeyEnv',
                 path: ['inflect', 'integrationsApiKeyEnv'],
+            });
+        }
+        const agentRulesKey = c.inflect?.agentRulesApiKeyEnv;
+        if (agentRulesKey !== undefined && (agentRulesKey === c.inflect?.apiKeyEnv || agentRulesKey === integrationsKey)) {
+            ctx.addIssue({
+                code: 'custom',
+                message: 'the agent-rules report is posted with a key of its own: agentRulesApiKeyEnv must name another variable than apiKeyEnv and integrationsApiKeyEnv',
+                path: ['inflect', 'agentRulesApiKeyEnv'],
             });
         }
         if (c.inflect === undefined && (outputKinds.includes('inflect') || kinds.includes('inflect-register') || c.egress !== undefined)) {
@@ -648,15 +664,30 @@ export function mcpTokenEnvNames(source: Extract<SourceConfig, { kind: 'mcp' }>)
 /**
  * Which reports the `inflect` output posts, when it is in effect: the agent
  * report when an agent source is configured; the integrations report when an
- * integrations source is and `integrationsApiKeyEnv` names its key.
- * `integrationsWithoutKey` is an integrations report the output does not post,
- * because no key for it is named.
+ * integrations source is and `integrationsApiKeyEnv` names its key; the
+ * agent-rules report when an `mcp` source is and `agentRulesApiKeyEnv` names
+ * its key. `…WithoutKey` is a report the run makes and the output does not
+ * post, because no key for it is named.
  */
-export function inflectPosts(config: ScannerConfig): { readonly agents: boolean; readonly integrations: boolean; readonly integrationsWithoutKey: boolean } {
+export function inflectPosts(config: ScannerConfig): {
+    readonly agents: boolean;
+    readonly integrations: boolean;
+    readonly integrationsWithoutKey: boolean;
+    readonly agentRules: boolean;
+    readonly agentRulesWithoutKey: boolean;
+} {
     const agents = config.sources.some((s) => isAgentSourceKind(s.kind));
     const integrationsSources = config.sources.some((s) => isIntegrationsSourceKind(s.kind));
     const keyed = config.inflect?.integrationsApiKeyEnv !== undefined;
-    return { agents, integrations: integrationsSources && keyed, integrationsWithoutKey: integrationsSources && !keyed };
+    const mcp = config.sources.some((s) => s.kind === 'mcp');
+    const rulesKeyed = config.inflect?.agentRulesApiKeyEnv !== undefined;
+    return {
+        agents,
+        integrations: integrationsSources && keyed,
+        integrationsWithoutKey: integrationsSources && !keyed,
+        agentRules: mcp && rulesKeyed,
+        agentRulesWithoutKey: mcp && !rulesKeyed,
+    };
 }
 
 /**
@@ -676,6 +707,7 @@ export function credentialEnvNames(config: ScannerConfig): string[] {
         config.scanner.signingKeyEnv,
         ...(inflect?.apiKeyEnv === undefined ? [] : [inflect.apiKeyEnv]),
         ...(inflect?.integrationsApiKeyEnv === undefined ? [] : [inflect.integrationsApiKeyEnv]),
+        ...(inflect?.agentRulesApiKeyEnv === undefined ? [] : [inflect.agentRulesApiKeyEnv]),
         ...fromSources,
     ];
 }

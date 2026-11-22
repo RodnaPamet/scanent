@@ -21,6 +21,8 @@ export const DEFAULT_SIGNING_KEY_ENV = 'SCANNER_SIGNING_KEY';
 export const DEFAULT_INGEST_KEY_ENV = 'INFLECT_INGEST_KEY';
 /** The integrations report's ingest key: a second key, with `admin:integrations_ingest`. */
 export const DEFAULT_INTEGRATIONS_INGEST_KEY_ENV = 'INFLECT_INTEGRATIONS_KEY';
+/** The agent-rules report's ingest key: a third key, with `admin:agent_rules_ingest`. */
+export const DEFAULT_AGENT_RULES_INGEST_KEY_ENV = 'INFLECT_AGENT_RULES_KEY';
 /** The `entra-sp` source's secret variable: the integrations source names it too when it reads with the same application. */
 export const DEFAULT_ENTRA_SECRET_ENV = 'ENTRA_CLIENT_SECRET';
 
@@ -107,6 +109,9 @@ function credentialNamesOf(config: ScannerConfig): CredentialName[] {
     if (config.inflect?.integrationsApiKeyEnv !== undefined) {
         add(config.inflect.integrationsApiKeyEnv, false, 'Inflect: a second API key, with admin:integrations_ingest and no other scope. It posts the integrations report.');
     }
+    if (config.inflect?.agentRulesApiKeyEnv !== undefined) {
+        add(config.inflect.agentRulesApiKeyEnv, false, 'Inflect: a third API key, with admin:agent_rules_ingest and no other scope. It posts the agent-rules report.');
+    }
     for (const s of config.sources) {
         if (s.kind === 'code' || s.kind === 'inflect-register') continue;
         if (s.kind === 'mcp') {
@@ -168,6 +173,8 @@ export function planInit(answers: InitAnswers): InitPlan {
                       ...(agentSourceAnswered || inflect.readRegister === true ? { apiKeyEnv: inflect.apiKeyEnv ?? DEFAULT_INGEST_KEY_ENV } : {}),
                       // The integrations report's key only when it was asked for: posting that report is a choice.
                       ...(inflect.integrationsApiKeyEnv === undefined ? {} : { integrationsApiKeyEnv: inflect.integrationsApiKeyEnv }),
+                      // The agent-rules report's key only when it was asked for: posting that report is a choice too.
+                      ...(inflect.agentRulesApiKeyEnv === undefined ? {} : { agentRulesApiKeyEnv: inflect.agentRulesApiKeyEnv }),
                   },
               }),
         outputs: [

@@ -53,6 +53,7 @@ import {
 } from '@rodnapamet/scanent-contract/integrations-findings';
 import { PERMISSION_CLASSES } from '@rodnapamet/scanent-contract/integrations-scopes';
 import { AGENT_RULE_SEVERITIES, AGENT_RULES_FINDING_CODES, AGENT_RULES_SUBJECT_KINDS } from '@rodnapamet/scanent-contract/agent-rules-contract-rules';
+import { agentRulesOutcome } from '@rodnapamet/scanent-contract/agent-rules-findings';
 
 import {
     INTEGRATIONS_ONLY_RESULTS_SCHEMA,
@@ -303,7 +304,7 @@ const IntegrationFindingSchema = z
 export const LocalAgentRulesResultsSchema: z.ZodType<LocalAgentRulesResults> = z
     .object({
         report: z.object({ file: z.string().min(1).max(256), sha256: sha256Hex }).strict(),
-        outcome: z.enum(['FINDINGS', 'NO_FINDING_ON_A_COMPLETE_READ', 'NOT_CONCLUDED']),
+        outcome: z.enum(['FINDINGS', 'NO_FINDING_ON_A_COMPLETE_READ', 'NOTHING_READ', 'NOT_CONCLUDED']),
         population: z.array(
             z
                 .object({
@@ -311,6 +312,16 @@ export const LocalAgentRulesResultsSchema: z.ZodType<LocalAgentRulesResults> = z
                     status: z.enum(['COMPLETE', 'INCOMPLETE']),
                     reason: id.nullable(),
                     subjects: count,
+                })
+                .strict(),
+        ),
+        servers: z.array(
+            z
+                .object({
+                    ref: z.string().min(1).max(512),
+                    status: z.enum(['COMPLETE', 'INCOMPLETE']),
+                    reason: id.nullable(),
+                    tools: count,
                 })
                 .strict(),
         ),
@@ -323,6 +334,7 @@ export const LocalAgentRulesResultsSchema: z.ZodType<LocalAgentRulesResults> = z
                     severity: z.enum(AGENT_RULE_SEVERITIES),
                     subjectKind: z.enum(AGENT_RULES_SUBJECT_KINDS),
                     subjectRef: id,
+                    serverRef: z.string().min(1).max(512),
                     locator: z.string().min(1).max(512),
                     sourceRef: z.string().min(1).max(1024),
                 })
@@ -335,8 +347,7 @@ export const LocalAgentRulesResultsSchema: z.ZodType<LocalAgentRulesResults> = z
     .strict()
     .superRefine((a, ctx) => {
         if (a.counts.findings !== a.findings.length) ctx.addIssue({ code: 'custom', message: 'counts.findings is the findings listed', path: ['counts', 'findings'] });
-        const complete = a.population.length > 0 && a.population.every((p) => p.status === 'COMPLETE');
-        const want = a.findings.length > 0 ? 'FINDINGS' : complete ? 'NO_FINDING_ON_A_COMPLETE_READ' : 'NOT_CONCLUDED';
+        const want = agentRulesOutcome(a.findings.length, a.population);
         if (a.outcome !== want) ctx.addIssue({ code: 'custom', message: 'the outcome follows the findings and the population', path: ['outcome'] });
     });
 

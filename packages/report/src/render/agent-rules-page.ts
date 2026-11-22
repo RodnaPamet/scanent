@@ -35,6 +35,9 @@ function outcomeLine(a: LocalAgentRulesResults): SafeHtml {
     if (a.outcome === 'NO_FINDING_ON_A_COMPLETE_READ') {
         return html`<p class="status ok"><strong>No rule fired.</strong> Every tool definition the MCP servers list was read in full.</p>`;
     }
+    if (a.outcome === 'NOTHING_READ') {
+        return html`<p class="status bad"><strong>Nothing was read:</strong> the MCP servers listed no tool definition. A read of nothing is not a clean result.</p>`;
+    }
     if (a.outcome === 'NOT_CONCLUDED') {
         return html`<p class="status bad"><strong>Not concluded:</strong> not every tool definition was read, and no rule fired on those that were. This is not a clean result.</p>`;
     }
@@ -55,6 +58,15 @@ ${outcomeLine(a)}
 <div class="stat"><dt>With a finding</dt><dd><span class="big">${a.counts.flagged}</span></dd></div>
 <div class="stat"><dt>Findings</dt><dd><span class="big">${a.counts.findings}</span></dd></div>
 </dl>
+${a.servers.length === 0
+        ? ''
+        : html`<div class="scroll"><table>
+<caption>${plural(a.servers.length, 'MCP server', 'MCP servers')}, as the rules read them</caption>
+<thead><tr><th scope="col">Server</th><th scope="col">Read</th><th scope="col">Tool definitions</th></tr></thead>
+<tbody>
+${a.servers.map((s) => html`<tr><th scope="row"><code class="id">${s.ref}</code></th><td>${s.status === 'COMPLETE' ? 'In full' : html`In part: ${fixed(REASON_TEXT, s.reason ?? '', 'the read did not complete')}`}</td><td>${s.tools}</td></tr>`)}
+</tbody>
+</table></div>`}
 ${a.notConcluded.length === 0
         ? ''
         : html`<h3>Not concluded</h3>

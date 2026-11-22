@@ -16,7 +16,11 @@
  *   • NO TEXT, EVER. The source never handed the text over: a finding here is
  *     a code, a rule, a subject and a locator.
  *   • PAST THE FINDINGS CAP, THE MOST SEVERE ARE KEPT, and the population says
- *     BYTE_CAP, rather than the report failing to sign.
+ *     BYTE_CAP, rather than the report failing to sign. Every server then says
+ *     BYTE_CAP too: a cut list cannot vouch that any server's findings are all
+ *     there, so none may be closed against.
+ *   • EACH SERVER IS LISTED with how the rules read it, so a consumer closes a
+ *     finding only against a server read in full.
  */
 import type { KeyObject } from 'crypto';
 
@@ -27,6 +31,7 @@ import {
     MAX_AGENT_RULE_FINDINGS,
     type AgentRuleFinding,
     type AgentRulesReportBody,
+    type AgentRulesServer,
 } from '@rodnapamet/scanent-contract/agent-rules-contract';
 
 import { ReportRefusedLocally, signCheckedBody, type ScanIdentity } from './report';
@@ -40,7 +45,7 @@ export function buildAgentRulesReportBody(identity: ScanIdentity, reads: readonl
     const mcp = reads.filter((r) => r.kind === 'mcp');
     const all: AgentRuleFinding[] = mcp
         .flatMap((r) => r.ruleFindings ?? [])
-        .map((f) => ({ code: f.code, ruleId: f.ruleId, severity: f.severity, subjectKind: 'mcp-tool' as const, subjectRef: f.subjectRef, locator: f.locator }));
+        .map((f) => ({ code: f.code, ruleId: f.ruleId, severity: f.severity, subjectKind: 'mcp-tool' as const, subjectRef: f.subjectRef, serverRef: f.serverRef, locator: f.locator }));
 
     // Most severe first, then a stable order, so the cap keeps the findings that matter.
     all.sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || (a.locator < b.locator ? -1 : a.locator > b.locator ? 1 : 0) || (a.ruleId < b.ruleId ? -1 : a.ruleId > b.ruleId ? 1 : 0));
@@ -51,6 +56,9 @@ export function buildAgentRulesReportBody(identity: ScanIdentity, reads: readonl
     const stopped = mcp.find((r) => r.status === 'INCOMPLETE');
     const truncated = mcp.some((r) => (r.ruleTextTruncated ?? 0) > 0);
     const reason: IncompleteReason | null = stopped !== undefined ? (stopped.reason ?? 'UNREACHABLE') : truncated || capped ? 'BYTE_CAP' : null;
+    const servers: AgentRulesServer[] = mcp
+        .flatMap((r) => r.ruleServers ?? [])
+        .map((s): AgentRulesServer => (capped ? { ref: s.ref, status: 'INCOMPLETE', reason: 'BYTE_CAP', tools: s.tools } : { ...s }));
 
     return {
         contract: AGENT_RULES_CONTRACT_V1,
@@ -60,6 +68,7 @@ export function buildAgentRulesReportBody(identity: ScanIdentity, reads: readonl
             scanner: { agentId: identity.scannerAgentId, version: SCANNER_VERSION, manifestHash: scannerManifestHash() },
         },
         population: [reason === null ? { kind: 'mcp-tool', status: 'COMPLETE', subjects } : { kind: 'mcp-tool', status: 'INCOMPLETE', reason, subjects }],
+        servers,
         findings,
         counts: { subjects, flagged: new Set(findings.map((f) => f.subjectRef)).size },
     };

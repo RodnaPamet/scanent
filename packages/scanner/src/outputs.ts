@@ -22,8 +22,9 @@
  * configuration refuses an `inflect` output that would post nothing.
  *
  * The agent-rules report, made by a run that configured an `mcp` source, goes
- * to the file and stdout outputs only: no Inflect ingest reads it yet, so it
- * is not posted.
+ * to the file and stdout outputs, and the `inflect` output posts it with its
+ * own key, `agentRulesApiKeyEnv`; without that key it is not posted, and the
+ * log says so once.
  */
 import type { ParsedInventory } from '@scanent/report/results/inventory';
 

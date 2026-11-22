@@ -660,8 +660,11 @@ posted, and the log says so once (`integrations report not posted`). `stdout`
 prints each report the run made, one per line, the agent report first. A run
 with an `mcp` source also signs the agent-rules report
 (`report.agent-rules.signed.json`, `scanent-agent-rules/1`): the `file` and
-`stdout` outputs carry it, and `inflect` does not post it, for no ingest reads
-it yet.
+`stdout` outputs carry it, and `inflect` posts it to
+`/api/t/<tenant>/admin/agents/agent-rule-scans` with the key
+`agentRulesApiKeyEnv` names, which holds `admin:agent_rules_ingest` and no other
+scope. With no `agentRulesApiKeyEnv` it is not posted, and the log says so once
+(`agent-rules report not posted`).
 
 ### `entra-integrations`
 
@@ -922,6 +925,12 @@ control plane.
   report, and is never the agent report's key: the tenant gives the two
   ingests different scopes, so a key minted for one does not post the other.
   Absent, the integrations report is not posted.
+- `INFLECT_AGENT_RULES_KEY`, optional, named by
+  `"agentRulesApiKeyEnv": "INFLECT_AGENT_RULES_KEY"` in the `inflect` block: a
+  third API key bound to the scanner agent, with the `admin:agent_rules_ingest`
+  scope and no other. It posts the agent-rules report, which a run with an `mcp`
+  source makes, and is never another report's key. Absent, that report is not
+  posted.
 - `ENTRA_CLIENT_SECRET`: an Entra application holding the Microsoft Graph
   application permission `Application.Read.All`, which lists registrations and
   service principals and cannot change them. Add
@@ -1006,7 +1015,7 @@ Where one run's results go. Optional:
 |---|---|---|
 | `file` | `dir`, an absolute path; `retainRuns`, optional, 1 to 10,000 | Writes the run's files under `dir` (see "Local results") |
 | `stdout` | none | Writes the signed report and a newline to stdout |
-| `inflect` | none | Posts each signed report to the `inflect` block's tenant: the agent report with `apiKeyEnv`, the integrations report with `integrationsApiKeyEnv` when it is named |
+| `inflect` | none | Posts each signed report to the `inflect` block's tenant: the agent report with `apiKeyEnv`, the integrations report with `integrationsApiKeyEnv` and the agent-rules report with `agentRulesApiKeyEnv`, each when it is named |
 
 One to three entries, each kind at most once. Without `outputs`, a
 configuration that has an `inflect` block posts to it, which is what every
@@ -1018,7 +1027,10 @@ refused without it, when the `inflect` output is configured, when the
 key is needed, before the scan starts, only when the `inflect` output is in
 effect for the run and posts its report: the agent key (`apiKeyEnv`) when an
 agent source is configured, the integrations key (`integrationsApiKeyEnv`)
-when it is named and an integrations source is configured. A named key whose
+when it is named and an integrations source is configured, the agent-rules key
+(`agentRulesApiKeyEnv`) when it is named and an `mcp` source is configured. The
+three keys are three variables: the configuration refuses one variable named
+for two reports. A named key whose
 variable (or its `_FILE`) is not set stops the run before any source is read.
 An `inflect` output that would post nothing is refused by the configuration.
 
@@ -1264,13 +1276,15 @@ and without its variable name, which gets the documented default
 optional ones included, and are held to the configuration's own rules. To
 choose a variable's name, give the configuration's field (`"apiTokenEnv":
 "ACME_OKTA_TOKEN"`). `inflect` is `null`, or `{ "baseUrl", "tenantSlug",
-"agentId", "readRegister" }`, with optional `apiKeyEnv` and
-`integrationsApiKeyEnv`; without it the configuration names no tenant and
+"agentId", "readRegister" }`, with optional `apiKeyEnv`,
+`integrationsApiKeyEnv` and `agentRulesApiKeyEnv`; without it the configuration names no tenant and
 writes files only. The agent key (`apiKeyEnv`, default `INFLECT_INGEST_KEY`)
 is written only when an agent source is answered or the register is read. The
 integrations report is posted only when `integrationsApiKeyEnv` is given (at
 the prompts, the default is `INFLECT_INTEGRATIONS_KEY`), and answers of
-integrations sources alone with a tenant need it.
+integrations sources alone with a tenant need it. The agent-rules report is
+posted only when `agentRulesApiKeyEnv` is given; the prompts offer it when an
+`mcp` source is answered, with the default `INFLECT_AGENT_RULES_KEY`.
 
 What it will not do:
 
@@ -1376,7 +1390,10 @@ whether it may post as `not observable`: the first `scan` shows it. The agent
 report's key is checked under the scope `inflect`, the integrations report's
 under `inflect-integrations`. A configuration with integrations sources, the
 `inflect` output and no `integrationsApiKeyEnv` gets one `not applicable`
-check there, saying the integrations report will not be posted.
+check there, saying the integrations report will not be posted. The
+agent-rules report's key is checked under `inflect-agent-rules`, in the agent
+scanner's group, and a configuration with an `mcp` source and no
+`agentRulesApiKeyEnv` gets one `not applicable` check there.
 
 The table is grouped by scanner: the local checks first, then
 `== The agent scanner ==` with its sources' scopes and `inflect` (the agent

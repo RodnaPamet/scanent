@@ -727,12 +727,23 @@ leaves. No CRITICAL, and no more than a code allows: each finding code has a
 ceiling (`SEVERITY_CEILING`; the executable-payload and prompt-injection codes
 may reach HIGH, the rest MEDIUM). No clean bill it did not earn: a population
 read in part concludes nothing, and the planner (`planAgentRulesScan`) says "no
-finding" only of a complete read.
+finding" only of a complete read that held at least one subject; a complete read
+of nothing is `NOTHING_READ`, never clean.
+
+**What it says so a finding can be closed.** Each MCP server the run read is
+listed in `servers[]`, read in full or in part, with how many of its tools the
+rules ran over, and each finding names its server (`serverRef`). A consumer
+closes a finding only when the same scanner read that finding's server in full
+(`serversReadInFull`) and did not raise it again: a server left out of a scan,
+or read in part, says nothing about the findings raised on it. Past the
+findings cap, every server is `INCOMPLETE` with `BYTE_CAP`, because a cut list
+cannot vouch for any server.
 
 | Member | Meaning |
 |---|---|
 | `population[]` | Each subject kind read (version 1: `mcp-tool`), `COMPLETE` or `INCOMPLETE` with its reason, and how many subjects the rules ran over |
-| `findings[]` | Each finding: the code, the rule id, the severity, the subject kind and ref, and the locator |
+| `servers[]` | Each MCP server read: its ref (`mcp:<URL>`, or `mcp:sha256-<32 hex>` for a URL that is long, holds white space or looks like a secret), `COMPLETE` or `INCOMPLETE` with its reason, and how many of its tools were read. Their tools add up to the `mcp-tool` population, which is `COMPLETE` only when every server is |
+| `findings[]` | Each finding: the code, the rule id, the severity, the subject kind and ref, the server it was read from, and the locator |
 | `counts` | Subjects read, and subjects that fired at least one rule |
 
 ## Transport
@@ -756,23 +767,36 @@ Content-Type: application/json
 <the signed integrations report, byte for byte>
 ```
 
+```
+POST <base URL>/api/t/<tenant>/admin/agents/agent-rule-scans
+Authorization: Bearer <agent-rules ingest key>
+Content-Type: application/json
+
+<the signed agent-rules report, byte for byte>
+```
+
 - `201` accepts it. For the agent report the body may carry `complete`
   (boolean, as the consumer derived it) and `agentCount`; for the
-  integrations report, `complete` and `applicationCount`.
+  integrations report, `complete` and `applicationCount`; for the agent-rules
+  report, `complete` and `findingCount`.
 - Any other status refuses it. A refusal that names its code in the body is
   reported by that code: `harness_report_refused: <CODE>` for the agent
   report, `third_party_app_report_refused: <CODE>` for the integrations
-  report (`REPLAY`, with a 409, for a scan already taken). The body is not
+  report, `agent_rules_report_refused: <CODE>` for the agent-rules report
+  (`REPLAY`, with a 409, for a scan already taken). The body is not
   otherwise read.
 - scanent sends each report once and follows no redirect.
-- The keys are two. Inflect's agent ingest takes a key with the scope
+- The keys are three. Inflect's agent ingest takes a key with the scope
   `admin:harness_ingest`; its integrations ingest takes a key with
-  `admin:integrations_ingest`. One signing key signs both reports. The
+  `admin:integrations_ingest`; its agent-rules ingest takes a key with
+  `admin:agent_rules_ingest`. One signing key signs every report. The
   integrations report is posted only when the configuration names its key
-  (`inflect.integrationsApiKeyEnv`), from 0.16.0.
+  (`inflect.integrationsApiKeyEnv`), from 0.16.0; the agent-rules report only
+  when it names its key (`inflect.agentRulesApiKeyEnv`), from 0.17.0.
 
 A report written to a file (`report.signed.json`,
-`report.integrations.signed.json`) is the same bytes.
+`report.integrations.signed.json`, `report.agent-rules.signed.json`) is the
+same bytes.
 
 ## What a consumer must not assume
 

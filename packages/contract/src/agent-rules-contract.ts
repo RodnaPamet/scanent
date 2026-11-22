@@ -17,6 +17,14 @@
  *     (`SEVERITY_CEILING`); a finding above it is refused, never lowered here.
  *   • A CLEAN BILL IT DID NOT EARN. A population read in part concludes
  *     nothing; `COMPLETE` means every subject of that kind was read.
+ *
+ * ‾‾‾ WHAT IT SAYS SO A FINDING CAN BE CLOSED ‾‾‾
+ *
+ *   • EACH SERVER IT READ, AND HOW. `servers[]` names every MCP server the run
+ *     read, COMPLETE or INCOMPLETE, and how many of its tools the rules ran
+ *     over; each finding names its server. A consumer closes a finding only
+ *     when the same scanner read that server in full and did not raise it again:
+ *     a server left out of a scan, or read in part, says nothing about it.
  */
 import { z } from 'zod';
 
@@ -29,6 +37,8 @@ import {
     AGENT_RULES_FINDING_CODES,
     AGENT_RULES_SUBJECT_KINDS,
     MAX_AGENT_RULE_FINDINGS,
+    AGENT_RULE_SERVER_REF,
+    MAX_SERVERS_READ,
     MAX_SUBJECTS_READ,
     RULE_ID,
     SEVERITY_CEILING,
@@ -67,6 +77,26 @@ const PopulationSchema = z
         if (p.status === 'COMPLETE' && p.reason !== undefined) ctx.addIssue({ code: 'custom', message: 'a COMPLETE population carries no reason', path: ['reason'] });
     });
 
+const serverRef = z
+    .string()
+    .regex(AGENT_RULE_SERVER_REF)
+    .refine((v) => !looksLikeSecret(v), 'a server ref must not have the shape of a secret');
+
+/** One MCP server the run read, and whether every tool it lists was read in full. */
+const ServerSchema = z
+    .object({
+        ref: serverRef,
+        status: z.enum(['COMPLETE', 'INCOMPLETE']),
+        reason: reason.optional(),
+        /** How many of its tools the rules were run over. */
+        tools: count.max(MAX_SUBJECTS_READ),
+    })
+    .strict()
+    .superRefine((s, ctx) => {
+        if (s.status === 'INCOMPLETE' && s.reason === undefined) ctx.addIssue({ code: 'custom', message: 'an INCOMPLETE server names its reason', path: ['reason'] });
+        if (s.status === 'COMPLETE' && s.reason !== undefined) ctx.addIssue({ code: 'custom', message: 'a COMPLETE server carries no reason', path: ['reason'] });
+    });
+
 const FindingSchema = z
     .object({
         code: z.enum(AGENT_RULES_FINDING_CODES),
@@ -80,6 +110,8 @@ const FindingSchema = z
             .min(1)
             .max(480)
             .refine((v) => !looksLikeSecret(v), 'a subject ref must not have the shape of a secret'),
+        /** The server the subject was read from: one of `servers[]`. */
+        serverRef,
         /** `<kind>:<ref>#<field>`, never the text. */
         locator: z
             .string()
@@ -102,6 +134,7 @@ export const AgentRulesReportBodyV1Schema = z
         contract: z.literal(AGENT_RULES_CONTRACT_V1),
         scan: ScanSchema,
         population: z.array(PopulationSchema).min(1).max(AGENT_RULES_SUBJECT_KINDS.length),
+        servers: z.array(ServerSchema).max(MAX_SERVERS_READ),
         findings: z.array(FindingSchema).max(MAX_AGENT_RULE_FINDINGS),
         counts: z
             .object({
@@ -125,12 +158,35 @@ export const AgentRulesReportBodyV1Schema = z
         r.findings.forEach((f, i) => {
             if (!read.has(f.subjectKind)) ctx.addIssue({ code: 'custom', message: 'a finding names a subject kind the report read', path: ['findings', i, 'subjectKind'] });
         });
+        // The servers account for the MCP tool population, server by server.
+        const refs = r.servers.map((s) => s.ref);
+        if (new Set(refs).size !== refs.length) ctx.addIssue({ code: 'custom', message: 'each server appears once', path: ['servers'] });
+        const listed = new Set(refs);
+        r.findings.forEach((f, i) => {
+            if (!listed.has(f.serverRef)) ctx.addIssue({ code: 'custom', message: 'a finding names a server the report lists', path: ['findings', i, 'serverRef'] });
+        });
+        const tools = r.population.find((p) => p.kind === 'mcp-tool');
+        if (tools !== undefined) {
+            if (r.servers.reduce((n, s) => n + s.tools, 0) !== tools.subjects) {
+                ctx.addIssue({ code: 'custom', message: 'the servers’ tools add up to the mcp-tool population', path: ['servers'] });
+            }
+            const allComplete = r.servers.every((s) => s.status === 'COMPLETE');
+            if (tools.status === 'COMPLETE' && !allComplete) {
+                ctx.addIssue({ code: 'custom', message: 'a COMPLETE mcp-tool population has every server read in full', path: ['population'] });
+            }
+            if (tools.status === 'INCOMPLETE' && r.servers.length > 0 && allComplete) {
+                ctx.addIssue({ code: 'custom', message: 'an INCOMPLETE mcp-tool population has a server read in part', path: ['servers'] });
+            }
+        } else if (r.servers.length > 0) {
+            ctx.addIssue({ code: 'custom', message: 'servers are listed only beside an mcp-tool population', path: ['servers'] });
+        }
     });
 
 export type AgentRulesReportBodyV1 = z.infer<typeof AgentRulesReportBodyV1Schema>;
 export type AgentRulesReportBody = AgentRulesReportBodyV1;
 export type AgentRuleFinding = AgentRulesReportBody['findings'][number];
 export type AgentRulesPopulation = AgentRulesReportBody['population'][number];
+export type AgentRulesServer = AgentRulesReportBody['servers'][number];
 
 /** Whether every population the report read was read in full. */
 export function isAgentRulesScanComplete(body: AgentRulesReportBody): boolean {

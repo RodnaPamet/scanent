@@ -16,7 +16,7 @@ import { SCANNER_OF_SOURCE, SCANNER_TITLE, SCANNERS, type ScannerSourceKind } fr
 import { ENTRA_INTEGRATIONS_REQUIRED_ROLES, ENTRA_SIGN_IN_ROLE } from '../sources/entra-integrations';
 
 /** What an access table is for: a source, or the integrations report's ingest key, which is no source's. */
-export type AccessKind = ScannerSourceKind | 'inflect-integrations';
+export type AccessKind = ScannerSourceKind | 'inflect-integrations' | 'inflect-agent-rules';
 
 export interface AccessEntry {
     readonly kind: AccessKind;
@@ -280,6 +280,25 @@ export const INFLECT_INTEGRATIONS_ACCESS: AccessEntry = Object.freeze({
     hostsNote: "the tenant's host",
 });
 
+/**
+ * The agent-rules report's ingest key: not a source, the `inflect` output's
+ * third key. It posts that report and reads nothing. Listed after the agent
+ * scanner's sources, whose `mcp` source makes the report.
+ */
+export const INFLECT_AGENT_RULES_ACCESS: AccessEntry = Object.freeze({
+    kind: 'inflect-agent-rules',
+    title: 'An Inflect tenant (posting the agent-rules report)',
+    grant: 'A third API key bound to the scanner agent, with the admin:agent_rules_ingest scope and no other',
+    where: [
+        "The Inflect tenant's API keys page: a key of its own, not a key that posts another report.",
+        'Name its variable in the configuration as inflect.agentRulesApiKeyEnv. Without it the agent-rules report is not posted, and the log says so.',
+    ],
+    reads: ['Nothing: it posts the signed agent-rules report, and is used for no other request'],
+    notNeeded: ['admin:harness_ingest, admin:integrations_ingest, mcp:read or any other scope', "Another report's key: a key minted for one report does not post another"],
+    credential: 'INFLECT_AGENT_RULES_KEY',
+    hostsNote: "the tenant's host",
+});
+
 /** The variable an operator sets for an entry's credential: its name, or the `_FILE` form for a credential that is a file. */
 export function credentialVariable(entry: AccessEntry): string {
     return entry.asFile === true ? `${entry.credential}_FILE` : entry.credential;
@@ -297,6 +316,10 @@ export function accessTablesFor(config: ScannerConfig): AccessTable[] {
         ...ACCESS_GUIDE[kind],
         hosts: hostNames(entries.filter((e) => e.source === kind || (kind === 'inflect-register' && e.source === 'inflect' && e.scanner === 'agents'))),
     }));
+    // The agent-rules report's own key, after the agent scanner's sources, when this configuration posts that report.
+    if (inflectPosts(config).agentRules) {
+        tables.push({ ...INFLECT_AGENT_RULES_ACCESS, credential: config.inflect?.agentRulesApiKeyEnv ?? INFLECT_AGENT_RULES_ACCESS.credential, hosts: hostNames(entries.filter((e) => e.source === 'inflect' && e.scanner === 'agents')) });
+    }
     // The integrations report's own key, last, when this configuration posts that report.
     if (inflectPosts(config).integrations) {
         tables.push({ ...INFLECT_INTEGRATIONS_ACCESS, credential: config.inflect?.integrationsApiKeyEnv ?? INFLECT_INTEGRATIONS_ACCESS.credential, hosts: hostNames(entries.filter((e) => e.source === 'inflect' && e.scanner === 'integrations')) });
@@ -351,12 +374,18 @@ export function renderAccessMarkdown(): string {
         lines.push(`## ${SCANNER_TITLE[scanner]}`, '');
         for (const k of GUIDE_ORDER.filter((kind) => SCANNER_OF_SOURCE[kind] === scanner)) pushEntry(ACCESS_GUIDE[k]);
         // The integrations report's ingest key is no source's: it follows that scanner's sources.
+        if (scanner === 'agents') pushEntry(INFLECT_AGENT_RULES_ACCESS);
         if (scanner === 'integrations') pushEntry(INFLECT_INTEGRATIONS_ACCESS);
     }
     return `${lines.join('\n')}`;
 
     function pushEntry(e: AccessEntry): void {
-        const what = e.kind === 'inflect-integrations' ? 'Not a source: the `inflect` output\'s second key.' : `Source kind: \`${e.kind}\`.`;
+        const what =
+            e.kind === 'inflect-integrations'
+                ? 'Not a source: the `inflect` output\'s second key.'
+                : e.kind === 'inflect-agent-rules'
+                  ? 'Not a source: the `inflect` output\'s third key, for the report the `mcp` source makes.'
+                  : `Source kind: \`${e.kind}\`.`;
         lines.push(`### ${e.title}`, '', `${what} Credential: \`${e.credential}\`${e.asFile === true ? ` (${FILE_NOTE(e)})` : ''}. Hosts: ${e.hostsNote}.`, '', `**Grant.** ${e.grant}.`, '');
         lines.push('**Where it is created.**', '', ...e.where.map((w, i) => `${i + 1}. ${w}`), '');
         lines.push('**Lets the scanner read.**', '', ...e.reads.map((r) => `- ${r}`), '');

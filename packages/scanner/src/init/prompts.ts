@@ -20,7 +20,7 @@
 import { ScannerConfigSchema, SourceConfigSchema } from '../config';
 import { ANSWERABLE_KINDS, INIT_ANSWERS_SCHEMA, type AnswerableKind, type InitAnswers, type SourceAnswer } from './answers';
 import { ACCESS_GUIDE, credentialVariable } from './access-guide';
-import { DEFAULT_ENTRA_SECRET_ENV, DEFAULT_EVERY_HOURS, DEFAULT_INGEST_KEY_ENV, DEFAULT_INTEGRATIONS_INGEST_KEY_ENV, DEFAULT_OUTPUT_DIR, mcpTokenEnvName } from './plan';
+import { DEFAULT_AGENT_RULES_INGEST_KEY_ENV, DEFAULT_ENTRA_SECRET_ENV, DEFAULT_EVERY_HOURS, DEFAULT_INGEST_KEY_ENV, DEFAULT_INTEGRATIONS_INGEST_KEY_ENV, DEFAULT_OUTPUT_DIR, mcpTokenEnvName } from './plan';
 import { looksLikeBareToken, looksLikeCredential } from './secret-shapes';
 
 export interface PromptIo {
@@ -279,7 +279,32 @@ export async function collectAnswers(io: PromptIo): Promise<InitAnswers> {
                 )) || DEFAULT_INTEGRATIONS_INGEST_KEY_ENV;
             io.say(`The API key is not asked for here: it goes in ${integrationsApiKeyEnv}.`);
         }
-        inflect = { baseUrl, tenantSlug, agentId, readRegister, ...(integrationsApiKeyEnv === undefined ? {} : { integrationsApiKeyEnv }) };
+        // The agent-rules report, which an `mcp` source makes, needs a key of its own too, with admin:agent_rules_ingest.
+        let agentRulesApiKeyEnv: string | undefined;
+        if (sources.some((s) => s.kind === 'mcp') && (await yes('Also post the agent-rules report? It needs a key of its own, with admin:agent_rules_ingest'))) {
+            agentRulesApiKeyEnv =
+                (await ask(
+                    `The variable that will hold the agent-rules report's API key: a variable NAME, never the key [${DEFAULT_AGENT_RULES_INGEST_KEY_ENV}]:`,
+                    (v) =>
+                        v === ''
+                            ? null
+                            : !inflectShape.agentRulesApiKeyEnv.safeParse(v).success
+                                ? 'An environment variable name: capital letters, digits and underscores, starting with a letter.'
+                                : v === DEFAULT_INGEST_KEY_ENV || v === integrationsApiKeyEnv
+                                    ? 'A variable of its own: a key minted for one report does not post another.'
+                                    : null,
+                    true,
+                )) || DEFAULT_AGENT_RULES_INGEST_KEY_ENV;
+            io.say(`The API key is not asked for here: it goes in ${agentRulesApiKeyEnv}.`);
+        }
+        inflect = {
+            baseUrl,
+            tenantSlug,
+            agentId,
+            readRegister,
+            ...(integrationsApiKeyEnv === undefined ? {} : { integrationsApiKeyEnv }),
+            ...(agentRulesApiKeyEnv === undefined ? {} : { agentRulesApiKeyEnv }),
+        };
     }
 
     return {

@@ -231,6 +231,26 @@ Source kind: `inflect-register`. Credential: `INFLECT_INGEST_KEY`. Hosts: the te
 
 - Any other scope
 
+### An Inflect tenant (posting the agent-rules report)
+
+Not a source: the `inflect` output's third key, for the report the `mcp` source makes. Credential: `INFLECT_AGENT_RULES_KEY`. Hosts: the tenant's host.
+
+**Grant.** A third API key bound to the scanner agent, with the admin:agent_rules_ingest scope and no other.
+
+**Where it is created.**
+
+1. The Inflect tenant's API keys page: a key of its own, not a key that posts another report.
+2. Name its variable in the configuration as inflect.agentRulesApiKeyEnv. Without it the agent-rules report is not posted, and the log says so.
+
+**Lets the scanner read.**
+
+- Nothing: it posts the signed agent-rules report, and is used for no other request
+
+**Not needed, and must not be granted.**
+
+- admin:harness_ingest, admin:integrations_ingest, mcp:read or any other scope
+- Another report's key: a key minted for one report does not post another
+
 ## The integrations scanner
 
 ### Microsoft Entra ID (applications and what they were granted)

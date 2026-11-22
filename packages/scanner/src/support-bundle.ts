@@ -254,6 +254,7 @@ function credentialsOf(config: ScannerConfig, env: Env, ids: Identifiers): Suppo
     const inflect = config.inflect;
     if (inflect?.apiKeyEnv !== undefined) named.push({ variable: inflect.apiKeyEnv, shown: inflect.apiKeyEnv, usedBy: 'tenant' });
     if (inflect?.integrationsApiKeyEnv !== undefined) named.push({ variable: inflect.integrationsApiKeyEnv, shown: inflect.integrationsApiKeyEnv, usedBy: 'tenant-integrations' });
+    if (inflect?.agentRulesApiKeyEnv !== undefined) named.push({ variable: inflect.agentRulesApiKeyEnv, shown: inflect.agentRulesApiKeyEnv, usedBy: 'tenant-agent-rules' });
     for (const s of config.sources) {
         if (s.kind === 'code' || s.kind === 'inflect-register') continue;
         if (s.kind !== 'mcp') {

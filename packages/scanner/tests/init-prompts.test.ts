@@ -81,6 +81,9 @@ describe('the prompts give the answers a file would', () => {
             'acme',
             'agt_scanner_acme',
             'y',
+            // The agent-rules report: posted, with the default variable.
+            'y',
+            '',
         ]);
         const answers = await collectAnswers(s.io);
         expect(answers).toEqual({
@@ -90,9 +93,11 @@ describe('the prompts give the answers a file would', () => {
             outputDir: '/var/lib/scanent',
             inventoryPath: '/etc/scanent/inventory.csv',
             sources: CASES.map(([, , source]) => source),
-            inflect: { baseUrl: 'https://tenant.example.com', tenantSlug: 'acme', agentId: 'agt_scanner_acme', readRegister: true },
+            inflect: { baseUrl: 'https://tenant.example.com', tenantSlug: 'acme', agentId: 'agt_scanner_acme', readRegister: true, agentRulesApiKeyEnv: 'INFLECT_AGENT_RULES_KEY' },
         });
+        expect(s.said).toContain('The API key is not asked for here: it goes in INFLECT_AGENT_RULES_KEY.');
         const plan = planInit(answers);
+        expect(plan.config.inflect?.agentRulesApiKeyEnv).toBe('INFLECT_AGENT_RULES_KEY');
         expect(plan.config.sources.map((x) => x.kind)).toEqual([...KINDS, 'inflect-register']);
         expect(plan.config.outputs?.map((o) => o.kind)).toEqual(['file', 'inflect']);
     });
@@ -136,7 +141,7 @@ describe('the prompts give the answers a file would', () => {
 
 describe('no question asks for a secret', () => {
     it('no prompt names a credential as the thing to type, and each source says where its credential goes', async () => {
-        const s = script(['acme-prod', ...CASES.flatMap(([, fields]) => ['y', ...fields]), '', '', '', 'y', 'https://tenant.example.com', 'acme', 'agt', 'n']);
+        const s = script(['acme-prod', ...CASES.flatMap(([, fields]) => ['y', ...fields]), '', '', '', 'y', 'https://tenant.example.com', 'acme', 'agt', 'n', 'n']);
         await collectAnswers(s.io);
         for (const q of s.asked) expect(q).not.toMatch(/secret|password|token:|api key|private key|credential/i);
         // The one question that mentions a token asks whether one is needed, never for it.

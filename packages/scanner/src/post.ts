@@ -2,12 +2,13 @@
  * Posting a signed report to the tenant's ingest — the scanner's only write,
  * and it is to Inflect, never to the estate.
  *
- * Two reports, two routes, one function. The agent report goes to
+ * Three reports, three routes, one function. The agent report goes to
  * `INGEST_PATH_TEMPLATE`, the integrations report to
- * `INTEGRATIONS_INGEST_PATH_TEMPLATE`, each with its own API key: the tenant
- * gives the two ingests different scopes (`admin:harness_ingest`,
- * `admin:integrations_ingest`), so a key minted for one does not post the
- * other.
+ * `INTEGRATIONS_INGEST_PATH_TEMPLATE` and the agent-rules report to
+ * `AGENT_RULES_INGEST_PATH_TEMPLATE`, each with its own API key: the tenant
+ * gives the three ingests different scopes (`admin:harness_ingest`,
+ * `admin:integrations_ingest`, `admin:agent_rules_ingest`), so a key minted
+ * for one does not post another.
  *
  * The body is the serialised report, UNCHANGED: the signature covers the
  * canonical form of what is sent, so re-serialising here could only break it.
@@ -15,20 +16,22 @@
  * request carries the API key.
  *
  * What comes back is reduced to what an operator needs: the status, and on a
- * refusal its CODE (`harness_report_refused: <CODE>`, or
- * `third_party_app_report_refused: <CODE>` for the integrations report), never
- * the body.
+ * refusal its CODE (`harness_report_refused: <CODE>`,
+ * `third_party_app_report_refused: <CODE>` for the integrations report, or
+ * `agent_rules_report_refused: <CODE>` for the agent-rules report), never the
+ * body.
  */
 import type { FetchLike } from './http';
-import { INGEST_PATH_TEMPLATE, INTEGRATIONS_INGEST_PATH_TEMPLATE } from './scanner-surface';
+import { AGENT_RULES_INGEST_PATH_TEMPLATE, INGEST_PATH_TEMPLATE, INTEGRATIONS_INGEST_PATH_TEMPLATE } from './scanner-surface';
 
 /** Which report a post carries. */
-export type IngestReport = 'agents' | 'integrations';
+export type IngestReport = 'agents' | 'integrations' | 'agent-rules';
 
 /** Per report: its route, the prefix the tenant's refusals carry, and the count a 201 states. */
-const INGESTS: Readonly<Record<IngestReport, { readonly path: string; readonly refusal: RegExp; readonly count: 'agentCount' | 'applicationCount' }>> = {
+const INGESTS: Readonly<Record<IngestReport, { readonly path: string; readonly refusal: RegExp; readonly count: 'agentCount' | 'applicationCount' | 'findingCount' }>> = {
     agents: { path: INGEST_PATH_TEMPLATE, refusal: /harness_report_refused: ([A-Z_]+)/, count: 'agentCount' },
     integrations: { path: INTEGRATIONS_INGEST_PATH_TEMPLATE, refusal: /third_party_app_report_refused: ([A-Z_]+)/, count: 'applicationCount' },
+    'agent-rules': { path: AGENT_RULES_INGEST_PATH_TEMPLATE, refusal: /agent_rules_report_refused: ([A-Z_]+)/, count: 'findingCount' },
 };
 
 export interface PostResult {
@@ -50,6 +53,17 @@ export interface IntegrationsPostResult {
     /** From a 201: whether the ingest derived the scan as complete, and how many applications it holds. */
     readonly complete: boolean | null;
     readonly applicationCount: number | null;
+}
+
+/** The agent-rules report's answer: the agent report's, with the findings counted in place of agents. */
+export interface AgentRulesPostResult {
+    readonly ok: boolean;
+    readonly status: number;
+    /** The refusal code the ingest named, when it refused (`REPLAY` on a 409). */
+    readonly refusal: string | null;
+    /** From a 201: whether the ingest derived the scan as complete, and how many findings it raised. */
+    readonly complete: boolean | null;
+    readonly findingCount: number | null;
 }
 
 /** The ingest URL of one report on the base's origin. The agent report's when `report` is not given. */
@@ -114,4 +128,10 @@ export async function postReport(opts: PostOptions): Promise<PostResult> {
 export async function postIntegrationsReport(opts: PostOptions): Promise<IntegrationsPostResult> {
     const { count, ...result } = await post(opts, 'integrations');
     return { ...result, applicationCount: count };
+}
+
+/** Post the agent-rules report to `AGENT_RULES_INGEST_PATH_TEMPLATE`, with a key holding `admin:agent_rules_ingest`. */
+export async function postAgentRulesReport(opts: PostOptions): Promise<AgentRulesPostResult> {
+    const { count, ...result } = await post(opts, 'agent-rules');
+    return { ...result, findingCount: count };
 }

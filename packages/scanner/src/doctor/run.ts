@@ -141,6 +141,9 @@ const isSet = (v: string | undefined): boolean => typeof v === 'string' && v.tri
 /** The scope of the integrations report's ingest key: the `inflect` output's second key. */
 const INFLECT_INTEGRATIONS_SCOPE = 'inflect-integrations';
 
+/** The scope of the agent-rules report's ingest key: the `inflect` output's third key, the agent scanner's. */
+const INFLECT_AGENT_RULES_SCOPE = 'inflect-agent-rules';
+
 /** Builds one scope's checks; each constructor names the status, so no check has a default one. */
 function scoped(scope: string) {
     return {
@@ -386,6 +389,7 @@ function scannersOf(targets: readonly Target[], checks: readonly Check[]): Docto
     // scanner's, the integrations report's the integrations scanner's.
     scannerOfScope.set('inflect', 'agents');
     scannerOfScope.set(INFLECT_INTEGRATIONS_SCOPE, 'integrations');
+    scannerOfScope.set(INFLECT_AGENT_RULES_SCOPE, 'agents');
     return SCANNERS.map((scanner) => ({
         scanner,
         scopes: [...new Set(checks.map((c) => c.scope))].filter((scope) => scannerOfScope.get(scope) === scanner),
@@ -526,6 +530,14 @@ export async function runDoctor(deps: DoctorDeps): Promise<DoctorReport> {
         } else if (posts.integrationsWithoutKey) {
             sourceChecks.push(
                 scoped(INFLECT_INTEGRATIONS_SCOPE).skip('credential.present', 'NOT_APPLICABLE', 'no inflect.integrationsApiKeyEnv is configured: the integrations report will not be posted'),
+            );
+        }
+        // The agent-rules report's own key, under a scope of its own: the agent scanner makes that report.
+        if (posts.agentRules && config.inflect.agentRulesApiKeyEnv !== undefined) {
+            sourceChecks.push(...keyChecks(INFLECT_AGENT_RULES_SCOPE, config.inflect.agentRulesApiKeyEnv));
+        } else if (posts.agentRulesWithoutKey) {
+            sourceChecks.push(
+                scoped(INFLECT_AGENT_RULES_SCOPE).skip('credential.present', 'NOT_APPLICABLE', 'no inflect.agentRulesApiKeyEnv is configured: the agent-rules report will not be posted'),
             );
         }
     }
