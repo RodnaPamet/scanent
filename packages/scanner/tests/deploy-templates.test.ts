@@ -2275,11 +2275,11 @@ describe('deploy/smoke.sh', () => {
         // Allowed, then refused, and in between the direct route is tried and must not exist.
         const order = [
             'export EGRESS_ALLOW="$MCP_HOST"',
-            '[ "$allowed" = "COMPLETE - smoke_close_ticket,smoke_lookup_ticket" ]',
+            '[ "$allowed" = "COMPLETE - smoke_close_ticket,smoke_lookup_ticket | rules COMPLETE - 2 0" ]',
             '[ "$asked" = "message initialize;message notifications/initialized;message tools/list;" ]',
             '[ "$direct" = "NO_ROUTE name=unresolved" ]',
             'export EGRESS_ALLOW=other.smoke.example',
-            '[ "$refused" = "INCOMPLETE UNREACHABLE -" ]',
+            '[ "$refused" = "INCOMPLETE UNREACHABLE - | rules INCOMPLETE UNREACHABLE 0 0" ]',
             '\\"msg\\":\\"egress refused\\",\\"reason\\":\\"HOST_NOT_ALLOWED\\",\\"host\\":\\"$MCP_HOST\\"',
         ];
         const at = order.map((needle) => smoke.indexOf(needle));

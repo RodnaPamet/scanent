@@ -452,19 +452,26 @@ overlay_scan() {
     compose run --rm -T scanent scan --dry-run --out /out --config /etc/scanent/config.json > "$1" 2> "$WORK/overlay-scan.log" \
         || { cat "$WORK/overlay-scan.log" >&2; compose logs egress-proxy >&2; fail "the scan through the overlay exited non-zero"; }
 }
-# The `mcp` source of a signed report on stdin: its status and reason, and the tools the agent holds from that server.
+# stdout holds one signed report per line: the agent report, then (a run with an `mcp` source) the agent-rules report.
+# Of the agent report: the `mcp` source's status and reason, and the tools the agent holds from that server. Of the
+# agent-rules report: its population's status, reason and subjects, and how many findings.
 MCP_OF_REPORT='
-const signed = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+const reports = require("node:fs").readFileSync(0, "utf8").split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l));
+const signed = reports.find((r) => String((r.body ?? r).contract).startsWith("inflect-agent-harness/"));
 const body = signed.body ?? signed;
 const source = body.population.sources.find((s) => s.kind === "mcp");
 const agent = body.agents.find((a) => a.discoveredId === "code:estate/support/agent.py#support_executor");
 const tools = agent === undefined ? [] : agent.tools.filter((t) => String(t.server).startsWith("https://mcp.smoke.example/")).map((t) => t.name).sort();
-console.log([source === undefined ? "ABSENT" : source.status, (source && source.reason) || "-", tools.join(",") || "-"].join(" "));
+const rules = reports.find((r) => (r.body ?? r).contract === "scanent-agent-rules/1");
+const rb = rules === undefined ? undefined : rules.body ?? rules;
+const rp = rb === undefined ? undefined : rb.population.find((p) => p.kind === "mcp-tool");
+const rulesPart = rp === undefined ? "rules ABSENT" : ["rules", rp.status, rp.reason || "-", rp.subjects, rb.findings.length].join(" ");
+console.log([source === undefined ? "ABSENT" : source.status, (source && source.reason) || "-", tools.join(",") || "-", "|", rulesPart].join(" "));
 '
 overlay_scan "$WORK/overlay-allowed.json"
 allowed="$(run -i --entrypoint node "$IMAGE" -e "$MCP_OF_REPORT" < "$WORK/overlay-allowed.json")" || fail "the report of the overlay scan could not be read"
-[ "$allowed" = "COMPLETE - smoke_close_ticket,smoke_lookup_ticket" ] \
-    || { cat "$WORK/overlay-scan.log" >&2; compose logs egress-proxy >&2; fail "through the proxy the mcp source read '$allowed', not COMPLETE with the server's two tools"; }
+[ "$allowed" = "COMPLETE - smoke_close_ticket,smoke_lookup_ticket | rules COMPLETE - 2 0" ] \
+    || { cat "$WORK/overlay-scan.log" >&2; compose logs egress-proxy >&2; fail "through the proxy the scan read '$allowed', not COMPLETE with the server's two tools and a complete agent-rules read of both, with no finding"; }
 proxy_log="$(compose logs --no-log-prefix egress-proxy 2> /dev/null)"
 printf '%s\n' "$proxy_log" | grep -q "\"msg\":\"egress allowed\",\"host\":\"$MCP_HOST\",\"port\":443" || fail "the proxy logged no allowed tunnel to $MCP_HOST"
 if printf '%s\n' "$proxy_log" | grep '"msg":"egress allowed"' | grep -vq "\"host\":\"$MCP_HOST\""; then
@@ -474,7 +481,7 @@ if printf '%s\n' "$proxy_log" | grep -q '"msg":"egress refused"'; then fail "the
 # What the server was asked: the three declared messages, and no other.
 asked="$(compose logs --no-log-prefix smoke-mcp 2> /dev/null | grep -v '^listening 443$' | sort -u | tr '\n' ';')"
 [ "$asked" = "message initialize;message notifications/initialized;message tools/list;" ] || fail "the MCP server was asked: $asked"
-echo "ok   through the proxy: the mcp source is COMPLETE with both tools, and the server saw only the three declared messages"
+echo "ok   through the proxy: the mcp source is COMPLETE with both tools, the agent-rules report read both, and the server saw only the three declared messages"
 
 # The scanner's container has no way to the server but the proxy.
 mcp_address="$("$RUNTIME" inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}} {{end}}' "$(compose ps -q smoke-mcp)" | tr ' ' '\n' | grep -m1 .)"
@@ -503,7 +510,7 @@ done
 compose logs --no-log-prefix egress-proxy 2> /dev/null | grep -q '"hosts":"other.smoke.example"' || fail "the proxy did not start with the new list"
 overlay_scan "$WORK/overlay-refused.json"
 refused="$(run -i --entrypoint node "$IMAGE" -e "$MCP_OF_REPORT" < "$WORK/overlay-refused.json")" || fail "the report of the refused scan could not be read"
-[ "$refused" = "INCOMPLETE UNREACHABLE -" ] || { cat "$WORK/overlay-scan.log" >&2; fail "with the host off the list the mcp source read '$refused', not INCOMPLETE UNREACHABLE with no tool"; }
+[ "$refused" = "INCOMPLETE UNREACHABLE - | rules INCOMPLETE UNREACHABLE 0 0" ] || { cat "$WORK/overlay-scan.log" >&2; fail "with the host off the list the scan read '$refused', not INCOMPLETE UNREACHABLE with no tool and an incomplete agent-rules read"; }
 proxy_log="$(compose logs --no-log-prefix egress-proxy 2> /dev/null)"
 printf '%s\n' "$proxy_log" | grep -q "\"msg\":\"egress refused\",\"reason\":\"HOST_NOT_ALLOWED\",\"host\":\"$MCP_HOST\"" || { printf '%s\n' "$proxy_log" >&2; fail "the proxy did not log the refusal of $MCP_HOST"; }
 if printf '%s\n' "$proxy_log" | grep -q '"msg":"egress allowed"'; then fail "the proxy allowed a tunnel with the host off its list"; fi
