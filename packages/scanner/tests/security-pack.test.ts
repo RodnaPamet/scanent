@@ -297,12 +297,12 @@ describe('docs/security-pack/assurance-status.md', () => {
         for (const topic of ['penetration test', 'real estate', '72-hour soak', '0.13.2 is the first release']) expect(theirs).toContain(topic);
     });
 
-    it('claims nothing the repository cannot show: no release directory of fixtures beyond the three it names', () => {
+    it('claims nothing the repository cannot show: no release directory of fixtures beyond the four it names', () => {
         const compat = fs
             .readdirSync(path.join(REPO, 'packages/scanner/tests/fixtures/compat'), { withFileTypes: true })
             .filter((e) => e.isDirectory())
             .map((e) => e.name);
-        expect(compat.sort()).toEqual(['0.12.0', '0.13.0', '0.15.0']);
+        expect(compat.sort()).toEqual(['0.12.0', '0.13.0', '0.15.0', '0.17.0']);
         // The first is named for a version that was never released: the page says which commit made it. The second is the first release's.
         expect(text).toContain('Files written by an earlier commit of the code');
         expect(text).toContain('the earlier unreleased version 0.12.0');
@@ -313,6 +313,8 @@ describe('docs/security-pack/assurance-status.md', () => {
         expect(text).toContain('holds what the code of the first release wrote (commit\n  `8388ff0`)');
         expect(read('packages/scanner/tests/fixtures/compat/README.md')).toContain('`0.15.0` was made from commit `dedb214`');
         expect(text).toContain('`0.15.0`, holds what the code tagged `v0.15.0` wrote (commit `dedb214`)');
+        expect(read('packages/scanner/tests/fixtures/compat/README.md')).toContain('`0.17.0` was made from the commit that raises the version to 0.17.0');
+        expect(text).toContain('A fourth, `0.17.0`, holds what the code of 0.17.0 wrote');
     });
 
     it('names the CI jobs as the workflow names them', () => {

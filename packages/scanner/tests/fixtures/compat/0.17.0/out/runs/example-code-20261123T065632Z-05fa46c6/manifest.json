@@ -1,0 +1,46 @@
+{
+  "files": [
+    {
+      "bytes": 1138,
+      "name": "report.signed.json",
+      "sha256": "3fa1eb8a142e29122c1c08545079320e55f5f4964b6324e7b0ca9d594cb846d2"
+    },
+    {
+      "bytes": 14255,
+      "name": "results.json",
+      "sha256": "3e1c2d90d590b68319cd4eb890dd125815f8b2c3206cc34057d4909628bc717a"
+    },
+    {
+      "bytes": 1641,
+      "name": "agents.csv",
+      "sha256": "cbadb9c8989cdeebcbb25c9901dab42552294f860e16d4ba547ea7e676c14826"
+    },
+    {
+      "bytes": 1556,
+      "name": "findings.csv",
+      "sha256": "505719d6c8795d53706d61a19f5cac84ffbb10517baa5b1beaf7592e24a24eb6"
+    },
+    {
+      "bytes": 104837,
+      "name": "summary.html",
+      "sha256": "5cadd67966040aa3617a3cb68fe9318a097750b25ee9fa2c8a34d1dc974167c9"
+    },
+    {
+      "bytes": 18725,
+      "name": "report.pdf",
+      "sha256": "cfedf44fbc6720494ba9563aa903c2e275bdc049d50fde1af0f84e07a355f236"
+    },
+    {
+      "bytes": 753,
+      "name": "report.agent-rules.signed.json",
+      "sha256": "aceca8cb6cfbe1c70fdcd199a1f075b4874bac3e04679d85086b32c4b9726e08"
+    },
+    {
+      "bytes": 92,
+      "name": "agent-rule-findings.csv",
+      "sha256": "15fca80a19b3a4a93594b5399dd84a20c815a69d71d094163f1733b3297ef22c"
+    }
+  ],
+  "manifest": "scanent-run/1",
+  "scanId": "example-code-20261123T065632Z-05fa46c6"
+}

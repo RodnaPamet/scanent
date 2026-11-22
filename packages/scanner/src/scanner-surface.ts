@@ -58,9 +58,14 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * is one for the image and names every scanner's requests, so an agents-only
  * run's report carries the new hash too; nothing else in it changed. 0.16.0:
  * the integrations report is posted to the tenant's own ingest for it, a
- * second declared POST beside the agent report's.
+ * second declared POST beside the agent report's. 0.17.0: the `mcp` source
+ * runs the agent-surface rules over each tool definition it reads and the run
+ * signs a third report, `scanent-agent-rules/1`, which the `inflect` output
+ * posts to its own ingest with its own key, a third declared POST; and the
+ * `code` source narrows an Agent SDK agent's tools to
+ * what `allowedTools` approves when `dontAsk` makes that the reachable set.
  */
-export const SCANNER_VERSION = '0.16.0';
+export const SCANNER_VERSION = '0.17.0';
 
 /** The ingest route, as `docs/contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';

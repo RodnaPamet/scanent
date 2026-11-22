@@ -371,7 +371,7 @@ describe('5. the declared surface', () => {
         // back, and 0.16.0's second post (the integrations report's ingest, each send naming its report),
         // and the surface is, to the byte, the one from before outputs existed: nothing else was
         // added to it, by outputs or by anything since.
-        expect(SCANNER_SURFACE.version).toBe('0.16.0');
+        expect(SCANNER_SURFACE.version).toBe('0.17.0');
         expect(SCANNER_SURFACE.scanners.map((s) => [s.id, s.contract])).toEqual([
             ['agents', 'inflect-agent-harness/4'],
             ['integrations', 'scanent-integrations/1'],

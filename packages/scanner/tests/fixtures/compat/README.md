@@ -36,5 +36,15 @@ does not, `scanners`, the checks grouped by scanner. Its `configs/` hold the
 integrations examples as well. `0.14.0` has no directory: none was made at
 its release.
 
+`0.17.0` was made from the commit that raises the version to 0.17.0. Its
+scanner code is the code of the release: the commit changes the version, the
+generated pages, this directory and the release notes. The offline example
+holds an agent skill, which the `code` source reads for the agent-surface rules,
+so its run has nine files: 0.15.0's seven, the signed agent-rules report
+(`report.agent-rules.signed.json`, `scanent-agent-rules/1`) and
+`agent-rule-findings.csv`. Its `results.json` carries the `agentRules` section. `0.16.0` has no directory: none was made at its
+release. There is no `0.16.1`: it was prepared and never released, and its fix
+ships in 0.17.0.
+
 A release adds a directory. None is removed while that version is supported
 (`docs/release-checklist.md`).

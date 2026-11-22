@@ -10,6 +10,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
+import { verifyAndParseAgentRulesReport } from '@rodnapamet/scanent-contract/agent-rules-contract';
 import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';
 import { HARNESS_CONTRACT_IDS } from '@rodnapamet/scanent-contract/harness-contract-rules';
 import { diffResults, TOOL_EVIDENCE_OLDER_RULE } from '@scanent/report/diff/diff';
@@ -77,13 +78,23 @@ describe.each(VERSIONS)('what %s wrote', (version) => {
         expect(manifest.scanId).toBe(latest.scanId);
         // The PDF was added to a run's files after 0.13.0: a version wrote it or did not, and every one wrote the other five.
         const names = manifest.files.map((f) => f.name).sort();
-        expect(names.filter((n) => n !== 'report.pdf')).toEqual(['agents.csv', 'findings.csv', 'report.signed.json', 'results.json', 'summary.html']);
+        // From 0.17.0 the example's agent skill makes the agent-rules report and its CSV too.
+        const AGENT_RULES_FILES = ['agent-rule-findings.csv', 'report.agent-rules.signed.json'];
+        expect(names.filter((n) => n !== 'report.pdf' && !AGENT_RULES_FILES.includes(n))).toEqual(['agents.csv', 'findings.csv', 'report.signed.json', 'results.json', 'summary.html']);
         if (atLeast(version, '0.15.0')) expect(names).toContain('report.pdf');
+        if (atLeast(version, '0.17.0')) expect(names).toEqual(expect.arrayContaining(AGENT_RULES_FILES));
         for (const file of manifest.files) {
             const bytes = fs.readFileSync(path.join(root, run, file.name));
             expect(`${file.name} ${bytes.byteLength}`).toBe(`${file.name} ${file.bytes}`);
             expect(`${file.name} ${createHash('sha256').update(bytes).digest('hex')}`).toBe(`${file.name} ${file.sha256}`);
         }
+    });
+
+    it('the agent-rules report, from the version that first wrote one, still verifies with its key and with no other', () => {
+        if (!atLeast(version, '0.17.0')) return;
+        const raw = read(`${run}/report.agent-rules.signed.json`);
+        expect(verifyAndParseAgentRulesReport(raw, [publicKey])).toMatchObject({ ok: true, complete: true });
+        expect(verifyAndParseAgentRulesReport(raw, [])).toEqual({ ok: false, reason: 'UNTRUSTED_SIGNER' });
     });
 
     it('the signed report still verifies with its key, under a contract this version reads, and with no other key', () => {
