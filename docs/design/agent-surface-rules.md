@@ -135,4 +135,4 @@ The second, active flavour the owner asked for on 2026-11-22 — one that probes
 a target and reports without damaging it — is a separate design. It breaks
 scanent's "reads and never acts" promise on purpose, needs an authorisation
 gate and a definition of "no damage", and is governed on its own page before
-any code.
+any code: [The active flavour](active-flavour.md).

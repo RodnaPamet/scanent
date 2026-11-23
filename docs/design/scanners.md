@@ -193,4 +193,4 @@ Taken by the owner on 2026-11-13:
     for a second scanent that probes a target and reports without damaging it.
     It breaks the "reads and never acts" promise on purpose, so it is governed
     on its own page, with an authorisation gate and a definition of "no
-    damage", before any code.
+    damage", before any code: [The active flavour](active-flavour.md).
