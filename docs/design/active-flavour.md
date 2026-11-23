@@ -53,15 +53,25 @@ agent might call; it talks to the agent, and watches its own canaries.
 
 ## Where the probes come from
 
-The owner named four projects on 2026-11-22. What this repository already
-records of them, and what is still to be read:
+The owner named four projects on 2026-11-22. They were read on 2026-11-23
+(READMEs, licence files, catalogues, and the one AI-specific skill of each that
+has one). **None of them is a corpus of probes for agents**: two are general
+offensive toolkits, one is a code audit, and Cisco's are scanners and a
+detector. So the probes are written here, and the projects give the categories
+to cover, the verdict rules and the limits, not payloads.
 
-| Project | Licence, as recorded here | Where it stands |
-|---|---|---|
-| elementalsouls' Claude-BugHunter | Not yet read | The starting point the owner named for this flavour. Its licence, its scope and whether it targets agents or general web applications are to be read before anything is taken |
-| [SnailSploit/Claude-Red](https://github.com/SnailSploit/Claude-Red) | MIT ([vulnerability scanner](vulnerability-scanner.md)) | Only its reporting vocabulary is used today. Its techniques tell a model to send payloads to live targets, evade detection and exfiltrate data; none of that is taken as it stands |
-| Cisco AI Defense | Apache-2.0 for the three scanners the rules come from ([agent-surface rules](agent-surface-rules.md)) | Which of its repositories carry adversarial tests for agents, and under what licence, is to be read |
-| [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) | MIT, vendored at a pinned commit | A method for auditing code, not a set of probes; its attack classes may name what to probe |
+| Project | Licence | What it is | What is taken | What is not |
+|---|---|---|---|---|
+| [elementalsouls/Claude-BugHunter](https://github.com/elementalsouls/Claude-BugHunter) | MIT for code; the README puts its skill text, wordlists and docs under CC BY 4.0 (`LICENSE-CONTENT`, not yet read) | A Claude Code bundle of 83 skills for bug bounty and external red-team work on web applications, APIs and internet-facing estates. Its scope check is a question the model is asked ("7-Question Gate"); a claim that scope is "enforced in code" was not verified | The agent-relevant categories of its `hunt-llm-ai` and `hunt-rag-vector` skills: direct and indirect injection, exfiltration through a tool or through markdown, agentic abuse | Its recon and exploitation tooling, every web and infrastructure skill, and its scope model: a question a model answers is not a gate |
+| [SnailSploit/Claude-Red](https://github.com/SnailSploit/Claude-Red) | MIT | A library of offensive skills across about 23 areas, from web to EDR evasion and C2. One is about AI: `offensive-ai-security` | That skill's categories: direct and indirect prompt injection, system prompt extraction, insecure output handling, excessive agency, tool-function abuse, RAG poisoning and cross-tenant leakage; and its advice to put canary tokens in context to detect exfiltration, which is the `canary` class here. Its reporting vocabulary is already used by the [vulnerability scanner](vulnerability-scanner.md) | Every technique. The AI skill tells a model to "exploit identified vulnerabilities and chain them" and carries no limit and no authorisation language |
+| [Cisco AI Defense](https://github.com/cisco-ai-defense) | Apache-2.0 (per each README; `mcp-scanner`'s licence is already in `NOTICE`) | Scanners and a detection engine, not a probe corpus. `mcp-scanner`'s protocol mode "does not call tools", and says a protected endpoint "may require separate authorized testing". `project-quarry` is a rule engine over conversations, tool calls and tool results, and states that it does not encourage using or sharing active attack payloads | `mcp-scanner`'s attack vectors as categories (instruction override, indirect injection, data leakage, role escape). `project-quarry`'s approach as a candidate for judging a verdict: reading what the agent did with a probe, rather than what it said | Any payload: none is published, by Cisco's own choice |
+| [cloudflare/security-audit-skill](https://github.com/cloudflare/security-audit-skill) | MIT, vendored at a pinned commit | A six-phase audit of source code, sandboxed; it never touches a live system | Its limits, as rules of this flavour: "prompt injection alone is not a finding" (a verdict needs an observed act or leak); confirm "a locally observable unrequested action" without extending the test "into harmful execution"; never test by exhausting a service. Its agent attack classes (`AI-AND-LLM.md`) as a checklist of what the catalogue covers | Its code-audit method, which the vulnerability scanner already uses |
+
+Not read: BugHunter's `LICENSE-CONTENT`, `SECURITY.md`, engine code and skill
+files; Claude-Red's other skills; most of Cisco's 21 repositories (among them
+`skill-scanner`, whose rules the agent-surface rules already use); Cloudflare's
+`SKILL.md` and the files beside `AI-AND-LLM.md`. Each is read, and each licence
+confirmed at the commit taken, before anything of it is used.
 
 Every probe is scanent's own: re-authored, citing the item it came from, with
 the source's licence and attribution in `NOTICE`, as the agent-surface rules
@@ -167,4 +177,5 @@ three do. That is named here and designed later.
 | 4 | Where the canary sink runs | Beside the prober, inside the estate, so no marker leaves it. A scanent-run service is a sub-processor question |
 | 5 | How much of a reply is kept | A hash and an excerpt of at most 280 characters, secrets masked |
 | 6 | Whether a model may ever write or choose a probe | No. A fixed, reviewed catalogue; a model may later help write it, never run it |
-| 7 | Which sources' material is used, given their licences | As the table above says; each to be confirmed against the licence file at the commit taken |
+| 7 | Which sources' material is used, given their licences | Categories, verdict rules and limits only, as the table above says, each confirmed against its licence file at the commit taken. BugHunter's CC BY 4.0 content needs attribution in `NOTICE` if any of its wording is adapted |
+| 8 | Who writes the probes, since no source offers a corpus | scanent writes them, a few per category, each with its class, its expected act or leak, and a fake agent in the corpus that acts, discloses and resists |
