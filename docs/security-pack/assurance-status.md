@@ -14,7 +14,7 @@ production.**
 | External penetration test | **Not done** |
 | Independent code review | **Not done** |
 | 72-hour soak | **Not done.** A 75-minute soak has been run. The 72-hour one is required before 1.0 (owner decision, 2026-11-12) |
-| Signed release | **Done, and checked only by its maker.** 0.13.2, 0.14.0, 0.15.0 and 0.16.0 were released by the workflow, signed, with SBOMs and provenance, and each was verified once as a client would. Nobody else has verified one |
+| Signed release | **Done, and checked only by its maker.** 0.13.2, 0.14.0, 0.15.0, 0.16.0 and 0.17.0 were released by the workflow, signed, with SBOMs and provenance, and each was verified once as a client would. Nobody else has verified one |
 | Any security certification of the product | **None.** None is claimed |
 
 Do not describe scanent to anyone as battle-tested, pilot-proven,
@@ -140,7 +140,7 @@ output only, and reaches no network.
 ### Signed releases, checked only by their maker
 
 0.13.2, released on 2026-11-13, was the first complete release; 0.14.0,
-0.15.0 and 0.16.0 followed the same way. Only their maker has checked them as
+0.15.0, 0.16.0 and 0.17.0 followed the same way. Only their maker has checked them as
 a client would. The first complete release is 0.13.2
 (https://github.com/RodnaPamet/scanent/releases/tag/v0.13.2). Its tag was made
 by `.github/workflows/auto-release.yml` and every job of the release workflow
