@@ -14,6 +14,8 @@
  *      did not.
  *   6. A results section without its report, or a secret's shape in it,
  *      refuses the run.
+ *   7. report.pdf: the same section in the same words, the honesty line first,
+ *      each place read, each finding, the list capped with a pointer to the CSV.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -29,6 +31,7 @@ import { LocalResultsSchema } from '@scanent/report/results/schema';
 import type { LocalResults } from '@scanent/report/results/types';
 
 import { parseScannerConfig } from '../src/config';
+import { PDF_LIST_MAX, renderReportPdf } from '../src/report-pdf';
 import { OutputRefusedLocally, renderRunFiles } from '../src/file-output';
 import { scoreScanLocally } from '../src/local-results';
 import type { FetchLike } from '../src/http';
@@ -282,5 +285,58 @@ describe('6. refusals', () => {
         const a = results.agentRules as NonNullable<LocalResults['agentRules']>;
         const planted: LocalResults = { ...results, agentRules: { ...a, findings: [{ ...a.findings[0], subjectRef: canary }] } };
         expect(() => renderRunFiles(s.raw, planted, undefined, {}, undefined, agentRulesRaw)).toThrow(OutputRefusedLocally);
+    });
+});
+
+describe('7. report.pdf', () => {
+    const pdfOf = async (config = WITH_MCP, world = poisonedWorld()) => {
+        const { read } = await deliverToFile(config, world);
+        const results = JSON.parse(read(RUN_FILE_NAMES.results)) as LocalResults;
+        return { results, text: renderReportPdf(results).text };
+    };
+
+    it('carries the Agent surface section: the honesty line, each place read and each finding, never the text', async () => {
+        const { text } = await pdfOf();
+        expect(text).toContain('Agent surface');
+        expect(text).toContain('Complete. Every tool definition the MCP servers list was read in full.');
+        expect(text).toContain('Places read (2)');
+        expect(text).toContain(`mcp:${MCP_CRM} | MCP server | In full | 3`);
+        expect(text).toContain('Rule findings (1)');
+        expect(text).toContain('HIGH  MCP_PROMPT_INJECTION');
+        expect(text).toContain('cisco-mcp:instruction-override');
+        expect(text).toContain(`mcp-tool:mcp:${MCP_CRM}:tool:`);
+        expect(text).toContain('report.agent-rules.signed.json, agent-rule-findings.csv.');
+        expect(text).not.toContain(POISON_PHRASE);
+    });
+
+    it('a partial read, and a read of nothing, are said first and never as clean', async () => {
+        const partial = await pdfOf(WITH_MCP, poisonedWorld((f) => (f[MCP_CRM].tools[1] = ['not a tool'] as never)));
+        expect(partial.text).toContain('Not concluded: not every tool definition the MCP servers list was read, and no rule fired on what was. This is not a clean result.');
+        expect(partial.text).toContain('In part: the listing changed while it was being read');
+        expect(partial.text).toContain('No rule fired on what was read. That is not a clean result.');
+        const empty = await pdfOf(
+            WITH_MCP,
+            poisonedWorld((f) => {
+                for (const url of Object.keys(f)) f[url].tools = [[]];
+            }),
+        );
+        expect(empty.text).toContain('Nothing was read: the scan found no tool definition and no skill. A read of nothing is not a clean result.');
+        expect(empty.text).not.toContain('No rule fired.');
+    });
+
+    it('lists at most its cap of findings, and says which file holds the rest', async () => {
+        const { results } = await pdfOf();
+        const a = results.agentRules;
+        if (a === undefined) throw new Error('no agent-rules section');
+        const many = Array.from({ length: PDF_LIST_MAX + 1 }, (_, i) => ({ ...a.findings[0], locator: `${a.findings[0].locator}${i}` }));
+        const text = renderReportPdf({ ...results, agentRules: { ...a, findings: many, counts: { ...a.counts, findings: many.length } } }).text;
+        expect(text).toContain(`This list shows the first ${PDF_LIST_MAX} of ${PDF_LIST_MAX + 1} findings, most severe first. The full list is in agent-rule-findings.csv.`);
+        expect(text.split('\n').filter((l) => l.startsWith('HIGH  MCP_PROMPT_INJECTION'))).toHaveLength(PDF_LIST_MAX);
+    });
+
+    it('a run whose rules did not run has no Agent surface section', async () => {
+        const { text } = await pdfOf(WITHOUT_MCP, createEstateWorld());
+        expect(text).not.toContain('Agent surface');
+        expect(text).not.toContain('agent-rule-findings.csv');
     });
 });

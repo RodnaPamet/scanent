@@ -14,6 +14,9 @@
  *   agents         one section per agent: every criterion by its state
  *   lists          shadow agents, unregistered identities, orphan credentials
  *   comparison     with the previous run, when the run knew one
+ *   integrations   the integrations scanner's section, when it ran
+ *   agent surface  the agent-surface rules' section, when they ran: the
+ *                  places read, what was not concluded, each finding
  *   limits         what the results do not say
  *
  * Every list over its cap says how many it shows and which file holds the rest.
@@ -37,7 +40,15 @@ import PDFDocument from 'pdfkit';
 
 import type { HarnessLevel } from '@rodnapamet/scanent-contract/harness-ladder';
 import { MATRIX_MAX_AGENTS } from '@scanent/report/render/html';
-import { INTEGRATION_RUN_FILE_NAMES, INTEGRATIONS_ONLY_RUN_FILE_NAMES } from '@scanent/report/render/files';
+import { AGENT_RULES_RUN_FILE_NAMES, INTEGRATION_RUN_FILE_NAMES, INTEGRATIONS_ONLY_RUN_FILE_NAMES } from '@scanent/report/render/files';
+import {
+    AGENT_RULES_EXPLAINER,
+    AGENT_RULES_KIND_READ_LABEL,
+    AGENT_RULES_REASON_TEXT,
+    agentRulesOriginKind,
+    agentRulesOutcome,
+} from '@scanent/report/render/agent-rules-page';
+import { SUBJECT_KIND_TITLE } from '@rodnapamet/scanent-contract/agent-rules-contract-rules';
 import {
     applicationsByConcern,
     exclusionText,
@@ -53,7 +64,7 @@ import {
 import { productOfApplicationId } from '@rodnapamet/scanent-contract/integrations-contract-rules';
 import { findingRef, summaryPageData, type AgentRecord, type IntegrationsPreviousRun, type SummaryContext, type SummaryPageData } from '@scanent/report/render/page-data';
 import { criterionWords, PREVIOUS_NOT_COMPARED_TEXT } from '@scanent/report/render/words';
-import type { IntegrationsOnlyResults, LocalIntegrationsResults, LocalResults } from '@scanent/report/results/types';
+import type { IntegrationsOnlyResults, LocalAgentRulesResults, LocalIntegrationsResults, LocalResults } from '@scanent/report/results/types';
 
 /** The most agents the levels table and the matrix list: the page's own matrix cap. */
 export const PDF_AGENTS_MAX = MATRIX_MAX_AGENTS;
@@ -738,10 +749,80 @@ function integrationsComparison(w: Writer, previous: IntegrationsPreviousRun | n
     );
 }
 
-function limits(w: Writer, d: SummaryPageData): void {
+/**
+ * The agent-surface rules' section, only for a run whose rules ran: the page's
+ * section in the page's words (`agent-rules-page.ts`). The honesty line first;
+ * then what was read, each place read and how, what was not concluded, and
+ * each finding, most severe first. A finding is where a rule fired, never the
+ * text it fired on: there is none to show.
+ */
+function agentRulesSection(w: Writer, a: LocalAgentRulesResults): void {
+    w.page();
+    w.heading('Agent surface', 2);
+    w.para(AGENT_RULES_EXPLAINER, { size: 9 });
+    const outcome = agentRulesOutcome(a);
+    w.para(`${outcome.strong} ${outcome.rest}`, { font: BOLD, color: outcome.tone === 'ok' ? INK : BAD, gap: 6 });
+    w.facts([
+        ...a.population.map((p): [string, string] => [
+            AGENT_RULES_KIND_READ_LABEL[p.kind],
+            p.status === 'COMPLETE' ? String(p.subjects) : `${p.subjects}, read in part: ${word(AGENT_RULES_REASON_TEXT, p.reason ?? '', 'the read did not complete')}`,
+        ]),
+        ['With a finding', String(a.counts.flagged)],
+        ['Findings', String(a.counts.findings)],
+        ['Report', `${a.report.file}, contract scanent-agent-rules/1`],
+        ['Signed report SHA-256', a.report.sha256],
+    ], ['Signed report SHA-256']);
+
+    w.heading(`Places read (${a.origins.length})`, 3);
+    if (a.origins.length === 0) {
+        w.para('No place was read: no MCP server was listed and no code root was read.', { size: 9 });
+    } else {
+        const width = w.width;
+        w.table(
+            [
+                { title: 'Origin', width: width * 0.5, mono: true },
+                { title: 'Kind', width: width * 0.14 },
+                { title: 'Read', width: width * 0.26 },
+                { title: 'Subjects', width: width * 0.1 },
+            ],
+            a.origins.map((o) => [
+                o.ref,
+                agentRulesOriginKind(o.ref),
+                o.status === 'COMPLETE' ? 'In full' : `In part: ${word(AGENT_RULES_REASON_TEXT, o.reason ?? '', 'the read did not complete')}`,
+                String(o.subjects),
+            ]),
+        );
+    }
+
+    if (a.notConcluded.length > 0) {
+        w.heading('Not concluded', 3);
+        for (const n of a.notConcluded) w.bullet(`${SUBJECT_KIND_TITLE[n.scope]}: ${word(AGENT_RULES_REASON_TEXT, n.reason, 'the read did not complete')} (${n.reason}).`, { size: 9 });
+    }
+
+    w.heading(`Rule findings (${a.findings.length})`, 3);
+    if (a.findings.length === 0) {
+        w.para(outcome.tone === 'ok' ? 'No rule fired.' : 'No rule fired on what was read. That is not a clean result.', { size: 9 });
+        return;
+    }
+    const shown = a.findings.slice(0, PDF_LIST_MAX);
+    w.capped(shown.length, a.findings.length, 'findings, most severe first', AGENT_RULES_RUN_FILE_NAMES.findings);
+    // One short block per finding, not a table: a code, a rule id and a locator are each too long to share a row
+    // without breaking mid-word.
+    for (const f of shown) {
+        w.para(`${f.severity}  ${f.code}`, { font: BOLD, size: 8.5, gap: 0 });
+        w.para(f.ruleId, { font: MONO, size: 8, indent: 12, gap: 0 });
+        w.para(f.locator, { font: MONO, size: 8, indent: 12, color: MUTED, gap: 5 });
+    }
+}
+
+function limits(w: Writer, d: SummaryPageData, results?: LocalResults): void {
     w.heading('What this document does not say', 2);
     for (const c of d.text.caveats) w.bullet(c, { size: 9 });
-    w.para(`The files of this run: ${Object.values(d.files).join(', ')}.`, { size: 9, color: MUTED });
+    if (results?.agentRules !== undefined) {
+        w.bullet('An agent-surface finding is a pattern that matched, for a person to confirm: a legitimate tool or skill can match one, and a poisoning written in words no rule names is missed. Only the places listed as read in full conclude anything.', { size: 9 });
+    }
+    const files = [...Object.values(d.files), ...(results?.agentRules === undefined ? [] : Object.values(AGENT_RULES_RUN_FILE_NAMES))];
+    w.para(`The files of this run: ${files.join(', ')}.`, { size: 9, color: MUTED });
 }
 
 function footers(w: Writer, d: { readonly scan: { readonly id: string; readonly asOf: string } }): void {
@@ -808,7 +889,8 @@ export function renderReportPdf(results: LocalResults, context: SummaryContext =
     if (results.integrations !== undefined) {
         integrationsSection(w, results.integrations, context.integrationsPrevious === undefined ? {} : { previous: context.integrationsPrevious });
     }
-    limits(w, d);
+    if (results.agentRules !== undefined) agentRulesSection(w, results.agentRules);
+    limits(w, d, results);
     footers(w, d);
     return finish(w);
 }

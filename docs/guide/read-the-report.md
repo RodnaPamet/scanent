@@ -396,8 +396,10 @@ file, and the field).
 A finding is a suggestion for you to confirm, not proof: a legitimate tool can
 describe reading a file, and a skill about security can quote an attack. It
 never changes an agent's level, and the text it fired on is not in any output,
-so open the tool's definition on its server, or the skill's file, to judge it. The same rows are in `agent-rule-findings.csv`, and the signed report
-is `report.agent-rules.signed.json`, beside `report.signed.json`.
+so open the tool's definition on its server, or the skill's file, to judge
+it. The same section is in `report.pdf`, the same rows are in
+`agent-rule-findings.csv`, and the signed report is
+`report.agent-rules.signed.json`, beside `report.signed.json`.
 
 ### Inventory
 
@@ -487,7 +489,8 @@ registration, reach, level and bar; the table of agents and checks, by the
 same letters as the page, on landscape pages; a section for each agent with
 every check under its state; the shadow agents, unregistered identities,
 orphan credentials and agents that can pay; the comparison with the previous
-run; and what the document does not say.
+run; the integrations section and the agent-surface section, when those ran;
+and what the document does not say.
 
 On a large scan the document lists the first 500 agents, gives a section of
 their own to the first 100, and describes the first 300 findings in full, in

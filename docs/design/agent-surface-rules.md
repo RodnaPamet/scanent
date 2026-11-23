@@ -10,7 +10,8 @@
 > origin it read, and the `inflect` output posts it with a key of its own. V4:
 > the skill rules — the `code` source reads each `SKILL.md` under its roots and
 > the scripts bundled with it (`packages/scanner/src/sources/code/skills.ts`).
-> All of it ships in 0.17.0. Not yet: the PDF section and the A2A card rules.
+> `report.pdf` carries the Agent surface section too. All of it ships in
+> 0.17.0. Not yet: the A2A card rules.
 
 ## What it is
 
