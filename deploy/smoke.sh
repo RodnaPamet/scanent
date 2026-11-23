@@ -16,13 +16,16 @@
 #   2. `public-key` prints the raw Ed25519 public key of the key it was given;
 #   3. `scan --dry-run` reads an estate of LangChain code, one Python agent and
 #      one TypeScript agent, so both readers and the pinned TypeScript parser
-#      run, and prints a signed report;
-#   4. that report verifies against that key through the image's own contract
-#      module, speaks `/3`, and holds both agents (`smoke-verify.js`);
+#      run, and one agent skill, and prints two signed reports, one per line:
+#      the agent report and the agent-rules report;
+#   4. both verify against that key through the image's own contract module:
+#      the agent report speaks `/4` and holds both agents, and the agent-rules
+#      report read the skill and its script in full and raised the one finding
+#      the skill plants (`smoke-verify.js`);
 #   5. `scan` without `--dry-run`, with nowhere to post to, exits non-zero:
 #      a scan that could not be delivered is never reported as a success;
 #   6. `scan --dry-run --out /out`, with the root filesystem still read-only
-#      and one writable mount, writes one directory per run holding the seven
+#      and one writable mount, writes one directory per run holding the nine
 #      files, and a second run leaves the first run's files as they were;
 #   7. run as the invoking user (`--user`, with `--userns=keep-id` under Podman)
 #      into an output directory that user owns with mode 0700, a scan writes
@@ -86,7 +89,7 @@ run() {
     "$RUNTIME" run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges "$@"
 }
 
-mkdir -p "$WORK/config" "$WORK/estate/support" "$WORK/estate/research"
+mkdir -p "$WORK/config" "$WORK/estate/support" "$WORK/estate/research" "$WORK/estate/support/skills/order-notes/scripts"
 
 cat > "$WORK/estate/support/agent.py" <<'PY'
 import os
@@ -129,6 +132,23 @@ const tools = [searchPapers];
 const agent = await createToolCallingAgent({ llm, tools, prompt });
 export const researchExecutor = new AgentExecutor({ agent, tools });
 TS
+
+# One agent skill, so the image's agent-surface rules read a SKILL.md and a
+# script. Its front matter grants unrestricted shell, which one rule flags; the
+# script fires nothing.
+cat > "$WORK/estate/support/skills/order-notes/SKILL.md" <<'MD'
+---
+name: order-notes
+description: Summarise the notes on an order.
+allowed-tools: Read, Bash(*)
+---
+Run `./scripts/notes.sh <order id>` and summarise the notes in one sentence.
+MD
+cat > "$WORK/estate/support/skills/order-notes/scripts/notes.sh" <<'SH'
+#!/bin/sh
+set -eu
+printf 'notes for order %s\n' "$1"
+SH
 
 cat > "$WORK/config/config.json" <<'JSON'
 {
@@ -204,7 +224,8 @@ echo "ok   $key"
 echo "== 3. scan --dry-run"
 run -e SCANNER_SIGNING_KEY "${MOUNTS[@]}" "$IMAGE" scan --dry-run --config /etc/scanent/config.json \
     > "$WORK/report.json" 2> "$WORK/scan.log" || { cat "$WORK/scan.log" >&2; fail "the dry run exited non-zero"; }
-echo "ok   $(wc -c < "$WORK/report.json") bytes"
+[ "$(wc -l < "$WORK/report.json")" -eq 2 ] || fail "the dry run printed $(wc -l < "$WORK/report.json") lines, not two reports"
+echo "ok   $(wc -c < "$WORK/report.json") bytes, two reports"
 
 echo "== 4. the report, verified inside the image"
 run -i -v "$HERE/smoke-verify.js:/app/smoke-verify.js:ro" \
@@ -248,17 +269,17 @@ first="$(inspect "$LIST_RUNS")"
 [ "$(printf '%s\n' "$first" | wc -l)" -eq 1 ] || fail "one run should have written one directory, found: $first"
 [[ "$first" =~ ^smoke-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}$ ]] || fail "the run directory is not named by a scan id: $first"
 files="$(hashes_of "$first" | sed 's/^[0-9a-f]*  //' | sort | tr '\n' ' ')"
-[ "$files" = "agents.csv findings.csv manifest.json report.pdf report.signed.json results.json summary.html " ] \
-    || fail "the run holds '$files', not the seven files"
+[ "$files" = "agent-rule-findings.csv agents.csv findings.csv manifest.json report.agent-rules.signed.json report.pdf report.signed.json results.json summary.html " ] \
+    || fail "the run holds '$files', not the nine files"
 inspect 'process.exit(require("node:fs").statSync("/out/latest.json").isFile() ? 0 : 1)' || fail "no latest.json pointer was written"
 before="$(hashes_of "$first")"
-[ "$(printf '%s\n' "$before" | grep -cE '^[0-9a-f]{64}  ')" -eq 7 ] || fail "the first run's files could not be hashed"
+[ "$(printf '%s\n' "$before" | grep -cE '^[0-9a-f]{64}  ')" -eq 9 ] || fail "the first run's files could not be hashed"
 # The PDF was written in the image's own process, by its pure-JavaScript library: a PDF, and not empty.
 inspect "
 const pdf = require('node:fs').readFileSync('/out/runs/$first/report.pdf');
 process.exit(pdf.length > 1000 && pdf.subarray(0, 5).toString('latin1') === '%PDF-' && pdf.subarray(-8).toString('latin1').includes('%%EOF') ? 0 : 1)" \
     || fail "report.pdf is not a PDF"
-echo "ok   seven files in runs/$first, report.pdf a PDF"
+echo "ok   nine files in runs/$first, report.pdf a PDF"
 scan_out
 [ "$(inspect "$LIST_RUNS" | wc -l)" -eq 2 ] || fail "a second run should add a second directory"
 after="$(hashes_of "$first")"
@@ -291,7 +312,8 @@ for f in "$WORK/mine/runs/$mine"/*; do
     [ "$(stat -c '%a %u' "$f")" = "640 $(id -u)" ] || fail "$(basename "$f") is $(stat -c '%a, owned by uid %u' "$f"), not 640 owned by uid $(id -u)"
 done
 [ "$(stat -c '%a' "$WORK/mine")" = "700" ] || fail "the output directory's mode changed"
-echo "ok   uid $(id -u) reads its own run: directory 750, seven files 640"
+[ "$(ls "$WORK/mine/runs/$mine" | wc -l)" -eq 9 ] || fail "the run holds $(ls "$WORK/mine/runs/$mine" | wc -l) files, not nine"
+echo "ok   uid $(id -u) reads its own run: directory 750, nine files 640"
 
 echo "== 8. the signing key from a mounted file"
 mkdir "$WORK/secrets"
@@ -454,7 +476,8 @@ overlay_scan() {
 }
 # stdout holds one signed report per line: the agent report, then (a run with an `mcp` source) the agent-rules report.
 # Of the agent report: the `mcp` source's status and reason, and the tools the agent holds from that server. Of the
-# agent-rules report: its population's status, reason and subjects, and how many findings.
+# agent-rules report: its mcp-tool population's status, reason and subjects, and how many findings on a tool (the
+# estate's skill raises one of its own, which is the code root's and not this step's).
 MCP_OF_REPORT='
 const reports = require("node:fs").readFileSync(0, "utf8").split("\n").filter((l) => l.length > 0).map((l) => JSON.parse(l));
 const signed = reports.find((r) => String((r.body ?? r).contract).startsWith("inflect-agent-harness/"));
@@ -465,7 +488,7 @@ const tools = agent === undefined ? [] : agent.tools.filter((t) => String(t.serv
 const rules = reports.find((r) => (r.body ?? r).contract === "scanent-agent-rules/1");
 const rb = rules === undefined ? undefined : rules.body ?? rules;
 const rp = rb === undefined ? undefined : rb.population.find((p) => p.kind === "mcp-tool");
-const rulesPart = rp === undefined ? "rules ABSENT" : ["rules", rp.status, rp.reason || "-", rp.subjects, rb.findings.length].join(" ");
+const rulesPart = rp === undefined ? "rules ABSENT" : ["rules", rp.status, rp.reason || "-", rp.subjects, rb.findings.filter((f) => f.subjectKind === "mcp-tool").length].join(" ");
 console.log([source === undefined ? "ABSENT" : source.status, (source && source.reason) || "-", tools.join(",") || "-", "|", rulesPart].join(" "));
 '
 overlay_scan "$WORK/overlay-allowed.json"

@@ -2117,10 +2117,12 @@ take effect when they are set
 `deploy/smoke.sh <image>` is the image's smoke test. It builds nothing. It
 runs the image with those flags and no network, and checks the user, the
 absence of package managers and TypeScript source, `public-key`, a dry-run
-scan of a two-agent estate verified inside the image through the image's own
-contract module (`deploy/smoke-verify.js`), that a scan with nowhere to
-post exits non-zero, and that `scan --dry-run --out /out` on the read-only
-root with one writable mount writes the seven files of a run (`report.pdf` a
+scan of a two-agent estate with one agent skill, both of its reports verified
+inside the image through the image's own contract module
+(`deploy/smoke-verify.js`: the agent report's two agents, and the agent-rules
+report's complete read of the skill and the one finding it plants), that a
+scan with nowhere to post exits non-zero, and that `scan --dry-run --out /out`
+on the read-only root with one writable mount writes the nine files of a run (`report.pdf` a
 PDF, written in the image by its own library) and that a second
 run leaves the first as it was. It then runs as the invoking user (`--user`,
 with `--userns=keep-id` beside it when `CONTAINER_RUNTIME=podman`) into an output

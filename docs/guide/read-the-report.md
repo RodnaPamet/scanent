@@ -1,6 +1,6 @@
 # Read the report
 
-Each scan writes one folder with seven files:
+Each scan writes one folder with seven files, and two more when it read MCP servers or agent code (which holds agent skills):
 
 | File | What it is for |
 |---|---|
@@ -10,7 +10,9 @@ Each scan writes one folder with seven files:
 | `findings.csv` | One line for each finding, for a spreadsheet |
 | `results.json` | Everything above, as data for another program |
 | `report.signed.json` | The signed record of what the scanner read. The other files are worked out from it |
-| `manifest.json` | The size and a checksum of each of the other six files, to check that a copy of the folder is whole. A checksum is a short code worked out from a file; if the file changes, so does the code |
+| `manifest.json` | The size and a checksum of each of the other files, to check that a copy of the folder is whole. A checksum is a short code worked out from a file; if the file changes, so does the code |
+| `report.agent-rules.signed.json` | The signed record of what the agent-surface rules found in the MCP tool definitions and agent skills the scan read. See "Agent surface" below |
+| `agent-rule-findings.csv` | One line for each rule that fired, for a spreadsheet |
 
 This page explains `summary.html` from top to bottom, then `report.pdf`, then
 the two spreadsheets, then how to compare two scans.
