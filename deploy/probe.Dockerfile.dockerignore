@@ -1,0 +1,19 @@
+# The build context of deploy/probe.Dockerfile: an allowlist. Everything in the
+# checkout is left out, and only what that Dockerfile COPYs is let back in: the
+# root manifests, each workspace's manifest (npm ci needs them), and the sources
+# of the contract and the prober. No source of the scanner or of local results.
+# packages/scanner/tests/image.test.ts holds this list to the COPY lines.
+*
+!LICENSE
+!NOTICE
+!package.json
+!package-lock.json
+!tsconfig.base.json
+!packages/contract/package.json
+!packages/contract/tsconfig.json
+!packages/contract/src
+!packages/scanner/package.json
+!packages/report/package.json
+!packages/probe/package.json
+!packages/probe/tsconfig.json
+!packages/probe/src

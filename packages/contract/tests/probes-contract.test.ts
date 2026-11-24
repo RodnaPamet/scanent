@@ -27,7 +27,7 @@ function body(): Body {
         contract: PROBES_CONTRACT_V1,
         engagement: { id: 'eng-2026-12-acme', scopeDigest: HASH, scopeSignerFingerprint: 'b'.repeat(64) },
         catalogue: { digest: `sha256:${'c'.repeat(64)}`, probes: 11 },
-        run: { startedAt: '2026-12-01T09:00:00.000Z', endedAt: '2026-12-01T09:05:00.000Z', stopped: null },
+        run: { startedAt: '2026-12-01T09:00:00.000Z', endedAt: '2026-12-01T09:05:00.000Z', stopped: null, surfaceDigest: `sha256:${'d'.repeat(64)}` },
         targets: [
             { endpoint: MCP, kind: 'mcp', reached: true, reason: 'REACHED' },
             { endpoint: CHAT, kind: 'http-chat', reached: false, reason: 'NO_REPLY' },
@@ -164,8 +164,13 @@ describe('what it cannot say', () => {
     });
 
     it('a run that ended before it started, or a stop it does not know', () => {
-        refusedAt((b) => (b.run = { startedAt: '2026-12-01T09:05:00.000Z', endedAt: '2026-12-01T09:00:00.000Z', stopped: null }));
+        refusedAt((b) => (b.run = { ...(b.run as object), startedAt: '2026-12-01T09:05:00.000Z', endedAt: '2026-12-01T09:00:00.000Z' }));
         refusedAt((b) => (b.run = { ...(b.run as object), stopped: 'CRASHED' }));
+        refusedAt((b) => {
+            const { surfaceDigest: _surfaceDigest, ...run } = b.run as Record<string, unknown>;
+            b.run = run;
+        });
+        refusedAt((b) => (b.run = { ...(b.run as object), surfaceDigest: 'not-a-digest' }));
     });
 
     it('no target at all', () => {

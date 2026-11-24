@@ -18,7 +18,9 @@
  * again here because the prober may not import the scanner: every request is
  * a POST with `redirect: 'error'`, a per-request timeout, and a response read
  * as a stream and cut at a byte cap. A credential is sent only to the endpoint
- * it was named for. A failure is a ProbeWireError naming a code; nothing a
+ * it was named for. Every request is checked against the engagement's declared
+ * surface (`surface.ts`) before it is sent, and one that is not on it is
+ * refused (OFF_SURFACE). A failure is a ProbeWireError naming a code; nothing a
  * target said is kept with it.
  *
  * A reply cut at the cap is returned as the text that was read: the verdict
@@ -28,6 +30,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { PROBE_PLACEHOLDER } from './scope';
+import { onSurface, type ProbeSurface } from './surface';
 import type { ProbeRequest, ProbeTransport, ScopeMcpTool, ScopeTarget } from './runner';
 import { MAX_REPLY_CHARS } from './verdict';
 import { ProbeWireError } from './wire-error';
@@ -48,6 +51,11 @@ export const MAX_TOOL_PAGES = 20;
 export const MAX_LISTED_TOOLS = 5_000;
 
 export interface WireDeps {
+    /**
+     * The engagement's declared surface. Every request is checked against it
+     * before it is sent; one that is not on it is refused (OFF_SURFACE).
+     */
+    readonly surface: ProbeSurface;
     /** A TEST SEAM: production uses the global `fetch`. */
     readonly fetchImpl?: FetchLike;
     /** The token for each endpoint that needs one, already read from the prober's environment. */
@@ -155,7 +163,9 @@ function atPath(value: unknown, path: readonly (string | number)[]): unknown {
     return node;
 }
 
-export function createProbeWire(deps: WireDeps = {}): ProbeTransport {
+export function createProbeWire(deps: WireDeps): ProbeTransport {
+    if (deps?.surface === undefined) throw new TypeError('a wire needs the engagement\'s surface: there is no unchecked mode');
+    const surface = deps.surface;
     const fetchImpl: FetchLike = deps.fetchImpl ?? ((url, init) => fetch(url, init));
     const timeoutMs = deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
     const credentials = deps.credentials ?? new Map<string, string>();
@@ -176,6 +186,8 @@ export function createProbeWire(deps: WireDeps = {}): ProbeTransport {
             Accept: 'application/json, text/event-stream',
         };
         // The token named for this endpoint, sent to this endpoint: the URL posted to IS the endpoint.
+        // The declared surface, before anything leaves: the request the wire is about to send, as it will be sent.
+        if (!onSurface(surface, { url: target.endpoint, method: 'POST', body })) throw new ProbeWireError('OFF_SURFACE');
         const token = credentials.get(target.endpoint);
         if (token !== undefined) headers.Authorization = `Bearer ${token}`;
         let res: Response;

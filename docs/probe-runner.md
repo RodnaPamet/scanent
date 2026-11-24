@@ -105,6 +105,48 @@ scanent-probe run --scope scope.signed.json --trusted-key <approver public key> 
   each target's reason with a note on why it went unanswered, and whether the
   run concluded anything. It never prints an excerpt, a credential or a marker.
 
+## The declared surface
+
+Every engagement has a declared surface, built from its signed scope by
+`probeSurface` (`packages/probe/src/surface.ts`). It lists every endpoint the
+run may reach, the one method (POST), the JSON-RPC messages for each kind of
+target, the MCP tools and the argument each takes, and a chat target's body
+template. It also names the prober's version and the catalogue's digest.
+
+**It is checked before every request** (owner decision, 2026-11-24). The wire
+describes each request it is about to send and asks `offSurface`. A request
+that is not on the surface, such as another host, another method, a JSON-RPC
+message or tool the surface does not name, or a chat body that is not the
+scope's template, is refused before it leaves, and its target's note is
+`OFF_SURFACE`. There is no wire without a surface. The tests check every
+recorded request with the same function, so the guard and the proof are one
+piece of code.
+
+The signed report carries `run.surfaceDigest`. Anyone holding the scope
+rebuilds it with `probeSurface` and compares.
+
+## The image
+
+`deploy/probe.Dockerfile` builds `scanent-probe`, an image of its own,
+separate from the read-only scanner's (decision 1). It uses the same pinned
+bases as the scanner's image. Its runtime holds the prober, the contract and
+zod, and nothing of the scanner. It runs as uid 1000 with no shell and no
+package manager. With no arguments it prints its help.
+
+```bash
+docker build -f deploy/probe.Dockerfile -t scanent-probe .
+deploy/probe-smoke.sh scanent-probe
+```
+
+`deploy/probe-smoke.sh` runs it with no network and a read-only root
+filesystem. It makes the keys inside the image, signs a scope, does a dry run
+and a real run, verifies the report under the prober's key, and checks that the
+report's surface digest is the one the scope gives. CI's `image-probe` job runs
+it and the same Trivy and Grype gates as the scanner's image.
+
+**The image is not published** (owner decision, 2026-11-24). No release builds
+or pushes it. Whether and where it is published is a decision for later.
+
 ### The wire
 
 `packages/probe/src/wire.ts` sends each probe. It follows the scanner's rules

@@ -785,7 +785,7 @@ no other contract, and the other contracts' verifiers do not read it.
 |---|---|
 | `engagement` | The engagement id, the scope's digest, and the fingerprint of the key that signed the scope |
 | `catalogue` | The digest of the fixed probe list the run used, and how many probes it holds |
-| `run` | When it started and ended, and why it stopped early (`stopped`), or `null` |
+| `run` | When it started and ended, why it stopped early (`stopped`, or `null`), and `surfaceDigest`: the digest of the run's declared surface, which whoever holds the scope rebuilds and compares |
 | `targets[]` | Each scope target: its exact endpoint, its kind, and `REACHED`, `NO_REPLY`, `NOT_RUN` or `NO_PROBES_FOR_INTERFACE` |
 | `outcomes[]` | One per probe sent: the probe id and class, the target, for an MCP target the `tool` called (and for no other), the verdict, the reason, the reply's SHA-256, and, for ACTED and DISCLOSED only, an excerpt |
 

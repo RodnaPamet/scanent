@@ -129,6 +129,8 @@ export const ProbesReportBodyV1Schema = z
                 startedAt: z.string().datetime(),
                 endedAt: z.string().datetime(),
                 stopped: z.enum(PROBE_RUN_STOPS).nullable(),
+                /** The digest of the run's declared surface, rebuilt from the scope by whoever holds it. */
+                surfaceDigest: z.string().regex(SHA256),
             })
             .strict(),
         targets: z.array(TargetSchema).min(1).max(MAX_PROBE_TARGETS),

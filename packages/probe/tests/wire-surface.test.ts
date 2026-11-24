@@ -9,6 +9,7 @@ import { ENGAGEMENT_HEADER, runProbes, type ScopeTarget } from '../src/runner';
 import { verifyEngagementScope } from '../src/scope';
 import { signScope } from '../src/scope-sign';
 import { PROBE_A2A_MESSAGES, PROBE_MCP_MESSAGES, createProbeWire } from '../src/wire';
+import { offSurface, probeSurface } from '../src/surface';
 import { PLANTED_MARKER, obedient, resistant } from './helpers/fake-agents';
 import { fakeServers, listedTool, type LoggedRequest } from './helpers/fake-servers';
 import { fakeClock } from './helpers/fake-transport';
@@ -69,21 +70,24 @@ async function fullRun(credentials: ReadonlyMap<string, string> = new Map()) {
     const clock = fakeClock(START_MS);
     const run = await runProbes({
         scope: verified,
-        transport: createProbeWire({ fetchImpl: world.fetchImpl, credentials }),
+        transport: createProbeWire({ surface: probeSurface(verified.scope), fetchImpl: world.fetchImpl, credentials }),
         now: clock.now,
         sleep: clock.sleep,
         plantedContext: [PLANTED_MARKER],
     });
-    return { run, log: world.log, targets: verified.scope.targets };
+    return { run, log: world.log, targets: verified.scope.targets, verifiedScope: verified };
 }
 
 describe('the requests a whole run makes', () => {
     it('are every one of them on the list, on all three interfaces', async () => {
         const credentials = new Map([[MCP, 'mcp-token']]);
-        const { run, log, targets } = await fullRun(credentials);
+        const { run, log, targets, verifiedScope } = await fullRun(credentials);
         expect(run.targets.map((t) => t.reason)).toEqual(['REACHED', 'REACHED', 'REACHED']);
         expect(log.length).toBeGreaterThan(20);
         expect(surfaceProblems(log, targets, 'eng-2026-12-acme', credentials)).toEqual([]);
+        // The run-time check itself, over every recorded request: the guard and this proof are one function.
+        const surface = probeSurface(verifiedScope.scope);
+        expect(log.map((r) => offSurface(surface, { url: r.url, method: r.method, body: r.body })).filter((p) => p !== null)).toEqual([]);
         // Every method the wire may send was sent: the list is not wider than what runs.
         const sent = new Set(log.map((r) => (r.body as { method?: string }).method).filter((m): m is string => m !== undefined));
         expect(sent).toEqual(new Set([...PROBE_MCP_MESSAGES, ...PROBE_A2A_MESSAGES]));

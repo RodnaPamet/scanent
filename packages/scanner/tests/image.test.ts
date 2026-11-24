@@ -236,3 +236,60 @@ describe('.github/workflows', () => {
         for (const ref of uses) expect(ref).toMatch(/^[\w.-]+\/[\w./-]+@[0-9a-f]{40} # v\d+(\.\d+){0,2}$/);
     });
 });
+
+describe('deploy/probe.Dockerfile: the prober, a separate image (decision 1 of docs/design/active-flavour.md)', () => {
+    const probeFile = read('deploy/probe.Dockerfile');
+    const [probeBuild, probeRuntime, ...rest] = stages(probeFile);
+
+    it('has exactly a build stage and a runtime stage, on the read-only image\'s own pinned bases', () => {
+        expect(rest).toEqual([]);
+        expect([probeBuild.name, probeRuntime.name]).toEqual(['build', 'runtime']);
+        // The same digests as deploy/Dockerfile: one base to scan and to move, by Dependabot, in step.
+        expect(probeBuild.from).toBe(build.from);
+        expect(probeRuntime.from).toBe(runtime.from);
+    });
+
+    it('copies into the build stage exactly what its own build context allowlist lets in, and no source of the scanner', () => {
+        const copied = probeBuild.lines
+            .filter((line) => line.startsWith('COPY '))
+            .flatMap((line) => line.split(' ').slice(1, -1))
+            .sort();
+        const rules = read('deploy/probe.Dockerfile.dockerignore')
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line.length > 0 && !line.startsWith('#'));
+        expect(rules[0]).toBe('*');
+        expect(rules.slice(1).every((rule) => rule.startsWith('!'))).toBe(true);
+        expect(rules.slice(1).map((rule) => rule.slice(1)).sort()).toEqual(copied);
+        // The scanner's and local results' manifests only, which the root lockfile's `npm ci` needs; never their sources.
+        expect(copied.filter((p) => /^packages\/(scanner|report)\//.test(p))).toEqual(['packages/report/package.json', 'packages/scanner/package.json']);
+        expect(copied).toEqual(expect.arrayContaining(['packages/contract/src', 'packages/probe/src']));
+    });
+
+    it('builds only the prober and the contract, and checks the runtime tree resolves what it imports', () => {
+        const runs = probeBuild.lines.filter((line) => line.startsWith('RUN '));
+        expect(runs.some((line) => line.includes('npm ci --ignore-scripts --no-audit --no-fund'))).toBe(true);
+        expect(runs).toContain('RUN npx tsc -b packages/probe');
+        expect(runs.join('\n')).not.toMatch(/packages\/scanner\/src|packages\/report\/src|npm run build\b/);
+        expect(runs.join('\n')).toContain("require(m)");
+    });
+
+    it('takes one tree from the build stage, runs nothing, as a user other than root, with the prober as its entry point', () => {
+        const copies = probeRuntime.lines.filter((line) => line.startsWith('COPY '));
+        expect(copies).toEqual(['COPY --from=build /out /app']);
+        expect(probeRuntime.lines.filter((line) => /^(RUN|ADD|SHELL|ONBUILD|VOLUME|EXPOSE) /.test(line))).toEqual([]);
+        const user = probeRuntime.lines.findIndex((line) => line === 'USER 1000:1000');
+        expect(user).toBeGreaterThan(probeRuntime.lines.indexOf(copies[0]));
+        expect(probeRuntime.lines).toContain('ENTRYPOINT ["node", "/app/packages/probe/dist/cli.js"]');
+        expect(probeRuntime.lines.some((line) => line.startsWith('CMD '))).toBe(false);
+        expect(probeRuntime.lines.join('\n')).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED/);
+        expect(probeRuntime.lines.join('\n')).toContain('org.opencontainers.image.licenses="BUSL-1.1"');
+    });
+
+    it('is smoked by its own script, which uses no network and needs no scanner image', () => {
+        const smoke = read('deploy/probe-smoke.sh');
+        expect(smoke).toContain('run() {\n    "$RUNTIME" run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges "$@"');
+        expect(smoke).not.toMatch(/ghcr\.io|scanent:/);
+        expect(fs.statSync(path.join(REPO_ROOT, 'deploy/probe-smoke.sh')).mode & 0o111).not.toBe(0);
+    });
+});
