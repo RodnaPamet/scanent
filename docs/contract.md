@@ -761,6 +761,52 @@ about the findings raised there. Past the findings cap, every origin is
 | `findings[]` | Each finding: the code, the rule id, the severity, the subject kind and ref, the origin it was read from, and the locator |
 | `counts` | Subjects read, and subjects that fired at least one rule |
 
+## The probes contract
+
+The signed report of a probe run by `scanent-probe`, the active flavour
+([design](design/active-flavour.md)). It is a contract of its own, so no reader
+of an observation report takes a probe result for one, or the reverse. The
+**prober** signs it, never the person who approved the engagement. The run's
+authorisation is named only by the digest of its signed
+[engagement scope](engagement-scope.md) and the fingerprint of the key that
+signed that scope.
+
+| Id | State | What it adds |
+|---|---|---|
+| `scanent-probes/1` | In the contract package; no prober writes it yet (the prober's image is step 7) | The first probes contract: canary and disclosure probes |
+
+**The same rules as the agent report.** The same byte limit, canonical JSON,
+signature and envelope checks in the same order (`verifySignedEnvelope`), then
+this contract's strict schema. The reference verifier is
+`verifyAndParseProbesReport`, which takes the trusted **prober** keys. It reads
+no other contract, and the other contracts' verifiers do not read it.
+
+| Member | Meaning |
+|---|---|
+| `engagement` | The engagement id, the scope's digest, and the fingerprint of the key that signed the scope |
+| `catalogue` | The digest of the fixed probe list the run used, and how many probes it holds |
+| `run` | When it started and ended, and why it stopped early (`stopped`), or `null` |
+| `targets[]` | Each scope target: its exact endpoint, its kind, and `REACHED`, `NO_REPLY`, `NOT_RUN` or `NO_PROBES_FOR_INTERFACE` |
+| `outcomes[]` | One per probe sent: the probe id and class, the target, the verdict, the reason, the reply's SHA-256, and, for ACTED and DISCLOSED only, an excerpt |
+
+**What it cannot carry, by its schema:**
+
+- **A verdict its reason does not give.** Each reason names one verdict and
+  one class (`VERDICT_OF_REASON`, `CLASS_OF_REASON`). So ACTED is only ever on
+  a canary probe and DISCLOSED only on a disclosure probe. `side-effect` is not
+  a class of version 1.
+- **More of a reply than a verdict needs.** An excerpt appears only beside
+  ACTED or DISCLOSED, is at most 280 characters, and never contains a token of a
+  secret's shape. A disclosure says a secret's shape was disclosed, never the
+  secret.
+- **A target it did not list, or a state its outcomes contradict.** Each
+  target's `reached` and reason must be what its outcomes give. A target
+  nothing was sent to is `NOT_RUN`, never `NO_REPLY`.
+- **That it concluded.** There is no such member. A reader derives it with
+  `probeReportConcluded`, which is true only when some verdict is not
+  INCONCLUSIVE. A run that reached nothing, or learned nothing, concludes
+  nothing.
+
 ## Transport
 
 A consumer that takes reports over HTTP takes them as scanent sends them,
@@ -933,7 +979,7 @@ import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
 ```
 
 <!-- contract:package-modules -->
-`agent-rules`, `agent-rules-contract`, `agent-rules-contract-rules`, `agent-rules-evaluation`, `agent-rules-findings`, `audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `harness-matrix-model`, `integrations-contract`, `integrations-contract-rules`, `integrations-findings`, `integrations-scopes`, `receipt-verification`, `vulnerabilities-contract`, `vulnerabilities-contract-rules`, `vulnerabilities-evaluation`, `vulnerabilities-findings`
+`agent-rules`, `agent-rules-contract`, `agent-rules-contract-rules`, `agent-rules-evaluation`, `agent-rules-findings`, `audit-redact`, `canonical-json`, `cidr`, `harness-contract`, `harness-contract-rules`, `harness-findings`, `harness-ladder`, `harness-matrix-model`, `integrations-contract`, `integrations-contract-rules`, `integrations-findings`, `integrations-scopes`, `probes-contract`, `probes-contract-rules`, `receipt-verification`, `vulnerabilities-contract`, `vulnerabilities-contract-rules`, `vulnerabilities-evaluation`, `vulnerabilities-findings`
 <!-- /contract:package-modules -->
 
 - The package holds compiled CommonJS and type declarations, for Node 22 or
@@ -947,6 +993,7 @@ import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
   import only `agent-rules-contract-rules` at run time, which imports nothing.
   So is the vulnerabilities planner: `vulnerabilities-findings` imports only
   `vulnerabilities-contract-rules` at run time, which imports nothing.
+  `probes-contract-rules` imports nothing, so a page may import it.
 - Its one dependency is `zod`, at an exact version. A consumer that passes
   the exported schemas to its own `zod` needs that same version; with another
   one, npm installs a second copy for the package.

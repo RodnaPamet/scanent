@@ -63,6 +63,8 @@ Each module is imported by its own path. There is no index module.
 | `@rodnapamet/scanent-contract/vulnerabilities-contract-rules` | Its contract id, attack classes, severity cap and locators: `VULNERABILITIES_CONTRACT_V1`, `ATTACK_CLASSES`, `SEVERITY_CAP`, `capSeverity`, `parseCodeRange` |
 | `@rodnapamet/scanent-contract/vulnerabilities-findings` | `planVulnerabilitiesScan`: the vulnerability findings, and what was not reviewed |
 | `@rodnapamet/scanent-contract/vulnerabilities-evaluation` | How a model revision earns the right to run: `scoreEvaluation`, `evaluationGate`, `EvaluationRecordSchema` |
+| `@rodnapamet/scanent-contract/probes-contract` | A probe run's report (scanent-probe, the active flavour): `ProbesReportBodyV1Schema`, `verifyAndParseProbesReport`, `probeReportConcluded` |
+| `@rodnapamet/scanent-contract/probes-contract-rules` | Its contract id, classes, verdicts and the reason each gives, and the exact-endpoint rule: `PROBES_CONTRACT_V1`, `VERDICT_OF_REASON`, `endpointProblem`. Imports nothing, so a page may use it |
 
 ```ts
 import { verifyAndParseHarnessReport } from '@rodnapamet/scanent-contract/harness-contract';

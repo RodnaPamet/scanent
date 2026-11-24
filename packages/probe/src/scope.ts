@@ -29,6 +29,7 @@ import {
     verifySignedEnvelope,
     type HarnessRefusal,
 } from '@rodnapamet/scanent-contract/harness-contract';
+import { MAX_PROBE_ENDPOINT_CHARS, endpointProblem } from '@rodnapamet/scanent-contract/probes-contract-rules';
 
 /** The scope's contract id: its `contract` member, read only once the signature verifies. */
 export const ENGAGEMENT_SCOPE_V1 = 'scanent-engagement-scope/1';
@@ -44,33 +45,13 @@ export const MAX_SCOPE_TARGETS = 50;
 export const MAX_SCOPE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const MIN_RATE_PER_MINUTE = 1;
 export const MAX_RATE_PER_MINUTE = 120;
-export const MAX_ENDPOINT_CHARS = 2048;
+export const MAX_ENDPOINT_CHARS = MAX_PROBE_ENDPOINT_CHARS;
 export const MAX_NAME_CHARS = 120;
 export const MAX_CONTACT_CHARS = 200;
 const MAX_KEY_CHARS = 256;
 
-/**
- * Why an endpoint is not an exact one, or null. A target is matched by byte
- * equality, so the scope must spell it the one way a URL serialises: https, a
- * host, no credentials, no query, no fragment, no pattern, and exactly
- * `new URL(e).href`. "Exact" is what makes the match safe: a scope cannot name
- * a range, and a request cannot reach a target by spelling it differently.
- */
-export function endpointProblem(endpoint: string): string | null {
-    if (endpoint.includes('*')) return 'a pattern is not an endpoint';
-    if (endpoint.includes('?') || endpoint.includes('#')) return 'an endpoint carries no query or fragment';
-    let url: URL;
-    try {
-        url = new URL(endpoint);
-    } catch {
-        return 'not a URL';
-    }
-    if (url.protocol !== 'https:') return 'not https';
-    if (url.username !== '' || url.password !== '') return 'an endpoint carries no credentials';
-    if (url.hostname === '') return 'no host';
-    if (url.href !== endpoint) return 'not in its canonical spelling (new URL(endpoint).href)';
-    return null;
-}
+/** The exact-endpoint rule, shared with the probes report: one copy, in the contract. */
+export { endpointProblem };
 
 /** One line of text a person wrote: no line break, no control character, no secret's shape. */
 function personText(max: number) {
