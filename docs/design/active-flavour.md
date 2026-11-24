@@ -159,7 +159,11 @@ three do. That is named here and designed later.
 
 1. This page, and the owner's decisions on it (taken 2026-11-24).
 2. The scope: its format, its verifier, and the refusals (no scope, wrong
-   signer, outside the window, unnamed target).
+   signer, outside the window, unnamed target). **Done (2026-11-24):**
+   [The engagement scope](../engagement-scope.md), in `packages/probe`. The
+   owner also set three limits for it that day: a window of at most seven
+   days, a rate cap of 1 to 120 requests per minute per target, and no clock
+   skew. The scope also names the one prober allowed to run it.
 3. The catalogue and the class taxonomy, with the test that holds each probe to
    its class, and a corpus of a fake agent that acts, discloses and resists.
 4. The canary sink.

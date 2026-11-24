@@ -81,6 +81,12 @@ describe('deploy/Dockerfile', () => {
         expect(copied.length).toBeGreaterThan(0);
     });
 
+    it('carries nothing of the active flavour: no file of packages/probe reaches the build or the image', () => {
+        // Decision 1 of docs/design/active-flavour.md: the prober is its own image, never a mode of this one.
+        expect(read('deploy/Dockerfile')).not.toContain('probe');
+        expect(read('.dockerignore')).not.toContain('probe');
+    });
+
     it('takes every file of the runtime stage from the build stage, never from the checkout', () => {
         const copies = runtime.lines.filter((line) => line.startsWith('COPY '));
         expect(copies.length).toBeGreaterThan(0);
