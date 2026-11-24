@@ -166,6 +166,10 @@ three do. That is named here and designed later.
    skew. The scope also names the one prober allowed to run it.
 3. The catalogue and the class taxonomy, with the test that holds each probe to
    its class, and a corpus of a fake agent that acts, discloses and resists.
+   **Done (2026-11-24):** [The probe catalogue and its verdicts](../probe-catalogue.md).
+   Eleven probes in seven categories. A canary shows its marker in two
+   halves, so quoting a probe is never ACTED. An instructions probe is judged
+   against a marker the estate planted, and is INCONCLUSIVE without one.
 4. The canary sink.
 5. The runner, against the fake agent only.
 6. The contract `scanent-probes/1`, its verifier and its report.
