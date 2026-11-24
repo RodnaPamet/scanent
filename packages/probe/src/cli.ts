@@ -9,7 +9,7 @@
  * Nothing a file or a flag carried is echoed: a refusal names its reason and,
  * for the schema, paths and rules.
  */
-import { closeSync, constants, existsSync, fstatSync, openSync, readSync, writeSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, openSync, readSync, rmSync, writeSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { MAX_REPORT_BYTES, harnessKeyFingerprint } from '@rodnapamet/scanent-contract/harness-contract';
@@ -350,10 +350,6 @@ async function runLive(argv: readonly string[], io: ProbeCliIo, cwd: string): Pr
         return PROBE_EXIT.USAGE;
     }
     const out = resolve(cwd, outPath);
-    if (existsSync(out)) {
-        io.err('run: the output file exists; it is never overwritten\n');
-        return PROBE_EXIT.USAGE;
-    }
 
     const env = io.env ?? process.env;
     const pem = readSecretEnv(env, keyEnv);
@@ -399,33 +395,48 @@ async function runLive(argv: readonly string[], io: ProbeCliIo, cwd: string): Pr
         plantedContext.push(marker.value);
     }
 
+    // The report's name is taken now, exclusively, before anything is sent: a run whose report could not be kept is
+    // never started, and the file is the one this run made. It is removed again if no report is written to it.
+    let fd: number;
+    try {
+        fd = openSync(out, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o644);
+    } catch (err) {
+        const exists = (err as NodeJS.ErrnoException).code === 'EEXIST';
+        io.err(`run: ${exists ? 'the output file exists; it is never overwritten' : 'the output file could not be created'}\n`);
+        return exists ? PROBE_EXIT.USAGE : PROBE_EXIT.FAILED;
+    }
+    const discard = () => {
+        closeSync(fd);
+        rmSync(out, { force: true });
+    };
+
     const stopFile = one(flags, '--stop-file');
     const stopPath = stopFile === undefined ? undefined : resolve(cwd, stopFile);
-    const run = await runProbes({
-        scope: verified,
-        transport: createProbeWire({ fetchImpl: io.fetchImpl, credentials }),
-        now: io.now ?? Date.now,
-        sleep: io.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms))),
-        shouldStop: () => (io.stopRequested?.() ?? false) || (stopPath !== undefined && existsSync(stopPath)),
-        plantedContext,
-    });
+    let run: Awaited<ReturnType<typeof runProbes>>;
+    try {
+        run = await runProbes({
+            scope: verified,
+            transport: createProbeWire({ fetchImpl: io.fetchImpl, credentials }),
+            now: io.now ?? Date.now,
+            sleep: io.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms))),
+            shouldStop: () => (io.stopRequested?.() ?? false) || (stopPath !== undefined && existsSync(stopPath)),
+            plantedContext,
+        });
+    } catch (err) {
+        discard();
+        throw err;
+    }
 
     let report: string;
     try {
         report = signProbeReport(buildProbeReport(run, verified), keys, verified);
     } catch (err) {
+        discard();
         if (err instanceof ProbeReportRefused) {
             io.err(`run: the report was not made\n${err.issues.map((i) => `  ${i}\n`).join('')}`);
             return PROBE_EXIT.FAILED;
         }
         throw err;
-    }
-    let fd: number;
-    try {
-        fd = openSync(out, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o644);
-    } catch {
-        io.err('run: the report file could not be created\n');
-        return PROBE_EXIT.FAILED;
     }
     try {
         writeSync(fd, report);
