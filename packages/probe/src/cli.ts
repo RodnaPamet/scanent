@@ -9,7 +9,7 @@
  * Nothing a file or a flag carried is echoed: a refusal names its reason and,
  * for the schema, paths and rules.
  */
-import { closeSync, constants, openSync, readFileSync, statSync, writeSync } from 'node:fs';
+import { closeSync, constants, fstatSync, openSync, readSync, writeSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { MAX_REPORT_BYTES, harnessKeyFingerprint } from '@rodnapamet/scanent-contract/harness-contract';
@@ -72,13 +72,37 @@ function parseFlags(
 
 const one = (flags: Flags, name: string): string | undefined => flags.values.get(name)?.[0];
 
-/** A file's text, or null when it cannot be read or is over the size any scope may be. */
+/**
+ * A regular file's text, or null when it cannot be read, or TOO_LARGE. The
+ * size is asked of the open descriptor, and the read stops one byte past the
+ * cap: a file swapped or grown between the check and the read is still bounded,
+ * and one that grew while it was read is refused rather than cut. The same
+ * read as the scanner's inventory file (`packages/scanner/src/inventory-file.ts`).
+ */
 function readBounded(path: string): string | null | 'TOO_LARGE' {
+    let fd: number;
     try {
-        if (statSync(path).size > MAX_REPORT_BYTES) return 'TOO_LARGE';
-        return readFileSync(path, 'utf8');
+        fd = openSync(path, 'r');
     } catch {
         return null;
+    }
+    try {
+        const stat = fstatSync(fd);
+        if (!stat.isFile()) return null;
+        if (stat.size > MAX_REPORT_BYTES) return 'TOO_LARGE';
+        const buffer = Buffer.alloc(stat.size + 1);
+        let length = 0;
+        while (length < buffer.byteLength) {
+            const read = readSync(fd, buffer, length, buffer.byteLength - length, null);
+            if (read === 0) break;
+            length += read;
+        }
+        if (length > stat.size) return null;
+        return buffer.subarray(0, length).toString('utf8');
+    } catch {
+        return null;
+    } finally {
+        closeSync(fd);
     }
 }
 

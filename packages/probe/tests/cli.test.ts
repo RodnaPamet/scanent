@@ -72,6 +72,15 @@ describe('scanent-probe scope', () => {
         expect(run(...verifyArgs)).toEqual({ code: PROBE_EXIT.FAILED, out: '', err: 'scope: refused (NO_SCOPE)\n' });
     });
 
+    it('reads a scope through one descriptor: over the cap is TOO_LARGE, and a directory is no scope', () => {
+        const { run, cwd } = harness();
+        writeFileSync(join(cwd, 'signed.json'), 'x'.repeat(5 * 1024 * 1024 + 1));
+        expect(run(...verifyArgs).err).toBe('scope: refused (TOO_LARGE)\n');
+        expect(run('scope', 'verify', '--scope', '.', '--trusted-key', approver.hex, '--prober-key', prober.hex).err).toBe(
+            'scope: refused (NO_SCOPE)\n',
+        );
+    });
+
     it('names each refusal and nothing it read', () => {
         const { run, cwd } = harness();
         sign(run);
