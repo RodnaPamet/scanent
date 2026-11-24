@@ -13,7 +13,7 @@ import { verifyEngagementScope } from '../src/scope';
 import { signScope } from '../src/scope-sign';
 import { FAKE_TOOL_TOKEN, PLANTED_MARKER, obedient, resistant, silent } from './helpers/fake-agents';
 import { fakeClock, fakeTransport } from './helpers/fake-transport';
-import { START_MS, makeKey, scopeBody } from './helpers/scope-keys';
+import { START_MS, makeKey, scopeBody, chatTarget, mcpTarget } from './helpers/scope-keys';
 
 const approver = makeKey();
 const prober = makeKey();
@@ -26,7 +26,7 @@ const MCP = 'https://mcp.estate.example/mcp';
 const CHAT = 'https://chat.estate.example/api/turn';
 
 function verifiedScope() {
-    const raw = signScope(scopeBody(prober, { targets: [{ kind: 'mcp', endpoint: MCP }, { kind: 'http-chat', endpoint: CHAT }] }), approver);
+    const raw = signScope(scopeBody(prober, { targets: [mcpTarget(MCP), chatTarget(CHAT)] }), approver);
     const result = verifyEngagementScope(raw, { trustedScopeKeys: [approver.hex], proberKey: prober.hex });
     if (!result.ok) throw new Error(result.reason);
     return result;

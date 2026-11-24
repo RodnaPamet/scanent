@@ -185,6 +185,18 @@ three do. That is named here and designed later.
    cannot say that it concluded: a reader derives that. Writing the report file
    waits for a real run (step 7).
 7. The image `scanent-probe`, its declared surface per engagement, and its proof.
+   Split by the owner (2026-11-24) into 7a and 7b. **7a is done:** the wire to
+   MCP, A2A and chat targets, and a `run` that sends and writes the signed
+   report, from a checkout ([The probe runner](../probe-runner.md#a-run-that-sends)).
+   The owner also decided that day how each kind of target is reached:
+   - an MCP tool is called only if the signed scope names it, with the argument
+     the probe goes in;
+   - a chat target's request and reply shape is declared in the scope;
+   - a credential comes from a variable in the prober's own environment, never
+     from the scope, and goes only to its endpoint.
+
+   7b is the image, its declared surface per engagement, its proof and its
+   release.
 8. The Inflect ingest.
 
 ## The owner's decisions (2026-11-24)

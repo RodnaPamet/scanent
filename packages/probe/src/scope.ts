@@ -29,7 +29,7 @@ import {
     verifySignedEnvelope,
     type HarnessRefusal,
 } from '@rodnapamet/scanent-contract/harness-contract';
-import { MAX_PROBE_ENDPOINT_CHARS, endpointProblem } from '@rodnapamet/scanent-contract/probes-contract-rules';
+import { MAX_PROBE_ENDPOINT_CHARS, MCP_TOOL_NAME, endpointProblem } from '@rodnapamet/scanent-contract/probes-contract-rules';
 
 /** The scope's contract id: its `contract` member, read only once the signature verifies. */
 export const ENGAGEMENT_SCOPE_V1 = 'scanent-engagement-scope/1';
@@ -65,19 +65,111 @@ function personText(max: number) {
         .refine((v) => !looksLikeSecret(v), 'secret-shaped');
 }
 
-const TargetSchema = z
+const endpoint = z
+    .string()
+    .min(1)
+    .max(MAX_ENDPOINT_CHARS)
+    .superRefine((v, ctx) => {
+        const problem = endpointProblem(v);
+        if (problem !== null) ctx.addIssue({ code: 'custom', message: problem });
+    });
+
+/** The placeholder a chat target's body template holds, exactly once, as a whole string. */
+export const PROBE_PLACEHOLDER = '{{probe}}';
+export const MAX_MCP_TOOLS_PER_TARGET = 10;
+export const MAX_CHAT_TEMPLATE_BYTES = 8 * 1024;
+export const MAX_CHAT_TEMPLATE_DEPTH = 16;
+export const MAX_REPLY_PATH = 16;
+
+/**
+ * Why a chat body template cannot be sent, or null. It is JSON of at most
+ * 8 KiB and depth 16, with exactly one string leaf that IS the placeholder
+ * (never a string that merely contains it), and no key or string of a
+ * secret's shape: the approver signs exactly what is sent, so it may not hold
+ * a credential, which comes from the prober's own environment instead.
+ */
+export function chatTemplateProblem(body: unknown): string | null {
+    let text: string;
+    try {
+        text = JSON.stringify(body);
+    } catch {
+        return 'not JSON';
+    }
+    if (text === undefined || Buffer.byteLength(text, 'utf8') > MAX_CHAT_TEMPLATE_BYTES) return 'larger than 8 KiB';
+    let placeholders = 0;
+    let problem: string | null = null;
+    const walk = (node: unknown, depth: number): void => {
+        if (problem !== null) return;
+        if (depth > MAX_CHAT_TEMPLATE_DEPTH) {
+            problem = 'deeper than 16';
+            return;
+        }
+        if (typeof node === 'string') {
+            if (node === PROBE_PLACEHOLDER) placeholders += 1;
+            else if (node.includes(PROBE_PLACEHOLDER)) problem = 'the placeholder is a whole string, never part of one';
+            else if (looksLikeSecret(node)) problem = 'a string of a secret\'s shape';
+            return;
+        }
+        if (Array.isArray(node)) {
+            for (const item of node) walk(item, depth + 1);
+            return;
+        }
+        if (node !== null && typeof node === 'object') {
+            for (const [key, value] of Object.entries(node)) {
+                if (looksLikeSecret(key) || key.includes(PROBE_PLACEHOLDER)) {
+                    problem = 'a key that is a secret\'s shape or the placeholder';
+                    return;
+                }
+                walk(value, depth + 1);
+            }
+        }
+    };
+    walk(body, 0);
+    if (problem !== null) return problem;
+    if (placeholders !== 1) return `the placeholder appears ${placeholders} times, not once`;
+    return null;
+}
+
+const McpToolSchema = z
     .object({
-        kind: z.enum(SCOPE_TARGET_KINDS),
-        endpoint: z
-            .string()
-            .min(1)
-            .max(MAX_ENDPOINT_CHARS)
-            .superRefine((v, ctx) => {
-                const problem = endpointProblem(v);
-                if (problem !== null) ctx.addIssue({ code: 'custom', message: problem });
-            }),
+        name: z.string().regex(MCP_TOOL_NAME, 'a tool name: letters, digits, _ . -, at most 128'),
+        argument: z.string().regex(MCP_TOOL_NAME, 'an argument name: letters, digits, _ . -, at most 128'),
     })
     .strict();
+
+const TargetSchema = z.discriminatedUnion('kind', [
+    z
+        .object({
+            kind: z.literal('mcp'),
+            endpoint,
+            /** The tools a probe may call, and the argument it goes in: the approver's statement that each is safe to call. */
+            tools: z
+                .array(McpToolSchema)
+                .min(1)
+                .max(MAX_MCP_TOOLS_PER_TARGET)
+                .refine((tools) => new Set(tools.map((t) => t.name)).size === tools.length, 'a tool is named twice'),
+        })
+        .strict(),
+    z.object({ kind: z.literal('a2a'), endpoint }).strict(),
+    z
+        .object({
+            kind: z.literal('http-chat'),
+            endpoint,
+            request: z
+                .object({
+                    body: z.unknown().superRefine((v, ctx) => {
+                        const problem = chatTemplateProblem(v);
+                        if (problem !== null) ctx.addIssue({ code: 'custom', message: problem });
+                    }),
+                    replyPath: z
+                        .array(z.union([z.string().min(1).max(128), z.number().int().min(0).max(10_000)]))
+                        .min(1)
+                        .max(MAX_REPLY_PATH),
+                })
+                .strict(),
+        })
+        .strict(),
+]);
 
 export const EngagementScopeSchema = z
     .object({

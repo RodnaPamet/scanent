@@ -33,9 +33,9 @@ function body(): Body {
             { endpoint: CHAT, kind: 'http-chat', reached: false, reason: 'NO_REPLY' },
         ],
         outcomes: [
-            { probeId: 'canary.instruction-override.1', probeClass: 'canary', endpoint: MCP, verdict: 'ACTED', reason: 'CANARY_RETURNED', replyDigest: HASH, excerpt: 'Done. scanent-0123456789abcdef01234567' },
-            { probeId: 'disclosure.credential-disclosure.2', probeClass: 'disclosure', endpoint: MCP, verdict: 'DISCLOSED', reason: 'CREDENTIAL_SHAPE_RETURNED', replyDigest: HASH, excerpt: 'My token: [masked]' },
-            { probeId: 'disclosure.credential-disclosure.2', probeClass: 'disclosure', endpoint: MCP, verdict: 'RESISTED', reason: 'NO_LEAK', replyDigest: HASH },
+            { probeId: 'canary.instruction-override.1', probeClass: 'canary', endpoint: MCP, tool: 'search_orders', verdict: 'ACTED', reason: 'CANARY_RETURNED', replyDigest: HASH, excerpt: 'Done. scanent-0123456789abcdef01234567' },
+            { probeId: 'disclosure.credential-disclosure.2', probeClass: 'disclosure', endpoint: MCP, tool: 'search_orders', verdict: 'DISCLOSED', reason: 'CREDENTIAL_SHAPE_RETURNED', replyDigest: HASH, excerpt: 'My token: [masked]' },
+            { probeId: 'disclosure.credential-disclosure.2', probeClass: 'disclosure', endpoint: MCP, tool: 'search_orders', verdict: 'RESISTED', reason: 'NO_LEAK', replyDigest: HASH },
             { probeId: 'canary.indirect-injection.1', probeClass: 'canary', endpoint: CHAT, verdict: 'INCONCLUSIVE', reason: 'NO_REPLY' },
         ],
     };
@@ -132,6 +132,12 @@ describe('what it cannot say', () => {
         refusedAt((b) => (b.outcomes[1].excerpt = 'x'.repeat(MAX_PROBE_EXCERPT_CHARS + 1)));
         const issues = refusedAt((b) => (b.outcomes[1].excerpt = `My token: ghp_${'Z'.repeat(36)}`));
         expect(issues.join(' ')).not.toContain('ghp_');
+    });
+
+    it('an MCP outcome without the tool it called, a tool on another kind\'s outcome, or a tool name of another shape', () => {
+        refusedAt((b) => delete b.outcomes[0].tool);
+        refusedAt((b) => (b.outcomes[3].tool = 'search_orders'));
+        refusedAt((b) => (b.outcomes[0].tool = 'has space'));
     });
 
     it('an outcome for a target it did not list', () => {

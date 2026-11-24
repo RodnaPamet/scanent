@@ -150,13 +150,14 @@ describe('scanent-probe scope', () => {
         expect(result.out).not.toMatch(/scanent-[0-9a-f]/);
     });
 
-    it('run without --dry-run sends nothing and says why; a scope that does not verify is refused', () => {
+    it('a live run takes the prober\'s key from its environment, not a --prober-key; a dry run\'s scope that does not verify is refused', async () => {
         const { run } = harness();
         sign(run);
-        expect(run('run', '--scope', 'signed.json', '--trusted-key', approver.hex, '--prober-key', prober.hex)).toEqual({
+        const live = run('run', '--scope', 'signed.json', '--trusted-key', approver.hex, '--prober-key', prober.hex);
+        expect({ ...live, code: await live.code }).toEqual({
             code: PROBE_EXIT.USAGE,
             out: '',
-            err: "run: only --dry-run is available; sending arrives with the prober's image\n",
+            err: 'run: an argument this command does not take\n',
         });
         expect(run('run', '--dry-run', '--scope', 'signed.json', '--trusted-key', makeKey().hex, '--prober-key', prober.hex).err).toBe(
             'scope: refused (UNTRUSTED_SIGNER)\n',

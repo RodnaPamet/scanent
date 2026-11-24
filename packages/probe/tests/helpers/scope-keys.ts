@@ -31,14 +31,23 @@ export const END = '2026-12-03T17:00:00.000Z';
 export const START_MS = Date.parse(START);
 export const END_MS = Date.parse(END);
 
+/** The tool a test MCP target names, and the argument the probe goes in. */
+export const MCP_TOOL = { name: 'search_orders', argument: 'query' } as const;
+/** A chat target's request shape: an OpenAI-style body, the reply at `reply`. */
+export const CHAT_REQUEST = { body: { messages: [{ role: 'user', content: '{{probe}}' }], stream: false }, replyPath: ['reply'] };
+
+export const mcpTarget = (endpoint: string, tools: readonly { name: string; argument: string }[] = [MCP_TOOL]) => ({ kind: 'mcp', endpoint, tools });
+export const chatTarget = (endpoint: string, request: unknown = CHAT_REQUEST) => ({ kind: 'http-chat', endpoint, request });
+export const a2aTarget = (endpoint: string) => ({ kind: 'a2a', endpoint });
+
 /** A valid scope body naming `prober`. */
 export function scopeBody(prober: TestKey, overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
         contract: ENGAGEMENT_SCOPE_V1,
         engagementId: 'eng-2026-12-acme',
         targets: [
-            { kind: 'mcp', endpoint: 'https://mcp.estate.example/mcp' },
-            { kind: 'http-chat', endpoint: 'https://chat.estate.example/api/turn' },
+            mcpTarget('https://mcp.estate.example/mcp'),
+            chatTarget('https://chat.estate.example/api/turn'),
         ],
         window: { start: START, end: END },
         classes: ['canary', 'disclosure'],

@@ -773,7 +773,7 @@ signed that scope.
 
 | Id | State | What it adds |
 |---|---|---|
-| `scanent-probes/1` | In the contract package; no prober writes it yet (the prober's image is step 7) | The first probes contract: canary and disclosure probes |
+| `scanent-probes/1` | In the contract package; written by `scanent-probe run` from a checkout (its image is step 7b) | The first probes contract: canary and disclosure probes |
 
 **The same rules as the agent report.** The same byte limit, canonical JSON,
 signature and envelope checks in the same order (`verifySignedEnvelope`), then
@@ -787,7 +787,7 @@ no other contract, and the other contracts' verifiers do not read it.
 | `catalogue` | The digest of the fixed probe list the run used, and how many probes it holds |
 | `run` | When it started and ended, and why it stopped early (`stopped`), or `null` |
 | `targets[]` | Each scope target: its exact endpoint, its kind, and `REACHED`, `NO_REPLY`, `NOT_RUN` or `NO_PROBES_FOR_INTERFACE` |
-| `outcomes[]` | One per probe sent: the probe id and class, the target, the verdict, the reason, the reply's SHA-256, and, for ACTED and DISCLOSED only, an excerpt |
+| `outcomes[]` | One per probe sent: the probe id and class, the target, for an MCP target the `tool` called (and for no other), the verdict, the reason, the reply's SHA-256, and, for ACTED and DISCLOSED only, an excerpt |
 
 **What it cannot carry, by its schema:**
 
