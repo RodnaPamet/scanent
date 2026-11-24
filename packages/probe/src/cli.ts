@@ -15,6 +15,7 @@ import { resolve } from 'node:path';
 import { MAX_REPORT_BYTES, harnessKeyFingerprint } from '@rodnapamet/scanent-contract/harness-contract';
 
 import { ScopeSignRefused, loadScopeSigningKey, signScope } from './scope-sign';
+import { planRequests } from './runner';
 import { scopeClassRefusal, scopeTargetRefusal, scopeWindowRefusal, verifyEngagementScope } from './scope';
 
 /** The exit codes, the same numbers `scanent` uses for the same meanings (packages/scanner/src/exit-codes.ts). */
@@ -39,6 +40,9 @@ export const PROBE_HELP = [
     '                             --prober-key <key> [--target <url>] [--class <class>]',
     '      Check a scope as the prober will: a registered signer, the strict format, a',
     '      signer that is not the prober, this prober named, and the window open now.',
+    '  scanent-probe run --dry-run --scope <file> --trusted-key <key>... --prober-key <key>',
+    '      Verify the scope and list every request a run would send, by target and probe.',
+    '      Nothing is sent: this build has no transport to a real target.',
     '  scanent-probe help',
     '',
     'Keys are raw Ed25519 public keys, hex or base64 (what `scanent keygen` prints).',
@@ -226,6 +230,54 @@ function runVerify(argv: readonly string[], io: ProbeCliIo, cwd: string): number
     return PROBE_EXIT.OK;
 }
 
+/**
+ * `run --dry-run`: the scope verified as `scope verify` verifies it, then the
+ * requests a run would send, one line each. The rendered text is not printed:
+ * it holds this plan's canary halves, which a real run would not reuse. Without
+ * `--dry-run` it refuses: this build sends nothing.
+ */
+function runDry(argv: readonly string[], io: ProbeCliIo, cwd: string): number {
+    const dry = argv.includes('--dry-run');
+    if (!dry) {
+        io.err('run: only --dry-run is available; sending arrives with the prober\'s image\n');
+        return PROBE_EXIT.USAGE;
+    }
+    const parsed = parseFlags(argv.filter((a) => a !== '--dry-run'), ['--scope', '--trusted-key', '--prober-key'], ['--trusted-key']);
+    if ('problem' in parsed) {
+        io.err(`run: ${parsed.problem}\n`);
+        return PROBE_EXIT.USAGE;
+    }
+    const scopePath = one(parsed.flags, '--scope');
+    const trusted = parsed.flags.values.get('--trusted-key') ?? [];
+    const proberKey = one(parsed.flags, '--prober-key');
+    if (scopePath === undefined || trusted.length === 0 || proberKey === undefined) {
+        io.err('run: --scope, at least one --trusted-key and --prober-key are required\n');
+        return PROBE_EXIT.USAGE;
+    }
+    if (harnessKeyFingerprint(proberKey) === null || trusted.some((k) => harnessKeyFingerprint(k) === null)) {
+        io.err('run: a key is not a raw Ed25519 public key in hex or base64\n');
+        return PROBE_EXIT.USAGE;
+    }
+    const raw = readBounded(resolve(cwd, scopePath));
+    if (raw === null) return refuse(io, 'NO_SCOPE');
+    if (raw === 'TOO_LARGE') return refuse(io, 'TOO_LARGE');
+    const result = verifyEngagementScope(raw, { trustedScopeKeys: trusted, proberKey });
+    if (!result.ok) return refuse(io, result.reason, result.issues);
+
+    const plan = planRequests(result.scope);
+    const index = new Map(result.scope.targets.map((t, i) => [t.endpoint, i + 1]));
+    io.out(
+        [
+            `dry run: ${plan.length} request${plan.length === 1 ? '' : 's'}, none sent`,
+            `engagement: ${result.scope.engagementId}`,
+            `digest: ${result.digest}`,
+            ...plan.map((p) => `target ${index.get(p.endpoint)}  ${p.probeId}  (${p.probeClass})`),
+            '',
+        ].join('\n'),
+    );
+    return PROBE_EXIT.OK;
+}
+
 function refuse(io: ProbeCliIo, reason: string, issues?: readonly string[]): number {
     io.err(`scope: refused (${reason})\n${(issues ?? []).map((i) => `  ${i}\n`).join('')}`);
     return PROBE_EXIT.FAILED;
@@ -240,6 +292,7 @@ export function main(argv: readonly string[], io: ProbeCliIo): number {
     }
     if (command === 'scope' && sub === 'sign') return runSign(rest, io, cwd);
     if (command === 'scope' && sub === 'verify') return runVerify(rest, io, cwd);
+    if (command === 'run') return runDry(sub === undefined ? [] : [sub, ...rest], io, cwd);
     io.err('scanent-probe: not a command; see scanent-probe help\n');
     return PROBE_EXIT.USAGE;
 }

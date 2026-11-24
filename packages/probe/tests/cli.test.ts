@@ -7,8 +7,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { PROBE_EXIT, PROBE_HELP, main } from '../src/cli';
+import { planRequests } from '../src/runner';
+import { EngagementScopeSchema } from '../src/scope';
 import { EXIT } from '../../scanner/src/exit-codes';
 import { START_MS, makeKey, scopeBody } from './helpers/scope-keys';
+
+const scopeOf = (p: ReturnType<typeof makeKey>) => EngagementScopeSchema.parse(scopeBody(p));
 
 const approver = makeKey();
 const prober = makeKey();
@@ -132,6 +136,37 @@ describe('scanent-probe scope', () => {
         expect(sign(run, 'absent.pem').code).toBe(PROBE_EXIT.CONFIG);
         writeFileSync(join(cwd, 'scope.json'), '{');
         expect(sign(run).code).toBe(PROBE_EXIT.CONFIG);
+    });
+
+    it('run --dry-run verifies the scope and lists every request by target and probe, with no canary', () => {
+        const { run } = harness();
+        sign(run);
+        const result = run('run', '--dry-run', '--scope', 'signed.json', '--trusted-key', approver.hex, '--prober-key', prober.hex);
+        expect(result.code).toBe(PROBE_EXIT.OK);
+        const plan = planRequests(scopeOf(prober));
+        expect(result.out).toContain(`dry run: ${plan.length} requests, none sent\n`);
+        expect(result.out).toContain('target 1  canary.instruction-override.1  (canary)');
+        expect(result.out.split('\n').filter((l) => l.startsWith('target '))).toHaveLength(plan.length);
+        expect(result.out).not.toMatch(/scanent-[0-9a-f]/);
+    });
+
+    it('run without --dry-run sends nothing and says why; a scope that does not verify is refused', () => {
+        const { run } = harness();
+        sign(run);
+        expect(run('run', '--scope', 'signed.json', '--trusted-key', approver.hex, '--prober-key', prober.hex)).toEqual({
+            code: PROBE_EXIT.USAGE,
+            out: '',
+            err: "run: only --dry-run is available; sending arrives with the prober's image\n",
+        });
+        expect(run('run', '--dry-run', '--scope', 'signed.json', '--trusted-key', makeKey().hex, '--prober-key', prober.hex).err).toBe(
+            'scope: refused (UNTRUSTED_SIGNER)\n',
+        );
+        expect(run('run', '--dry-run', '--scope', 'absent.json', '--trusted-key', approver.hex, '--prober-key', prober.hex).err).toBe(
+            'scope: refused (NO_SCOPE)\n',
+        );
+        expect(run('run', '--dry-run', '--scope', 'signed.json', '--prober-key', prober.hex).code).toBe(PROBE_EXIT.USAGE);
+        expect(run('run', '--dry-run', '--scope', 'signed.json', '--trusted-key', 'nope', '--prober-key', prober.hex).code).toBe(PROBE_EXIT.USAGE);
+        expect(run('run', '--dry-run', '--token', 'x').code).toBe(PROBE_EXIT.USAGE);
     });
 
     it('help names both commands; with no command it is a usage error', () => {

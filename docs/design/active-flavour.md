@@ -170,8 +170,13 @@ three do. That is named here and designed later.
    Eleven probes in seven categories. A canary shows its marker in two
    halves, so quoting a probe is never ACTED. An instructions probe is judged
    against a marker the estate planted, and is INCONCLUSIVE without one.
-4. The canary sink.
-5. The runner, against the fake agent only.
+4. The canary sink. **Deferred by the owner (2026-11-24)** until `side-effect`
+   probes are decided: no version 1 probe uses it, because every one is judged
+   from the reply and none may name a URL.
+5. The runner, against the fake agent only. **Done (2026-11-24):**
+   [The probe runner](../probe-runner.md). It checks the stop, the rate and the
+   scope's gate before every request, and `run --dry-run` lists a run's
+   requests without sending any.
 6. The contract `scanent-probes/1`, its verifier and its report.
 7. The image `scanent-probe`, its declared surface per engagement, and its proof.
 8. The Inflect ingest.
