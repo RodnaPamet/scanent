@@ -1,13 +1,14 @@
 # The active flavour: probing an agent, and reporting what worked
 
-> **Status: being designed (2026-11-23). No code.** The owner asked for it on
-> 2026-11-22: a second scanent that attacks a target agent the way an attacker
-> would, reports what the agent did, and does no damage. It was held while the
-> agent-surface rules were built, and unheld on 2026-11-23. Decision 19 of
-> [Several scanners in one scanent](scanners.md) puts it on a page of its own,
-> with an authorisation gate and a definition of "no damage", before any code.
-> This is that page. It ships nothing and changes no scanner. The decisions it
-> needs are at the end.
+> **Status: designed and decided (2026-11-24). No code yet.** The owner asked
+> for it on 2026-11-22: a second scanent that attacks a target agent the way an
+> attacker would, reports what the agent did, and does no damage. It was held
+> while the agent-surface rules were built, and unheld on 2026-11-23. Decision
+> 19 of [Several scanners in one scanent](scanners.md) puts it on a page of its
+> own, with an authorisation gate and a definition of "no damage", before any
+> code. This is that page. It ships nothing and changes no scanner. The owner
+> took the eight decisions at the end on 2026-11-24, each as recommended; work
+> starts at step 2 of the order of work.
 
 ## What it is
 
@@ -109,8 +110,8 @@ nothing. The scope is a file that names:
 
 - the targets, as exact endpoints (no pattern, no range);
 - the time window, start and end, in UTC;
-- the probe classes allowed (version 1 recommends `canary` and `disclosure`
-  only);
+- the probe classes allowed (version 1 offers `canary` and `disclosure`
+  only: decision 3);
 - the person who approved it, by name and role, and a kill contact;
 - the rate cap, in requests per minute per target.
 
@@ -156,7 +157,7 @@ three do. That is named here and designed later.
 
 ## Order of work
 
-1. This page, and the owner's decisions on it.
+1. This page, and the owner's decisions on it (taken 2026-11-24).
 2. The scope: its format, its verifier, and the refusals (no scope, wrong
    signer, outside the window, unnamed target).
 3. The catalogue and the class taxonomy, with the test that holds each probe to
@@ -167,15 +168,18 @@ three do. That is named here and designed later.
 7. The image `scanent-probe`, its declared surface per engagement, and its proof.
 8. The Inflect ingest.
 
-## Decisions for the owner
+## The owner's decisions (2026-11-24)
 
-| # | Question | Recommendation |
+The owner took all eight on 2026-11-24, each as recommended. Changing one is a
+new dated decision on this page, never an edit of the row.
+
+| # | Question | Decision |
 |---|---|---|
-| 1 | A separate image, or a mode of the read-only one | A separate image. The read-only image's promise and its proof stay unconditional |
-| 2 | Who signs the scope | A key the estate registers in advance, never the scanner's |
-| 3 | Whether `side-effect` probes are in version 1 | No: `canary` and `disclosure` only. Add `side-effect` once the sink and the class test exist |
-| 4 | Where the canary sink runs | Beside the prober, inside the estate, so no marker leaves it. A scanent-run service is a sub-processor question |
-| 5 | How much of a reply is kept | A hash and an excerpt of at most 280 characters, secrets masked |
-| 6 | Whether a model may ever write or choose a probe | No. A fixed, reviewed catalogue; a model may later help write it, never run it |
-| 7 | Which sources' material is used, given their licences | Categories, verdict rules and limits only, as the table above says, each confirmed against its licence file at the commit taken. BugHunter's CC BY 4.0 content needs attribution in `NOTICE` if any of its wording is adapted |
-| 8 | Who writes the probes, since no source offers a corpus | scanent writes them, a few per category, each with its class, its expected act or leak, and a fake agent in the corpus that acts, discloses and resists |
+| 1 | A separate image, or a mode of the read-only one | **A separate image**, `scanent-probe`. The read-only image's promise and its proof stay unconditional |
+| 2 | Who signs the scope | **A key the estate registers in advance, never the scanner's.** The party that runs the probes does not authorise them |
+| 3 | Whether `side-effect` probes are in version 1 | **No: `canary` and `disclosure` only.** `side-effect` is a later decision, once the sink and the class test exist |
+| 4 | Where the canary sink runs | **Beside the prober, inside the estate**, so no marker leaves it. A scanent-run sink is not offered: it would be a sub-processor question |
+| 5 | How much of a reply is kept | **A hash and an excerpt of at most 280 characters, secrets masked** |
+| 6 | Whether a model may ever write or choose a probe | **No. A fixed, reviewed catalogue**; a model may later help write it, never run it or choose from it |
+| 7 | Which sources' material is used, given their licences | **Categories, verdict rules and limits only**, as the table above says, each confirmed against its licence file at the commit taken. No source's wording is adapted; if that ever changes, BugHunter's CC BY 4.0 content needs attribution in `NOTICE` |
+| 8 | Who writes the probes, since no source offers a corpus | **scanent writes them**, a few per category, each with its class, its expected act or leak, and a fake agent in the corpus that acts, discloses and resists |
