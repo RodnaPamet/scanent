@@ -46,5 +46,10 @@ so its run has nine files: 0.15.0's seven, the signed agent-rules report
 release. There is no `0.16.1`: it was prepared and never released, and its fix
 ships in 0.17.0.
 
+`0.18.0` was made from the commit that raises the version to 0.18.0. Nothing
+the scanner reads or writes changed from 0.17.0: its run has the same nine
+files, and only the version and the manifest hash in them moved. The release
+is the contract package's, which gains the probes contract.
+
 A release adds a directory. None is removed while that version is supported
 (`docs/release-checklist.md`).

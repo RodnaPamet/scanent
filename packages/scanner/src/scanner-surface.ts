@@ -64,8 +64,12 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * posts to its own ingest with its own key, a third declared POST; and the
  * `code` source narrows an Agent SDK agent's tools to
  * what `allowedTools` approves when `dontAsk` makes that the reachable set.
+ * 0.18.0: nothing the scanner reads or reports changed. The version moves
+ * with the contract package, which gains the probes contract
+ * (`scanent-probes/1`, the active flavour's report); the surface names the
+ * version, so the manifest hash moved with it.
  */
-export const SCANNER_VERSION = '0.17.0';
+export const SCANNER_VERSION = '0.18.0';
 
 /** The ingest route, as `docs/contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
