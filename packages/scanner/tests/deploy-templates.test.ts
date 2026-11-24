@@ -2051,7 +2051,7 @@ describe('the CI gates', () => {
     const runOf = (job: Json): string => steps(job).map((s) => String(s.run ?? '')).join('\n');
 
     it('has these jobs, runs on pull requests, pushes to main and weekly, and may only read', () => {
-        expect(Object.keys(ci.jobs)).toEqual(['checks', 'image', 'image-podman', 'chart', 'chart-install']);
+        expect(Object.keys(ci.jobs)).toEqual(['checks', 'image', 'image-probe', 'image-podman', 'chart', 'chart-install']);
         const on = (ci.on ?? ci.true) as Json;
         expect(Object.keys(on).sort()).toEqual(['pull_request', 'push', 'schedule']);
         expect(on.push).toEqual({ branches: ['main'] });
@@ -2086,6 +2086,21 @@ describe('the CI gates', () => {
             expect(String(grype?.with['grype-version'])).toMatch(/^v\d+\.\d+\.\d+$/);
             for (const step of [trivy, grype]) expect(step?.['continue-on-error']).toBeUndefined();
         }
+    });
+
+    it('builds, smokes and gates the prober\'s image exactly as the read-only one, from its own Dockerfile, and publishes it nowhere', () => {
+        const job = ci.jobs['image-probe'] as Json;
+        expect(job.env).toEqual({ IMAGE_REF: 'scanent-probe:ci-${{ github.sha }}' });
+        const text = runOf(job);
+        expect(text).toContain('docker build -f deploy/probe.Dockerfile -t "${IMAGE_REF}" .');
+        expect(text).toContain('deploy/probe-smoke.sh "${IMAGE_REF}"');
+        expect(text).not.toContain('deploy/Dockerfile ');
+        // The same two gates, configured the same way, as the read-only image's.
+        const gates = (j: Json) => steps(j).filter((s) => /^(aquasecurity\/trivy-action|anchore\/scan-action)@/.test(String(s.uses ?? ''))).map((s) => ({ uses: s.uses, with: { ...s.with, 'image-ref': undefined, image: undefined } }));
+        expect(gates(job)).toEqual(gates(ci.jobs.image));
+        expect(gates(job)).toHaveLength(2);
+        // Not published (owner decision, 2026-11-24): no release workflow names the prober or its Dockerfile.
+        for (const file of ['release.yml', 'auto-release.yml']) expect(read(`.github/workflows/${file}`)).not.toMatch(/probe/);
     });
 
     it('no step of any workflow is allowed to fail quietly', () => {

@@ -195,8 +195,14 @@ three do. That is named here and designed later.
    - a credential comes from a variable in the prober's own environment, never
      from the scope, and goes only to its endpoint.
 
-   7b is the image, its declared surface per engagement, its proof and its
-   release.
+   **7b is done, and the image is not published.** On 2026-11-24 the owner
+   decided that the image is built, smoke-tested and gated in CI
+   (`image-probe`) but published by no release, until step 8 and a real
+   engagement. The owner also decided that the declared surface per engagement
+   is **checked before every request**: a request that is not on it is refused
+   before it leaves. Its digest is in the signed report. See
+   [The probe runner](../probe-runner.md#the-declared-surface) and
+   [its image](../probe-runner.md#the-image).
 8. The Inflect ingest.
 
 ## The owner's decisions (2026-11-24)

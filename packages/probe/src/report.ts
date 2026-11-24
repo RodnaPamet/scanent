@@ -9,13 +9,14 @@
  * to run it, and checked against the contract's own schema before it is
  * signed, so a report every reader would refuse is never made.
  */
-import { createHash, sign, type KeyObject } from 'node:crypto';
+import { sign, type KeyObject } from 'node:crypto';
 
-import { canonicalJson } from '@rodnapamet/scanent-contract/canonical-json';
 import { MAX_REPORT_BYTES, describeReportSchemaIssue, harnessKeyFingerprint, harnessSignedMessage } from '@rodnapamet/scanent-contract/harness-contract';
 import { PROBES_CONTRACT_V1, ProbesReportBodyV1Schema, type ProbesReportBodyV1 } from '@rodnapamet/scanent-contract/probes-contract';
 
 import { PROBES } from './catalogue';
+import { catalogueDigestOf } from './catalogue-digest';
+import { probeSurface, surfaceDigest } from './surface';
 import type { ProbeRun } from './runner';
 import type { ScopeVerifyResult } from './scope';
 import { rawPublicKeyHex } from './scope-sign';
@@ -28,22 +29,8 @@ export class ProbeReportRefused extends Error {
     }
 }
 
-/**
- * The catalogue's digest: SHA-256 over the canonical JSON of every probe's id,
- * class, category, leak, interfaces and text. A change to any probe changes
- * it, so two reports with one digest ran the same list.
- */
-export function catalogueDigest(probes: readonly (typeof PROBES)[number][] = PROBES): string {
-    const shape = probes.map((p) => ({
-        id: p.id,
-        class: p.class,
-        category: p.category,
-        leak: p.class === 'disclosure' ? p.leak : null,
-        interfaces: [...p.interfaces],
-        text: p.text,
-    }));
-    return `sha256:${createHash('sha256').update(canonicalJson(shape), 'utf8').digest('hex')}`;
-}
+/** The catalogue's digest, as the report and the surface name it. */
+export { catalogueDigestOf as catalogueDigest } from './catalogue-digest';
 
 /** The report body of a run, under the scope it ran under. A dry run sent nothing, and has no report. */
 export function buildProbeReport(run: ProbeRun, scope: Extract<ScopeVerifyResult, { ok: true }>): ProbesReportBodyV1 {
@@ -52,8 +39,8 @@ export function buildProbeReport(run: ProbeRun, scope: Extract<ScopeVerifyResult
     const body = {
         contract: PROBES_CONTRACT_V1,
         engagement: { id: run.engagementId, scopeDigest: scope.digest, scopeSignerFingerprint: scope.signerFingerprint },
-        catalogue: { digest: catalogueDigest(), probes: PROBES.length },
-        run: { startedAt: run.startedAt, endedAt: run.endedAt, stopped: run.stopped },
+        catalogue: { digest: catalogueDigestOf(), probes: PROBES.length },
+        run: { startedAt: run.startedAt, endedAt: run.endedAt, stopped: run.stopped, surfaceDigest: surfaceDigest(probeSurface(scope.scope)) },
         targets: run.targets.map((t) => ({ endpoint: t.endpoint, kind: t.kind, reached: t.reached, reason: t.reason })),
         outcomes: run.outcomes.map((o) => {
             const probe = PROBES.find((p) => p.id === o.probeId);

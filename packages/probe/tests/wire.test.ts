@@ -7,6 +7,7 @@ import { verifyEngagementScope } from '../src/scope';
 import { signScope } from '../src/scope-sign';
 import { REPLY_BYTE_CAP, createProbeWire, fillTemplate, readCapped } from '../src/wire';
 import { ProbeWireError } from '../src/wire-error';
+import { probeSurface } from '../src/surface';
 import { PLANTED_MARKER, obedient, resistant, silent } from './helpers/fake-agents';
 import { fakeServers, listedTool, type FakeServer } from './helpers/fake-servers';
 import { fakeClock } from './helpers/fake-transport';
@@ -31,9 +32,10 @@ function verified(targets: unknown[], overrides: Record<string, unknown> = {}) {
 async function runAgainst(targets: unknown[], servers: Record<string, FakeServer>, credentials?: ReadonlyMap<string, string>): Promise<{ run: ProbeRun; log: ReturnType<typeof fakeServers>['log'] }> {
     const world = fakeServers(servers);
     const clock = fakeClock(START_MS);
+    const scope = verified(targets);
     const run = await runProbes({
-        scope: verified(targets),
-        transport: createProbeWire({ fetchImpl: world.fetchImpl, credentials }),
+        scope,
+        transport: createProbeWire({ surface: probeSurface(scope.scope), fetchImpl: world.fetchImpl, credentials }),
         now: clock.now,
         sleep: clock.sleep,
         plantedContext: [PLANTED_MARKER],
@@ -160,8 +162,9 @@ describe('every way to get no reply', () => {
 
     it('an endpoint that does not answer in time is TIMEOUT', async () => {
         const world = fakeServers({ [CHAT]: { kind: 'http-chat', agent: obedient, behaviour: 'hang' } });
-        const wire = createProbeWire({ fetchImpl: world.fetchImpl, requestTimeoutMs: 20 });
-        const target = verified([chatTarget(CHAT)]).scope.targets[0];
+        const scope = verified([chatTarget(CHAT)]).scope;
+        const wire = createProbeWire({ surface: probeSurface(scope), fetchImpl: world.fetchImpl, requestTimeoutMs: 20 });
+        const target = scope.targets[0];
         await expect(wire({ target, text: 'hi', headers: {} })).rejects.toEqual(new ProbeWireError('TIMEOUT'));
     });
 
@@ -219,17 +222,17 @@ describe('the template', () => {
 
     it('a request with no tool for an MCP target is never sent', async () => {
         const world = fakeServers({ [MCP]: mcpServer() });
-        const target = verified([mcpTarget(MCP)]).scope.targets[0];
-        const request: ProbeRequest = { target, text: 'x', headers: {} };
-        await expect(createProbeWire({ fetchImpl: world.fetchImpl })(request)).rejects.toEqual(new ProbeWireError('TOOL_NOT_LISTED'));
+        const scope = verified([mcpTarget(MCP)]).scope;
+        const request: ProbeRequest = { target: scope.targets[0], text: 'x', headers: {} };
+        await expect(createProbeWire({ surface: probeSurface(scope), fetchImpl: world.fetchImpl })(request)).rejects.toEqual(new ProbeWireError('TOOL_NOT_LISTED'));
         expect(world.log).toHaveLength(0);
     });
 
     it('a tool the scope does not name is never called, even when a request asks for it', async () => {
         const world = fakeServers({ [MCP]: mcpServer() });
-        const target = verified([mcpTarget(MCP)]).scope.targets[0];
-        const request: ProbeRequest = { target, tool: { name: 'delete_order', argument: 'id' }, text: 'x', headers: {} };
-        await expect(createProbeWire({ fetchImpl: world.fetchImpl })(request)).rejects.toEqual(new ProbeWireError('TOOL_NOT_LISTED'));
+        const scope = verified([mcpTarget(MCP)]).scope;
+        const request: ProbeRequest = { target: scope.targets[0], tool: { name: 'delete_order', argument: 'id' }, text: 'x', headers: {} };
+        await expect(createProbeWire({ surface: probeSurface(scope), fetchImpl: world.fetchImpl })(request)).rejects.toEqual(new ProbeWireError('TOOL_NOT_LISTED'));
         expect(world.log).toHaveLength(0);
     });
 });

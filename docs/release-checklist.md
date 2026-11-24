@@ -115,6 +115,13 @@ failing check.
 
 Nobody makes it by hand (owner decision, 2026-11-13).
 
+A release publishes the read-only scanner and the contract package, and
+nothing of the prober. CI's `image-probe` job builds the `scanent-probe`
+image, smoke-tests it and runs the same two vulnerability gates on it, but no
+release job builds or pushes it. Whether and where it is published is a
+decision the owner has not yet taken (2026-11-24). Whether `image-probe` is a
+required check on `main` is a branch-protection setting.
+
 - [ ] When CI passes on a push to `main`, `.github/workflows/auto-release.yml`
       runs `scripts/auto-release.sh` on that commit. It reads the version
       from `SCANNER_VERSION` at the commit, and stops, saying why, if the tag

@@ -17,6 +17,7 @@ import { MAX_REPORT_BYTES, harnessKeyFingerprint } from '@rodnapamet/scanent-con
 import { ScopeSignRefused, loadScopeSigningKey, rawPublicKeyHex, signScope } from './scope-sign';
 import { ProbeReportRefused, buildProbeReport, signProbeReport } from './report';
 import { planRequests, runProbes } from './runner';
+import { probeSurface } from './surface';
 import { createProbeWire, type FetchLike } from './wire';
 import { scopeClassRefusal, scopeTargetRefusal, scopeWindowRefusal, verifyEngagementScope } from './scope';
 
@@ -416,7 +417,7 @@ async function runLive(argv: readonly string[], io: ProbeCliIo, cwd: string): Pr
     try {
         run = await runProbes({
             scope: verified,
-            transport: createProbeWire({ fetchImpl: io.fetchImpl, credentials }),
+            transport: createProbeWire({ surface: probeSurface(verified.scope), fetchImpl: io.fetchImpl, credentials }),
             now: io.now ?? Date.now,
             sleep: io.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms))),
             shouldStop: () => (io.stopRequested?.() ?? false) || (stopPath !== undefined && existsSync(stopPath)),
@@ -498,8 +499,9 @@ export function run(): void {
         }),
     ).then(
         (code) => {
+            // Exit once both streams have flushed: a pipe takes a write asynchronously, and an exit before it drains loses the end of the output.
             process.exitCode = code;
-            process.exit();
+            process.stdout.write('', () => process.stderr.write('', () => process.exit(code)));
         },
         () => {
             process.stderr.write('scanent-probe stopped on an error it could not name\n');
@@ -507,3 +509,6 @@ export function run(): void {
         },
     );
 }
+
+// Run as the image's entry point (`node dist/cli.js`), as the launcher in bin/ runs it.
+if (require.main === module) run();

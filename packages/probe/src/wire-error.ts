@@ -18,6 +18,8 @@ export const WIRE_ERROR_CODES = [
     'RPC_ERROR',
     'TOOL_NOT_LISTED',
     'SESSION_FAILED',
+    /** The request is not on the engagement's declared surface: refused before it was sent. */
+    'OFF_SURFACE',
 ] as const;
 export type WireErrorCode = (typeof WIRE_ERROR_CODES)[number];
 

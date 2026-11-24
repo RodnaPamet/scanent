@@ -174,6 +174,52 @@ jobs:
           output-format: table
           grype-version: v0.121.3
 
+  # The active flavour's image (docs/design/active-flavour.md): built, smoked and
+  # held to the same two vulnerability gates as the read-only image, and NOT
+  # published. No release job builds or pushes it: whether and where it is
+  # published is a decision the owner has not taken (2026-11-24). It is a
+  # separate image by decision 1, so it has its own Dockerfile and build
+  # context and never shares the read-only image's.
+  image-probe:
+    name: Image (prober, not published)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      IMAGE_REF: scanent-probe:ci-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the prober's image (no push)
+        env:
+          DOCKER_BUILDKIT: "1"
+        run: docker build -f deploy/probe.Dockerfile -t "${IMAGE_REF}" .
+
+      - name: Smoke-test the prober's image
+        run: deploy/probe-smoke.sh "${IMAGE_REF}"
+
+      - name: "Gate: Trivy scan of the image (critical+high)"
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REF }}
+          format: "table"
+          exit-code: "1"
+          severity: "CRITICAL,HIGH"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          timeout: "15m"
+
+      - name: "Gate: Grype scan of the image (high and above)"
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: ${{ env.IMAGE_REF }}
+          fail-build: true
+          severity-cutoff: high
+          only-fixed: true
+          output-format: table
+          grype-version: v0.121.3
+
   # The quick start's Podman form: the scanner as the invoking user, through
   # `--userns=keep-id` with `--user`, into a directory only that user can enter. Docker's
   # `--user` form is step 7 of the `image` job. Step 11 is left out here, and
