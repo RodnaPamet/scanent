@@ -60,6 +60,10 @@ A transport that fails gives that probe `NO_REPLY` (INCONCLUSIVE), and the run
 goes on. No error text is kept, because a failure can carry what the target
 said.
 
+A run becomes a signed report, [`scanent-probes/1`](contract.md#the-probes-contract),
+through `buildProbeReport` and `signProbeReport` in `packages/probe/src/report.ts`.
+The prober the scope names signs it, and a dry run has no report.
+
 ## A dry run
 
 A dry run lists every request a real run would send, in the same order, and

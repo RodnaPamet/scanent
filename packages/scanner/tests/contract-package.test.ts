@@ -229,6 +229,8 @@ describe('what npm pack puts in the package', () => {
             'integrations-contract.ts',
             'integrations-findings.ts',
             'integrations-scopes.ts',
+            'probes-contract-rules.ts',
+            'probes-contract.ts',
             'receipt-verification.ts',
             'vulnerabilities-contract-rules.ts',
             'vulnerabilities-contract.ts',

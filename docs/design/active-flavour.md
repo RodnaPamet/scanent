@@ -178,6 +178,12 @@ three do. That is named here and designed later.
    scope's gate before every request, and `run --dry-run` lists a run's
    requests without sending any.
 6. The contract `scanent-probes/1`, its verifier and its report.
+   **Done (2026-11-24):** in the contract package, beside the other three
+   ([The probes contract](../contract.md#the-probes-contract)), so Inflect's
+   ingest can verify it. The prober signs it. The report names the engagement
+   only by the scope's digest and the fingerprint of the key that signed it, and
+   cannot say that it concluded: a reader derives that. Writing the report file
+   waits for a real run (step 7).
 7. The image `scanent-probe`, its declared surface per engagement, and its proof.
 8. The Inflect ingest.
 
