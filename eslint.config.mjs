@@ -64,6 +64,13 @@ const REPORT_IMPORT_PATTERNS = [
     ),
 ];
 
+const PROBE_IMPORT_PATTERNS = [
+    onlyDeclaredImports(
+        declaredDependencies('./packages/probe/package.json'),
+        'The prober is the active flavour, kept apart from the read-only scanner: it imports @rodnapamet/scanent-contract, Node built-ins and the dependencies packages/probe/package.json declares, and nothing else.',
+    ),
+];
+
 /**
  * A module loaded at run time is an import the rules above cannot see: a
  * computed specifier names nothing a pattern can match. Neither package's
@@ -172,6 +179,18 @@ export default tseslint.config(
         },
     },
     {
+        // ── What the prober may import ──
+        //
+        // The active flavour (docs/design/active-flavour.md) is its own
+        // package and its own command, never a mode of the scanner: it may not
+        // import the scanner, and the scanner's image does not carry it.
+        files: ['packages/probe/src/**/*.ts'],
+        rules: {
+            'no-restricted-imports': ['error', { patterns: PROBE_IMPORT_PATTERNS }],
+            'no-restricted-syntax': ['error', ...NO_RUNTIME_MODULE_LOADING],
+        },
+    },
+    {
         // ── The `code` source READS an estate's code and never runs it ──
         //
         // The LangChain, LangGraph and Agent SDK detector parses files it did
@@ -230,8 +249,8 @@ export default tseslint.config(
         // The same, for the process's streams. `packages/report` is left to
         // its own block, which refuses `process` altogether and whose
         // `no-restricted-properties` this would otherwise replace.
-        files: ['packages/scanner/src/**/*.ts', 'packages/contract/src/**/*.ts'],
-        ignores: ['packages/scanner/src/cli.ts', 'packages/scanner/src/log.ts', 'packages/scanner/src/outputs.ts'],
+        files: ['packages/scanner/src/**/*.ts', 'packages/contract/src/**/*.ts', 'packages/probe/src/**/*.ts'],
+        ignores: ['packages/scanner/src/cli.ts', 'packages/scanner/src/log.ts', 'packages/scanner/src/outputs.ts', 'packages/probe/src/cli.ts'],
         rules: {
             'no-restricted-properties': [
                 'error',

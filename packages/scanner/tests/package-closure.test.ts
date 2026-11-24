@@ -209,3 +209,46 @@ describe('each package ships its import closure, and nothing else', () => {
         expect(scanner.files).toContain('cli.ts');
     });
 });
+
+describe('the probe package (the active flavour)', () => {
+    const probe = closureOf('probe');
+    const rootManifest = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')) as {
+        workspaces: string[];
+        scripts: Record<string, string>;
+    };
+    const lockfile = fs.readFileSync(path.join(REPO_ROOT, 'package-lock.json'), 'utf8');
+
+    it('computes a closure at all', () => {
+        expect(probe.files).toEqual(expect.arrayContaining(['scope.ts', 'scope-sign.ts', 'cli.ts']));
+    });
+
+    it('reaches outside its own source by no relative path and no application alias', () => {
+        expect(probe.escapes).toEqual([]);
+        expect(probe.aliased).toEqual([]);
+    });
+
+    it('imports the contract and zod, never the scanner', () => {
+        expect(probe.packages).toEqual(['@rodnapamet/scanent-contract', 'zod']);
+        expect(Object.keys(manifest('probe').dependencies ?? {}).sort()).toEqual(probe.packages);
+        expect(manifest('probe').devDependencies).toBeUndefined();
+    });
+
+    it('declares the versions the repository installs, so resolving them from the root install is exact', () => {
+        // Not a workspace (below), so it has no install of its own: it runs on the root's.
+        expect(manifest('probe').dependencies?.zod).toBe(manifest('contract').dependencies?.zod);
+        expect(manifest('probe').dependencies?.['@rodnapamet/scanent-contract']).toBe(manifest('scanner').dependencies?.['@rodnapamet/scanent-contract']);
+    });
+
+    it('is not a workspace and not in the lockfile: the lockfile is the read-only image\'s bill of materials', () => {
+        expect(rootManifest.workspaces).not.toContain('packages/probe');
+        expect(lockfile).not.toContain('packages/probe');
+        expect(lockfile).not.toContain('@scanent/probe');
+        expect(rootManifest.scripts.build).not.toContain('probe');
+        expect(rootManifest.scripts['build:probe']).toBe('tsc -b packages/probe');
+    });
+
+    it('has its own command, and the scanner\'s commands are not it', () => {
+        expect(manifest('probe').bin).toEqual({ 'scanent-probe': './bin/scanent-probe.js' });
+        expect(Object.keys(manifest('scanner').bin ?? {}).sort()).toEqual(['aes', 'scanent']);
+    });
+});

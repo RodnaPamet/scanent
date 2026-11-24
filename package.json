@@ -16,6 +16,7 @@
   "scripts": {
     "build": "tsc -b packages/contract packages/report packages/scanner",
     "clean": "tsc -b --clean packages/contract packages/report packages/scanner",
+    "build:probe": "tsc -b packages/probe",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --expose-gc node_modules/jest/bin/jest.js",

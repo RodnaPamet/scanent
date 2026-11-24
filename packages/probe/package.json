@@ -1,0 +1,23 @@
+{
+  "name": "@scanent/probe",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "scanent-probe, the active flavour: verifies a signed engagement scope before any probe is sent. Not part of the read-only scanner image.",
+  "author": "Inflect Ltd.",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "scanent-probe": "./bin/scanent-probe.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "sideEffects": false,
+  "dependencies": {
+    "@rodnapamet/scanent-contract": "0.17.0",
+    "zod": "4.6.7"
+  }
+}
