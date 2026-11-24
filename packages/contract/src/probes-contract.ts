@@ -23,7 +23,8 @@
  *     shape was disclosed, never the secret.
  *   • A TARGET IT DID NOT NAME, OR A STATE ITS OUTCOMES CONTRADICT. Every
  *     outcome names a listed target, and each target's state is the one its
- *     outcomes give.
+ *     outcomes give. An outcome of an MCP target names the tool it called,
+ *     and no other outcome names one.
  */
 import { z } from 'zod';
 
@@ -36,6 +37,7 @@ import {
     MAX_PROBE_EXCERPT_CHARS,
     MAX_PROBE_OUTCOMES,
     MAX_PROBE_TARGETS,
+    MCP_TOOL_NAME,
     PROBE_CLASSES_V1,
     PROBE_ID,
     PROBE_RUN_STOPS,
@@ -84,6 +86,8 @@ const OutcomeSchema = z
         endpoint,
         verdict: z.enum(PROBE_VERDICTS),
         reason: z.enum(PROBE_VERDICT_REASONS),
+        /** The MCP tool called: present exactly for an outcome of an MCP target. */
+        tool: z.string().regex(MCP_TOOL_NAME).optional(),
         replyDigest: z.string().regex(SHA256).optional(),
         excerpt: excerpt.optional(),
     })
@@ -138,8 +142,13 @@ export const ProbesReportBodyV1Schema = z
         const endpoints = body.targets.map((t) => t.endpoint);
         if (new Set(endpoints).size !== endpoints.length) ctx.addIssue({ code: 'custom', path: ['targets'], message: 'a target is named twice' });
 
+        const kindOf = new Map(body.targets.map((t) => [t.endpoint, t.kind]));
         body.outcomes.forEach((o, i) => {
-            if (!endpoints.includes(o.endpoint)) ctx.addIssue({ code: 'custom', path: ['outcomes', i, 'endpoint'], message: 'not a listed target' });
+            const kind = kindOf.get(o.endpoint);
+            if (kind === undefined) ctx.addIssue({ code: 'custom', path: ['outcomes', i, 'endpoint'], message: 'not a listed target' });
+            else if ((kind === 'mcp') !== (o.tool !== undefined)) {
+                ctx.addIssue({ code: 'custom', path: ['outcomes', i, 'tool'], message: 'a tool exactly for an outcome of an MCP target' });
+            }
         });
 
         body.targets.forEach((t, i) => {

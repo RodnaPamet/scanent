@@ -29,14 +29,20 @@
 import { makeCanary, probesFor, renderProbe, type Probe } from './catalogue';
 import { scopeAdmits, type EngagementScope, type ScopeVerifyResult } from './scope';
 import { judge, type ProbeOutcome } from './verdict';
+import { wireErrorCode, type WireErrorCode } from './wire-error';
 
 /** The header every request carries. */
 export const ENGAGEMENT_HEADER = 'X-Scanent-Engagement';
 
 export type ScopeTarget = EngagementScope['targets'][number];
 
+/** An MCP tool a scope names, and the argument a probe goes in. */
+export type ScopeMcpTool = Extract<ScopeTarget, { kind: 'mcp' }>['tools'][number];
+
 export interface ProbeRequest {
     readonly target: ScopeTarget;
+    /** For an MCP target: the one tool this request calls. Never set for another kind. */
+    readonly tool?: ScopeMcpTool;
     readonly text: string;
     readonly headers: Readonly<Record<string, string>>;
 }
@@ -53,16 +59,21 @@ export interface TargetResult {
     readonly kind: ScopeTarget['kind'];
     readonly reached: boolean;
     readonly reason: TargetReason;
+    /** The first transport failure on this target, for the operator: not signed, and never the target's words. */
+    readonly note?: WireErrorCode;
 }
 
 export interface TargetedOutcome extends ProbeOutcome {
     readonly endpoint: string;
+    /** The MCP tool called, for an MCP target. */
+    readonly tool?: string;
 }
 
 export interface PlannedRequest {
     readonly endpoint: string;
     readonly probeId: string;
     readonly probeClass: Probe['class'];
+    readonly tool?: string;
     readonly text: string;
 }
 
@@ -97,12 +108,17 @@ export interface RunInput {
 
 interface PlanItem {
     readonly target: ScopeTarget;
+    readonly tool: ScopeMcpTool | undefined;
     readonly probe: Probe;
     readonly canary: string | undefined;
     readonly text: string;
 }
 
-/** Every request the scope allows, target by target in the scope's order, probes in the catalogue's. */
+/**
+ * Every request the scope allows, target by target in the scope's order; for
+ * an MCP target, tool by tool in the scope's order; probes in the catalogue's.
+ * An MCP tool the scope does not name is never in the plan.
+ */
 function planOf(scope: EngagementScope, canary: () => string): { items: PlanItem[]; empty: Set<string> } {
     const items: PlanItem[] = [];
     const empty = new Set<string>();
@@ -110,15 +126,18 @@ function planOf(scope: EngagementScope, canary: () => string): { items: PlanItem
     for (const target of scope.targets) {
         const probes = probesFor(scope.classes, target.kind);
         if (probes.length === 0) empty.add(target.endpoint);
-        for (const probe of probes) {
-            let marker: string | undefined;
-            if (probe.class === 'canary') {
-                marker = canary();
-                // A canary names one probe on one target in one run, or a returned marker names nothing.
-                if (seen.has(marker)) throw new Error('a canary was made twice in one run');
-                seen.add(marker);
+        const tools: readonly (ScopeMcpTool | undefined)[] = target.kind === 'mcp' ? target.tools : [undefined];
+        for (const tool of tools) {
+            for (const probe of probes) {
+                let marker: string | undefined;
+                if (probe.class === 'canary') {
+                    marker = canary();
+                    // A canary names one probe on one tool of one target in one run, or a returned marker names nothing.
+                    if (seen.has(marker)) throw new Error('a canary was made twice in one run');
+                    seen.add(marker);
+                }
+                items.push({ target, tool, probe, canary: marker, text: renderProbe(probe, marker) });
             }
-            items.push({ target, probe, canary: marker, text: renderProbe(probe, marker) });
         }
     }
     return { items, empty };
@@ -130,6 +149,7 @@ export function planRequests(scope: EngagementScope, canary: () => string = () =
         endpoint: item.target.endpoint,
         probeId: item.probe.id,
         probeClass: item.probe.class,
+        ...(item.tool === undefined ? {} : { tool: item.tool.name }),
         text: item.text,
     }));
 }
@@ -146,11 +166,18 @@ export async function runProbes(input: RunInput): Promise<ProbeRun> {
     const outcomes: TargetedOutcome[] = [];
     const planned: PlannedRequest[] = [];
     const lastSentAt = new Map<string, number>();
+    const notes = new Map<string, WireErrorCode>();
     let stopped: RunStop | null = null;
 
     for (const item of items) {
         if (input.dryRun) {
-            planned.push({ endpoint: item.target.endpoint, probeId: item.probe.id, probeClass: item.probe.class, text: item.text });
+            planned.push({
+                endpoint: item.target.endpoint,
+                probeId: item.probe.id,
+                probeClass: item.probe.class,
+                ...(item.tool === undefined ? {} : { tool: item.tool.name }),
+                text: item.text,
+            });
             continue;
         }
 
@@ -173,17 +200,19 @@ export async function runProbes(input: RunInput): Promise<ProbeRun> {
         lastSentAt.set(item.target.endpoint, now());
         let reply: string | null;
         try {
-            reply = await transport({ target: item.target, text: item.text, headers });
-        } catch {
+            reply = await transport({ target: item.target, ...(item.tool === undefined ? {} : { tool: item.tool }), text: item.text, headers });
+        } catch (err) {
             reply = null;
+            if (!notes.has(item.target.endpoint)) notes.set(item.target.endpoint, wireErrorCode(err));
         }
         const outcome = judge({ probe: item.probe, canary: item.canary, reply, plantedContext: input.plantedContext });
-        outcomes.push({ ...outcome, endpoint: item.target.endpoint });
+        outcomes.push({ ...outcome, endpoint: item.target.endpoint, ...(item.tool === undefined ? {} : { tool: item.tool.name }) });
     }
 
     const targets: TargetResult[] = scope.targets.map((target) => {
         const mine = outcomes.filter((o) => o.endpoint === target.endpoint);
-        const base = { endpoint: target.endpoint, kind: target.kind };
+        const note = notes.get(target.endpoint);
+        const base = { endpoint: target.endpoint, kind: target.kind, ...(note === undefined ? {} : { note }) };
         if (empty.has(target.endpoint)) return { ...base, reached: false, reason: 'NO_PROBES_FOR_INTERFACE' };
         if (mine.length === 0) return { ...base, reached: false, reason: 'NOT_RUN' };
         const reached = mine.some((o) => o.reason !== 'NO_REPLY');

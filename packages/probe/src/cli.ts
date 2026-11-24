@@ -9,13 +9,15 @@
  * Nothing a file or a flag carried is echoed: a refusal names its reason and,
  * for the schema, paths and rules.
  */
-import { closeSync, constants, fstatSync, openSync, readSync, writeSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, openSync, readSync, rmSync, writeSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { MAX_REPORT_BYTES, harnessKeyFingerprint } from '@rodnapamet/scanent-contract/harness-contract';
 
-import { ScopeSignRefused, loadScopeSigningKey, signScope } from './scope-sign';
-import { planRequests } from './runner';
+import { ScopeSignRefused, loadScopeSigningKey, rawPublicKeyHex, signScope } from './scope-sign';
+import { ProbeReportRefused, buildProbeReport, signProbeReport } from './report';
+import { planRequests, runProbes } from './runner';
+import { createProbeWire, type FetchLike } from './wire';
 import { scopeClassRefusal, scopeTargetRefusal, scopeWindowRefusal, verifyEngagementScope } from './scope';
 
 /** The exit codes, the same numbers `scanent` uses for the same meanings (packages/scanner/src/exit-codes.ts). */
@@ -24,6 +26,14 @@ export const PROBE_EXIT = Object.freeze({ OK: 0, FAILED: 1, USAGE: 2, CONFIG: 4 
 export interface ProbeCliIo {
     readonly out: (text: string) => void;
     readonly err: (text: string) => void;
+    /** The environment the prober's key, credentials and markers are read from. Absent, the process's own. */
+    readonly env?: Readonly<Record<string, string | undefined>>;
+    /** A TEST SEAM: how requests are sent. Absent, the global `fetch`. */
+    readonly fetchImpl?: FetchLike;
+    /** A TEST SEAM: how the run waits between requests. Absent, a timer. */
+    readonly sleep?: (ms: number) => Promise<void>;
+    /** Whether a stop was asked for by a signal. The stop file is checked beside it. */
+    readonly stopRequested?: () => boolean;
     /** The directory relative paths are resolved against. Absent, the process's own. */
     readonly cwd?: string;
     /** The clock, epoch ms. Absent, `Date.now`. */
@@ -40,9 +50,13 @@ export const PROBE_HELP = [
     '                             --prober-key <key> [--target <url>] [--class <class>]',
     '      Check a scope as the prober will: a registered signer, the strict format, a',
     '      signer that is not the prober, this prober named, and the window open now.',
+    '  scanent-probe run --scope <file> --trusted-key <key>... --signing-key-env <NAME> --out <report.json>',
+    '                    [--credential <endpoint>=<ENV>]... [--planted-marker-env <NAME>]... [--stop-file <path>]',
+    '      Send the probes the scope allows, to its targets only, and write the signed report.',
+    '      The prober\'s key is read from NAME (or NAME_FILE); the scope must name it. A',
+    '      credential is read from its variable and sent only to its endpoint.',
     '  scanent-probe run --dry-run --scope <file> --trusted-key <key>... --prober-key <key>',
-    '      Verify the scope and list every request a run would send, by target and probe.',
-    '      Nothing is sent: this build has no transport to a real target.',
+    '      Verify the scope and list every request a run would send. Nothing is sent.',
     '  scanent-probe help',
     '',
     'Keys are raw Ed25519 public keys, hex or base64 (what `scanent keygen` prints).',
@@ -237,11 +251,6 @@ function runVerify(argv: readonly string[], io: ProbeCliIo, cwd: string): number
  * `--dry-run` it refuses: this build sends nothing.
  */
 function runDry(argv: readonly string[], io: ProbeCliIo, cwd: string): number {
-    const dry = argv.includes('--dry-run');
-    if (!dry) {
-        io.err('run: only --dry-run is available; sending arrives with the prober\'s image\n');
-        return PROBE_EXIT.USAGE;
-    }
     const parsed = parseFlags(argv.filter((a) => a !== '--dry-run'), ['--scope', '--trusted-key', '--prober-key'], ['--trusted-key']);
     if ('problem' in parsed) {
         io.err(`run: ${parsed.problem}\n`);
@@ -271,7 +280,179 @@ function runDry(argv: readonly string[], io: ProbeCliIo, cwd: string): number {
             `dry run: ${plan.length} request${plan.length === 1 ? '' : 's'}, none sent`,
             `engagement: ${result.scope.engagementId}`,
             `digest: ${result.digest}`,
-            ...plan.map((p) => `target ${index.get(p.endpoint)}  ${p.probeId}  (${p.probeClass})`),
+            ...plan.map((p) => `target ${index.get(p.endpoint)}  ${p.probeId}  (${p.probeClass})${p.tool === undefined ? '' : `  tool ${p.tool}`}`),
+            '',
+        ].join('\n'),
+    );
+    return PROBE_EXIT.OK;
+}
+
+/** A variable name the prober will read. */
+const ENV_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
+
+/**
+ * A secret from the environment: the variable, or a file named by NAME_FILE.
+ * Both set is refused, as the scanner refuses it. One trailing new line is
+ * removed. Never echoed.
+ */
+function readSecretEnv(env: Readonly<Record<string, string | undefined>>, name: string): { value: string } | { problem: string } {
+    const direct = env[name];
+    const file = env[`${name}_FILE`];
+    if (direct !== undefined && file !== undefined) return { problem: `${name} and ${name}_FILE are both set` };
+    let value = direct;
+    if (file !== undefined) {
+        const read = readBounded(file);
+        if (typeof read !== 'string' || read === 'TOO_LARGE') return { problem: `${name}_FILE could not be read` };
+        value = read.replace(/\r?\n$/, '');
+    }
+    if (value === undefined || value.trim() === '') return { problem: `${name} is not set` };
+    return { value };
+}
+
+/**
+ * `run`: send the probes the scope allows and write the signed report. The
+ * prober's key is read from the environment and must be the one the scope
+ * names; a credential is read from the variable named for its endpoint and
+ * goes to that endpoint only. The report file is created, never replaced.
+ * What is printed is counts, reasons and notes: never an excerpt, a
+ * credential or a marker.
+ */
+async function runLive(argv: readonly string[], io: ProbeCliIo, cwd: string): Promise<number> {
+    const parsed = parseFlags(
+        argv,
+        ['--scope', '--trusted-key', '--signing-key-env', '--out', '--credential', '--planted-marker-env', '--stop-file'],
+        ['--trusted-key', '--credential', '--planted-marker-env'],
+    );
+    if ('problem' in parsed) {
+        io.err(`run: ${parsed.problem}\n`);
+        return PROBE_EXIT.USAGE;
+    }
+    const flags = parsed.flags;
+    const scopePath = one(flags, '--scope');
+    const trusted = flags.values.get('--trusted-key') ?? [];
+    const keyEnv = one(flags, '--signing-key-env');
+    const outPath = one(flags, '--out');
+    if (scopePath === undefined || trusted.length === 0 || keyEnv === undefined || outPath === undefined) {
+        io.err('run: --scope, at least one --trusted-key, --signing-key-env and --out are required\n');
+        return PROBE_EXIT.USAGE;
+    }
+    const markerEnvs = flags.values.get('--planted-marker-env') ?? [];
+    const credentialFlags = (flags.values.get('--credential') ?? []).map((v) => {
+        const at = v.lastIndexOf('=');
+        return at <= 0 ? null : { endpoint: v.slice(0, at), env: v.slice(at + 1) };
+    });
+    if (trusted.some((k) => harnessKeyFingerprint(k) === null)) {
+        io.err('run: a --trusted-key is not a raw Ed25519 public key in hex or base64\n');
+        return PROBE_EXIT.USAGE;
+    }
+    if ([keyEnv, ...markerEnvs].some((n) => !ENV_NAME.test(n)) || credentialFlags.some((c) => c === null || !ENV_NAME.test(c.env))) {
+        io.err('run: a variable name is not upper-case letters, digits and _, or a --credential is not <endpoint>=<VARIABLE>\n');
+        return PROBE_EXIT.USAGE;
+    }
+    const out = resolve(cwd, outPath);
+
+    const env = io.env ?? process.env;
+    const pem = readSecretEnv(env, keyEnv);
+    if ('problem' in pem) {
+        io.err(`run: the prober's key: ${pem.problem}\n`);
+        return PROBE_EXIT.CONFIG;
+    }
+    let keys: ReturnType<typeof loadScopeSigningKey>;
+    try {
+        keys = loadScopeSigningKey(pem.value);
+    } catch {
+        io.err('run: the prober\'s key is not an Ed25519 private key in PEM\n');
+        return PROBE_EXIT.CONFIG;
+    }
+
+    const raw = readBounded(resolve(cwd, scopePath));
+    if (raw === null) return refuse(io, 'NO_SCOPE');
+    if (raw === 'TOO_LARGE') return refuse(io, 'TOO_LARGE');
+    const verified = verifyEngagementScope(raw, { trustedScopeKeys: trusted, proberKey: rawPublicKeyHex(keys.publicKey) });
+    if (!verified.ok) return refuse(io, verified.reason, verified.issues);
+
+    const endpoints = new Set(verified.scope.targets.map((t) => t.endpoint));
+    const credentials = new Map<string, string>();
+    for (const c of credentialFlags as { endpoint: string; env: string }[]) {
+        if (!endpoints.has(c.endpoint)) {
+            io.err('run: a --credential names an endpoint the scope does not\n');
+            return PROBE_EXIT.USAGE;
+        }
+        const token = readSecretEnv(env, c.env);
+        if ('problem' in token) {
+            io.err(`run: a credential: ${token.problem}\n`);
+            return PROBE_EXIT.CONFIG;
+        }
+        credentials.set(c.endpoint, token.value);
+    }
+    const plantedContext: string[] = [];
+    for (const name of markerEnvs) {
+        const marker = readSecretEnv(env, name);
+        if ('problem' in marker) {
+            io.err(`run: a planted marker: ${marker.problem}\n`);
+            return PROBE_EXIT.CONFIG;
+        }
+        plantedContext.push(marker.value);
+    }
+
+    // The report's name is taken now, exclusively, before anything is sent: a run whose report could not be kept is
+    // never started, and the file is the one this run made. It is removed again if no report is written to it.
+    let fd: number;
+    try {
+        fd = openSync(out, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o644);
+    } catch (err) {
+        const exists = (err as NodeJS.ErrnoException).code === 'EEXIST';
+        io.err(`run: ${exists ? 'the output file exists; it is never overwritten' : 'the output file could not be created'}\n`);
+        return exists ? PROBE_EXIT.USAGE : PROBE_EXIT.FAILED;
+    }
+    const discard = () => {
+        closeSync(fd);
+        rmSync(out, { force: true });
+    };
+
+    const stopFile = one(flags, '--stop-file');
+    const stopPath = stopFile === undefined ? undefined : resolve(cwd, stopFile);
+    let run: Awaited<ReturnType<typeof runProbes>>;
+    try {
+        run = await runProbes({
+            scope: verified,
+            transport: createProbeWire({ fetchImpl: io.fetchImpl, credentials }),
+            now: io.now ?? Date.now,
+            sleep: io.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms))),
+            shouldStop: () => (io.stopRequested?.() ?? false) || (stopPath !== undefined && existsSync(stopPath)),
+            plantedContext,
+        });
+    } catch (err) {
+        discard();
+        throw err;
+    }
+
+    let report: string;
+    try {
+        report = signProbeReport(buildProbeReport(run, verified), keys, verified);
+    } catch (err) {
+        discard();
+        if (err instanceof ProbeReportRefused) {
+            io.err(`run: the report was not made\n${err.issues.map((i) => `  ${i}\n`).join('')}`);
+            return PROBE_EXIT.FAILED;
+        }
+        throw err;
+    }
+    try {
+        writeSync(fd, report);
+    } finally {
+        closeSync(fd);
+    }
+
+    const count = (v: string) => run.outcomes.filter((o) => o.verdict === v).length;
+    io.out(
+        [
+            `run: ${run.outcomes.length} probe${run.outcomes.length === 1 ? '' : 's'} sent${run.stopped === null ? '' : `, stopped early (${run.stopped})`}`,
+            `engagement: ${verified.scope.engagementId}`,
+            `verdicts: ${count('ACTED')} acted, ${count('DISCLOSED')} disclosed, ${count('RESISTED')} resisted, ${count('INCONCLUSIVE')} inconclusive`,
+            ...run.targets.map((t, i) => `target ${i + 1}  ${t.kind}  ${t.reason}${t.note === undefined ? '' : `  (${t.note})`}`),
+            `concluded: ${run.concluded ? 'yes' : 'no: no probe got a verdict'}`,
+            'report: written',
             '',
         ].join('\n'),
     );
@@ -283,7 +464,7 @@ function refuse(io: ProbeCliIo, reason: string, issues?: readonly string[]): num
     return PROBE_EXIT.FAILED;
 }
 
-export function main(argv: readonly string[], io: ProbeCliIo): number {
+export function main(argv: readonly string[], io: ProbeCliIo): number | Promise<number> {
     const cwd = io.cwd ?? process.cwd();
     const [command, sub, ...rest] = argv;
     if (command === undefined || command === 'help' || command === '--help') {
@@ -292,15 +473,37 @@ export function main(argv: readonly string[], io: ProbeCliIo): number {
     }
     if (command === 'scope' && sub === 'sign') return runSign(rest, io, cwd);
     if (command === 'scope' && sub === 'verify') return runVerify(rest, io, cwd);
-    if (command === 'run') return runDry(sub === undefined ? [] : [sub, ...rest], io, cwd);
+    if (command === 'run') {
+        const args = sub === undefined ? [] : [sub, ...rest];
+        return args.includes('--dry-run') ? runDry(args, io, cwd) : runLive(args, io, cwd);
+    }
     io.err('scanent-probe: not a command; see scanent-probe help\n');
     return PROBE_EXIT.USAGE;
 }
 
 export function run(): void {
-    const code = main(process.argv.slice(2), {
-        out: (text) => process.stdout.write(text),
-        err: (text) => process.stderr.write(text),
-    });
-    process.exitCode = code;
+    // A signal ends a run at its next request; a second one ends the process.
+    let stop = false;
+    for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+        process.on(signal, () => {
+            if (stop) process.exit(signal === 'SIGINT' ? 130 : 143);
+            stop = true;
+        });
+    }
+    Promise.resolve(
+        main(process.argv.slice(2), {
+            out: (text) => process.stdout.write(text),
+            err: (text) => process.stderr.write(text),
+            stopRequested: () => stop,
+        }),
+    ).then(
+        (code) => {
+            process.exitCode = code;
+            process.exit();
+        },
+        () => {
+            process.stderr.write('scanent-probe stopped on an error it could not name\n');
+            process.exit(PROBE_EXIT.FAILED);
+        },
+    );
 }

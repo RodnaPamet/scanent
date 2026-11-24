@@ -75,9 +75,57 @@ scanent-probe run --dry-run --scope scope.signed.json \
 ```
 
 It verifies the scope exactly as `scope verify` does. It then prints one line
-per request: the target's number in the scope, the probe id and its class. It
-does not print the rendered text, which holds that plan's canary halves.
-`run` without `--dry-run` is refused: this build has nothing to send with.
+per request: the target's number in the scope, the probe id, its class and, for
+an MCP target, the tool. It does not print the rendered text, which holds that
+plan's canary halves.
+
+## A run that sends
+
+```bash
+scanent-probe run --scope scope.signed.json --trusted-key <approver public key> \
+  --signing-key-env PROBER_KEY --out report.json \
+  [--credential https://mcp.estate.example/mcp=MCP_TOKEN] \
+  [--planted-marker-env CONTEXT_MARKER] [--stop-file STOP]
+```
+
+- **The prober's key** is read from the variable `--signing-key-env` names, or
+  from the file `NAME_FILE` names, never both. Its public half must be the
+  scope's `proberKey`, or the scope is refused (`PROBER_NOT_NAMED`) before
+  anything is sent.
+- **A credential** is read the same way, for one endpoint of the scope. It is
+  sent as `Authorization: Bearer …` to that endpoint and to no other, and an
+  endpoint the scope does not name is a usage error.
+- **A planted marker** is the estate's own text, put in the agent's
+  instructions so a leak of them can be seen. It is read the same way.
+- **Stopping:** the stop file existing, or a SIGINT or SIGTERM, ends the run at
+  its next request. A second signal ends the process.
+- **The report** is written to `--out`, which must not exist and is never
+  replaced. It is signed by the prober's key.
+- **What it prints** is the number of probes sent, the counts per verdict,
+  each target's reason with a note on why it went unanswered, and whether the
+  run concluded anything. It never prints an excerpt, a credential or a marker.
+
+### The wire
+
+`packages/probe/src/wire.ts` sends each probe. It follows the scanner's rules
+(`packages/scanner/src/http.ts`), written again because the prober may not
+import the scanner:
+
+- every request is a POST to the target's exact endpoint;
+- redirects are refused (`redirect: 'error'`, and a 3xx is no reply);
+- each request times out after 60 seconds;
+- a reply is read as a stream and cut at four bytes a character of what a
+  verdict reads.
+
+What it sends to each kind of target is listed in the
+[engagement scope](engagement-scope.md#how-each-kind-of-target-is-reached).
+
+A target that never answered gets a note: the first reason, as a code, why a
+request to it got no reply. The codes are `UNREACHABLE`, `TIMEOUT`,
+`REDIRECT_REFUSED`, `AUTH_FAILED`, `HTTP_4XX`, `HTTP_5XX`, `NOT_JSON`, `NO_TEXT`,
+`RPC_ERROR`, `TOOL_NOT_LISTED` and `SESSION_FAILED`. The note is for the person
+running the engagement and is not in the signed report. Nothing a target said is
+kept with it.
 
 ## Tested against fake agents
 

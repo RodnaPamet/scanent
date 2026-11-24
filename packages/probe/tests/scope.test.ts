@@ -16,7 +16,7 @@ import {
     type EngagementScope,
 } from '../src/scope';
 import { ScopeSignRefused, loadScopeSigningKey, signScope } from '../src/scope-sign';
-import { END, END_MS, START, START_MS, makeKey, scopeBody, signRaw } from './helpers/scope-keys';
+import { END, END_MS, START, START_MS, makeKey, scopeBody, signRaw, a2aTarget, chatTarget, mcpTarget } from './helpers/scope-keys';
 
 const approver = makeKey();
 const prober = makeKey();
@@ -91,7 +91,7 @@ describe('the refusals, in order', () => {
     it('any member changed after signing is BAD_SIGNATURE', () => {
         const raw = JSON.parse(signed()) as Record<string, unknown>;
         const changes: Record<string, unknown>[] = [
-            { targets: [{ kind: 'mcp', endpoint: 'https://other.example/mcp' }] },
+            { targets: [mcpTarget('https://other.example/mcp')] },
             { window: { start: START, end: '2026-12-08T09:00:00.000Z' } },
             { classes: ['canary'] },
             { ratePerMinute: 120 },
@@ -171,10 +171,10 @@ describe('the format (SCHEMA)', () => {
 
     it('targets: one to fifty, each named once, of a known kind', () => {
         expect(refusedFor({ targets: [] })).toBe('SCHEMA');
-        const many = Array.from({ length: MAX_SCOPE_TARGETS + 1 }, (_, i) => ({ kind: 'mcp', endpoint: `https://h${i}.example/mcp` }));
+        const many = Array.from({ length: MAX_SCOPE_TARGETS + 1 }, (_, i) => mcpTarget(`https://h${i}.example/mcp`));
         expect(refusedFor({ targets: many })).toBe('SCHEMA');
         expect(verify(signed({ targets: many.slice(0, MAX_SCOPE_TARGETS) })).ok).toBe(true);
-        const twice = { kind: 'mcp', endpoint: 'https://mcp.estate.example/mcp' };
+        const twice = mcpTarget('https://mcp.estate.example/mcp');
         expect(refusedFor({ targets: [twice, twice] })).toBe('SCHEMA');
         expect(refusedFor({ targets: [{ kind: 'network', endpoint: 'https://mcp.estate.example/mcp' }] })).toBe('SCHEMA');
     });
@@ -289,5 +289,51 @@ describe('signing', () => {
 
     it('names its contract', () => {
         expect(JSON.parse(signed()).contract).toBe(ENGAGEMENT_SCOPE_V1);
+    });
+});
+
+describe('what a target says about how it is reached', () => {
+    const refused = (targets: unknown[]) => {
+        const result = verify(signRaw(scopeBody(prober, { targets }), approver));
+        return result.ok ? null : result.reason;
+    };
+
+    it('an A2A target is its endpoint alone', () => {
+        expect(verify(signed({ targets: [a2aTarget('https://a2a.estate.example/tasks')] })).ok).toBe(true);
+        expect(refused([{ ...a2aTarget('https://a2a.estate.example/tasks'), tools: [] }])).toBe('SCHEMA');
+    });
+
+    it('an MCP target names the tools a probe may call, one to ten, each once, with the argument it goes in', () => {
+        const mcp = 'https://mcp.estate.example/mcp';
+        expect(refused([{ kind: 'mcp', endpoint: mcp }])).toBe('SCHEMA');
+        expect(refused([mcpTarget(mcp, [])])).toBe('SCHEMA');
+        const tool = { name: 'search_orders', argument: 'query' };
+        expect(refused([mcpTarget(mcp, [tool, tool])])).toBe('SCHEMA');
+        expect(refused([mcpTarget(mcp, Array.from({ length: 11 }, (_, i) => ({ name: `t${i}`, argument: 'q' })))])).toBe('SCHEMA');
+        expect(refused([mcpTarget(mcp, [{ name: 'has space', argument: 'q' }])])).toBe('SCHEMA');
+        expect(refused([mcpTarget(mcp, [{ name: 'ok', argument: '' }])])).toBe('SCHEMA');
+        expect(verify(signed({ targets: [mcpTarget(mcp, [tool, { name: 'lookup.v2', argument: 'text' }])] })).ok).toBe(true);
+    });
+
+    it('a chat target declares the body sent, with the placeholder as one whole string, and where the reply is', () => {
+        const chat = 'https://chat.estate.example/api/turn';
+        const withBody = (body: unknown, replyPath: unknown[] = ['reply']) => [chatTarget(chat, { body, replyPath })];
+        expect(verify(signed({ targets: withBody({ input: '{{probe}}', options: { temperature: 0, tags: ['a'] } }, ['output', 0, 'text']) })).ok).toBe(true);
+        expect(refused([{ kind: 'http-chat', endpoint: chat }])).toBe('SCHEMA');
+        expect(refused(withBody({ input: 'no placeholder' }))).toBe('SCHEMA');
+        expect(refused(withBody({ a: '{{probe}}', b: '{{probe}}' }))).toBe('SCHEMA');
+        expect(refused(withBody({ input: 'say {{probe}} now' }))).toBe('SCHEMA');
+        expect(refused(withBody({ '{{probe}}': 'x' }))).toBe('SCHEMA');
+        expect(refused(withBody({ input: '{{probe}}', token: `ghp_${'Z'.repeat(36)}` }))).toBe('SCHEMA');
+        expect(refused(withBody({ input: '{{probe}}', pad: 'x'.repeat(9000) }))).toBe('SCHEMA');
+        let deep: unknown = '{{probe}}';
+        for (let i = 0; i < 17; i += 1) deep = { d: deep };
+        expect(refused(withBody(deep))).toBe('SCHEMA');
+        expect(refused(withBody({ input: '{{probe}}' }, []))).toBe('SCHEMA');
+        expect(refused(withBody({ input: '{{probe}}' }, [-1]))).toBe('SCHEMA');
+    });
+
+    it('a target of one kind may not carry another kind\'s members', () => {
+        expect(refused([{ ...mcpTarget('https://mcp.estate.example/mcp'), request: { body: { a: '{{probe}}' }, replyPath: ['r'] } }])).toBe('SCHEMA');
     });
 });

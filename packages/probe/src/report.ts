@@ -64,6 +64,7 @@ export function buildProbeReport(run: ProbeRun, scope: Extract<ScopeVerifyResult
                 endpoint: o.endpoint,
                 verdict: o.verdict,
                 reason: o.reason,
+                ...(o.tool === undefined ? {} : { tool: o.tool }),
                 ...(o.replyDigest === undefined ? {} : { replyDigest: o.replyDigest }),
                 ...(o.excerpt === undefined ? {} : { excerpt: o.excerpt }),
             };

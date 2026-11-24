@@ -64,6 +64,11 @@ export const MAX_PROBE_ENDPOINT_CHARS = 2048;
 
 /** A probe id: `<class>.<category>.<n>`. */
 export const PROBE_ID = /^(canary|disclosure)\.[a-z]+(-[a-z]+)*\.[1-9][0-9]{0,2}$/;
+/**
+ * An MCP tool's name, and the name of the argument a probe is put in: what an
+ * engagement scope names and a report records for an MCP target.
+ */
+export const MCP_TOOL_NAME = /^[A-Za-z0-9_.-]{1,128}$/;
 /** An engagement id, as the scope spells it. */
 export const ENGAGEMENT_ID = /^[A-Za-z0-9_-]{8,64}$/;
 

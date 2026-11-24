@@ -18,8 +18,20 @@ signed by someone in the estate who is not the prober.
   "contract": "scanent-engagement-scope/1",
   "engagementId": "eng-2026-12-acme",
   "targets": [
-    { "kind": "mcp", "endpoint": "https://mcp.estate.example/mcp" },
-    { "kind": "http-chat", "endpoint": "https://chat.estate.example/api/turn" }
+    {
+      "kind": "mcp",
+      "endpoint": "https://mcp.estate.example/mcp",
+      "tools": [{ "name": "search_orders", "argument": "query" }]
+    },
+    { "kind": "a2a", "endpoint": "https://a2a.estate.example/tasks" },
+    {
+      "kind": "http-chat",
+      "endpoint": "https://chat.estate.example/api/turn",
+      "request": {
+        "body": { "messages": [{ "role": "user", "content": "{{probe}}" }] },
+        "replyPath": ["reply"]
+      }
+    }
   ],
   "window": { "start": "2026-12-01T09:00:00.000Z", "end": "2026-12-03T17:00:00.000Z" },
   "classes": ["canary", "disclosure"],
@@ -34,7 +46,7 @@ signed by someone in the estate who is not the prober.
 |---|---|
 | `contract` | `scanent-engagement-scope/1` |
 | `engagementId` | 8 to 64 letters, digits, `-` and `_`. Every probe request will carry it, so the target's owner can find the engagement in their logs |
-| `targets` | 1 to 50, each named once. `kind` is `mcp`, `a2a` or `http-chat`. `endpoint` is an **exact** https URL: no credentials, no query, no fragment, no `*`, and spelt exactly as a URL serialises (`new URL(endpoint).href`): a lower-case host, no `:443`, a `/` after a bare host. A request is admitted only to an endpoint equal to one listed, byte for byte |
+| `targets` | 1 to 50, each named once. `kind` is `mcp`, `a2a` or `http-chat`. `endpoint` is an **exact** https URL: no credentials, no query, no fragment, no `*`, and spelt exactly as a URL serialises (`new URL(endpoint).href`): a lower-case host, no `:443`, a `/` after a bare host. A request is admitted only to an endpoint equal to one listed, byte for byte. What else a target says depends on its kind (below) |
 | `window` | `start` and `end` in UTC (ending in `Z`). The end is after the start, and **at most seven days** after it |
 | `classes` | `canary`, `disclosure`, or both. `side-effect` is not allowed in version 1 |
 | `approver` | The name and role of the person who approved the engagement. One line each, never a secret |
@@ -43,6 +55,19 @@ signed by someone in the estate who is not the prober.
 | `proberKey` | The one prober allowed to run this scope. A scope copied to another prober is refused there |
 
 Any other member is refused.
+
+### How each kind of target is reached
+
+| Kind | It also names | What the prober sends |
+|---|---|---|
+| `mcp` | `tools`: 1 to 10, each named once, with the `argument` the probe goes in (letters, digits, `_`, `.`, `-`; at most 128) | Once per run: `initialize`, `notifications/initialized` and `tools/list`. Then `tools/call` of each named tool, once per probe. **A tool the scope does not name is never called**, and a named tool is called only if the server lists it and its input takes that argument as a string. The approver's signature is the estate's statement that these tools are safe to call |
+| `a2a` | Nothing else | One JSON-RPC `message/send` per probe, blocking, with the probe as a text part. No polling |
+| `http-chat` | `request.body`: a JSON template of at most 8 KiB and depth 16 holding **exactly one** string that is `{{probe}}` (a whole string, never part of one), and no key or string of a secret's shape; `request.replyPath`: 1 to 16 keys or indices to the reply | One POST of that body per probe, with the probe put in as a JSON value, so it cannot break out of the template. The reply is the string at `replyPath` |
+
+A credential is never in a scope. The approver signs exactly what is sent, so a
+token would be signed into a file people pass around. The prober reads one from
+its own environment and sends it only to its endpoint (see the
+[runner](probe-runner.md#a-run-that-sends)).
 
 ## Who signs it
 

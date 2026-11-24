@@ -8,7 +8,7 @@ import { verifyEngagementScope } from '../src/scope';
 import { signScope } from '../src/scope-sign';
 import { PLANTED_MARKER, leaky, obedient, resistant, silent } from './helpers/fake-agents';
 import { fakeClock, fakeTransport } from './helpers/fake-transport';
-import { END_MS, START, START_MS, makeKey, scopeBody } from './helpers/scope-keys';
+import { END_MS, START, START_MS, makeKey, scopeBody, chatTarget, mcpTarget } from './helpers/scope-keys';
 
 const approver = makeKey();
 const prober = makeKey();
@@ -25,8 +25,8 @@ function verified(overrides: Record<string, unknown> = {}) {
 
 const twoTargets = {
     targets: [
-        { kind: 'mcp', endpoint: MCP },
-        { kind: 'http-chat', endpoint: CHAT },
+        mcpTarget(MCP),
+        chatTarget(CHAT),
     ],
 };
 
@@ -151,7 +151,7 @@ describe('the window, read before every request', () => {
         const clock = fakeClock(END_MS - 30_000);
         const recording = fakeTransport({ [MCP]: obedient }, clock);
         const run = await runProbes({
-            scope: verified({ targets: [{ kind: 'mcp', endpoint: MCP }], ratePerMinute: 1 }),
+            scope: verified({ targets: [mcpTarget(MCP)], ratePerMinute: 1 }),
             transport: recording.transport,
             now: clock.now,
             sleep: clock.sleep,
@@ -175,7 +175,7 @@ describe('the rate cap', () => {
     });
 
     it('at the highest rate, half a second apart', async () => {
-        const { base, clock } = setup({ [MCP]: resistant }, { targets: [{ kind: 'mcp', endpoint: MCP }], ratePerMinute: 120 });
+        const { base, clock } = setup({ [MCP]: resistant }, { targets: [mcpTarget(MCP)], ratePerMinute: 120 });
         await runProbes(base);
         expect(clock.sleeps.length).toBeGreaterThan(0);
         expect(clock.sleeps.every((ms) => ms === 500)).toBe(true);
