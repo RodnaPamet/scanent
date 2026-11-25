@@ -276,8 +276,8 @@ and the [threat model](../threat-model.md).
   `8388ff0`), so that the version after it is tested against it. A third,
   `0.15.0`, holds what the code tagged `v0.15.0` wrote (commit `dedb214`).
   A fourth, `0.17.0`, holds what the code of 0.17.0 wrote, made from the
-  commit that raises the version. 0.14.0 and 0.16.0 have none: none was made
-  at their release.
+  commit that raises the version, and a fifth, `0.18.0`, the same for 0.18.0.
+  0.14.0 and 0.16.0 have none: none was made at their release.
 - **The deployment templates.** Compose, the chart, the air-gapped bundle's
   scripts (against stand-ins for the container runtime and `cosign`).
 - **The documents.** Several pages are generated from the code or checked
