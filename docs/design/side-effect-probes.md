@@ -1,11 +1,12 @@
 # Side-effect probes and the marker receiver
 
-> **Status: being designed (2026-11-24). No code.** On 2026-11-24 the owner
-> asked for this design, before any code. It covers step 4 of the
+> **Status: designed and decided (2026-11-25). No code yet.** On 2026-11-24
+> the owner asked for this design, before any code. It covers step 4 of the
 > [active flavour](active-flavour.md) (the marker receiver, deferred that
 > morning) and the `side-effect` class, which decision 3 kept out of version 1
-> "until the sink and the class test exist". The decisions it needs are at the
-> end.
+> "until the sink and the class test exist". The owner took all eight
+> decisions at the end on 2026-11-25, each as recommended. Work starts at
+> step 1 of the order of work, when the owner says go.
 
 ## Why
 
@@ -68,9 +69,12 @@ fails the build:
 | Report contract | A side-effect outcome carries the receiver's record (time, method, inside or outside) in place of an excerpt. The reply's digest is still kept. This is a new contract id (`scanent-probes/2`) and needs a release |
 | Image | Unchanged unless decision 8 says otherwise. The receiver is a module of the prober |
 
-## Decisions for the owner
+## The owner's decisions (2026-11-25)
 
-| # | Question | Recommendation |
+The owner took all eight on 2026-11-25, each as recommended. Changing one is a
+new dated decision on this page, never an edit of the row.
+
+| # | Question | Decision |
 |---|---|---|
 | 1 | Where the receiver listens | **An address and port the scope names**, never chosen by the prober. The estate knows which of its networks its agents can reach |
 | 2 | Whether side-effect probes need a separate opt-in | **Yes.** `side-effect` in `classes` is refused unless the scope also names the receiver, so an approver cannot allow the class without saying where acts may arrive |
@@ -81,7 +85,7 @@ fails the build:
 | 7 | Whether an MCP tool may be given the sink URL as an argument | **Yes, but only a tool the scope already names**, and only in the argument the scope names. It is the same rule as version 1's |
 | 8 | Whether the receiver is in the prober's image | **Yes**, as a module of the same process. A second image would need its own surface, proof and gates for one route |
 
-## Order of work, once decided
+## Order of work
 
 1. The scope's `receiver` and the `side-effect` class in its schema, with the
    opt-in refusal.
