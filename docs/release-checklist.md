@@ -25,8 +25,11 @@ repository's **Settings**.
 - [ ] **Dependabot alerts** and **security updates** are enabled.
       `.github/dependabot.yml` already proposes version updates.
 - [ ] **Branch protection on `main`**: pull requests required, the CI jobs
-      required (`checks` on both Node versions, `image`, `chart`,
-      `chart-install`, CodeQL), no force push, no deletion.
+      required (`checks` on both Node versions, `image`, `image-probe`,
+      `chart`, `chart-install`, CodeQL), no force push, no deletion.
+      `image-probe` ("Image (prober, not published)") is required by owner
+      decision of 2026-11-24: a change that breaks the prober's image does
+      not merge, though no release publishes that image.
 - [ ] **Tag protection** (a ruleset on `v*`): a version tag cannot be moved
       or deleted, and only the release may create one. The ruleset **must
       allow GitHub Actions to create tags** (GitHub Actions on its bypass
