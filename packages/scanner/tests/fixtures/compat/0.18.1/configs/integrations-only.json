@@ -1,0 +1,26 @@
+{
+  "estate": "acme-apps",
+  "scanner": {
+    "agentId": "scanent-acme-apps",
+    "signingKeyEnv": "SCANNER_SIGNING_KEY"
+  },
+  "outputs": [
+    {
+      "kind": "file",
+      "dir": "/out",
+      "retainRuns": 90
+    }
+  ],
+  "schedule": {
+    "everyHours": 24
+  },
+  "sources": [
+    {
+      "kind": "entra-integrations",
+      "directoryId": "11111111-2222-4333-8444-555555555555",
+      "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+      "readSignInActivity": true,
+      "clientSecretEnv": "ENTRA_INTEGRATIONS_CLIENT_SECRET"
+    }
+  ]
+}

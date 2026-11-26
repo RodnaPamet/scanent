@@ -51,5 +51,10 @@ the scanner reads or writes changed from 0.17.0: its run has the same nine
 files, and only the version and the manifest hash in them moved. The release
 is the contract package's, which gains the probes contract.
 
+`0.18.1` was made from the commit that raises the version to 0.18.1. Nothing
+the scanner reads or writes changed from 0.18.0: its run has the same nine
+files, and only the version and the manifest hash in them moved. The release
+moves the image's runtime base to a distroless build with a patched `libzstd1`.
+
 A release adds a directory. None is removed while that version is supported
 (`docs/release-checklist.md`).
