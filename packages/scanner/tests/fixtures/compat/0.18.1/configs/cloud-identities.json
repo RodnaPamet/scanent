@@ -1,0 +1,40 @@
+{
+  "estate": "acme-identities",
+  "scanner": {
+    "agentId": "scanent-acme-identities",
+    "signingKeyEnv": "SCANNER_SIGNING_KEY"
+  },
+  "outputs": [
+    {
+      "kind": "file",
+      "dir": "/out",
+      "retainRuns": 90
+    }
+  ],
+  "schedule": {
+    "everyHours": 24
+  },
+  "sources": [
+    {
+      "kind": "entra-sp",
+      "directoryId": "11111111-2222-4333-8444-555555555555",
+      "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+      "clientSecretEnv": "ENTRA_CLIENT_SECRET"
+    },
+    {
+      "kind": "vault",
+      "product": "azure-key-vault",
+      "vaultUrls": [
+        "https://acme-agents.vault.azure.net"
+      ],
+      "directoryTenantId": "11111111-2222-4333-8444-555555555555",
+      "clientId": "66666666-7777-4888-8999-aaaaaaaaaaaa",
+      "clientSecretEnv": "AZURE_CLIENT_SECRET"
+    },
+    {
+      "kind": "okta-app",
+      "orgUrl": "https://acme.okta.com",
+      "apiTokenEnv": "OKTA_API_TOKEN"
+    }
+  ]
+}

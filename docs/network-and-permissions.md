@@ -6,7 +6,7 @@ Every request scanent can make, and every permission it asks for. This page is r
 the surface the scanner declares in its own code, the same declaration whose hash is in every
 signed report, so it lists what the code can do and nothing else.
 
-Scanner `inflect-agent-harness-scanner`, version 0.18.0. One image holds 2 scanners, and this page lists the requests of all of them:
+Scanner `inflect-agent-harness-scanner`, version 0.18.1. One image holds 2 scanners, and this page lists the requests of all of them:
 
 - The agent scanner: report contract `inflect-agent-harness/4`, written as `report.signed.json`; source kinds `entra-sp`, `okta-app`, `vault`, `mcp`, `runtime`, `cicd`, `inflect-register`, `code`, `gcp-sa`.
 - The integrations scanner: report contract `scanent-integrations/1`, written as `report.integrations.signed.json`; source kinds `entra-integrations`, `okta-integrations`, `github-integrations`.
@@ -14,7 +14,7 @@ Scanner `inflect-agent-harness-scanner`, version 0.18.0. One image holds 2 scann
 A run reads only the sources its configuration names, and writes one signed report for each scanner
 whose sources it names, all with the same key and the same scan id.
 
-Manifest hash: `sha256:9ce9b29eaeac07dc4568df17217f80f27bdedaceee5395a2214722748aae29aa`
+Manifest hash: `sha256:cb8c4a8a289ea805eeb2952e9014971e5373ce7e85e896157f39ad4cef778e30`
 
 The hash is SHA-256 over the canonical JSON of the declared surface, every scanner's requests in one.
 A scanner that can reach anything this page does not list has a different hash, and every report it

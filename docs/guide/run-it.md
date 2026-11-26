@@ -22,7 +22,7 @@ changes any of your systems.
 Download the finished scanner:
 
 ```bash
-export IMAGE=ghcr.io/rodnapamet/scanent:0.18.0
+export IMAGE=ghcr.io/rodnapamet/scanent:0.18.1
 docker pull "$IMAGE"
 ```
 

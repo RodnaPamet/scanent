@@ -67,9 +67,12 @@ export const SCANNER_NAME = 'inflect-agent-harness-scanner';
  * 0.18.0: nothing the scanner reads or reports changed. The version moves
  * with the contract package, which gains the probes contract
  * (`scanent-probes/1`, the active flavour's report); the surface names the
- * version, so the manifest hash moved with it.
+ * version, so the manifest hash moved with it. 0.18.1: nothing the scanner
+ * reads or reports changed. The image's runtime base moves to the distroless
+ * build whose libzstd1 is 1.5.7+dfsg-1+deb13u1 (CVE-2026-124851); the version
+ * names the image, so the manifest hash moved with it.
  */
-export const SCANNER_VERSION = '0.18.0';
+export const SCANNER_VERSION = '0.18.1';
 
 /** The ingest route, as `docs/contract.md` (Transport) names it. */
 export const INGEST_PATH_TEMPLATE = '/api/t/{tenantSlug}/admin/agents/harness-scans';
