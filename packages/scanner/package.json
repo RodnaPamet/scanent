@@ -23,7 +23,7 @@
     "@rodnapamet/scanent-contract": "0.18.1",
     "@scanent/report": "0.0.0",
     "js-yaml": "5.5.0",
-    "pdfkit": "0.20.2",
+    "pdfkit": "0.21.0",
     "typescript": "5.9.3",
     "zod": "4.6.7"
   }
