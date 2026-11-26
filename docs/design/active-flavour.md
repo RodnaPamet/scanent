@@ -1,14 +1,16 @@
 # The active flavour: probing an agent, and reporting what worked
 
-> **Status: designed and decided (2026-11-24). No code yet.** The owner asked
+> **Status: built, image not published (2026-11-25).** Steps 2, 3, 5, 6 and 7
+> are done in this repository and step 8, Inflect's ingest, is done in
+> Inflect's; step 4, the canary sink, is deferred. The owner asked
 > for it on 2026-11-22: a second scanent that attacks a target agent the way an
 > attacker would, reports what the agent did, and does no damage. It was held
 > while the agent-surface rules were built, and unheld on 2026-11-23. Decision
 > 19 of [Several scanners in one scanent](scanners.md) puts it on a page of its
 > own, with an authorisation gate and a definition of "no damage", before any
-> code. This is that page. It ships nothing and changes no scanner. The owner
-> took the eight decisions at the end on 2026-11-24, each as recommended; work
-> starts at step 2 of the order of work.
+> code. This is that page. The prober changes no scanner. The owner took the
+> eight decisions at the end on 2026-11-24, each as recommended; the
+> [order of work](#order-of-work) records what each step built.
 
 ## What it is
 
@@ -144,7 +146,29 @@ is "clean". Zero is never complete: a run that reached no target, or ran no
 probe, concludes nothing and says so.
 
 The report reaches Inflect through an ingest and a key of its own, as the other
-three do. That is named here and designed later.
+three do (step 8). What Inflect does with it:
+
+- **Its own scope.** A key posts it only with `admin:agent_probes_ingest`, which
+  is not one of a scanner key's scopes: a prober is a separate tool.
+- **Two registers, never the scanner keys.** A prober key is bound to the
+  registered agent that runs the probes, and the report names no agent: the
+  prober is the key's agent. An approver key is the key that signs the
+  engagement scope, and an owner registers it in person. A key live in one
+  register is refused in the other: the party that runs probes never
+  authorises them. A report whose scope signer is not a live approver key is
+  refused.
+- **Findings.** ACTED or DISCLOSED opens a finding. Only the same prober's
+  RESISTED closes it; INCONCLUSIVE, and an outcome that is absent, close
+  nothing.
+- **What stays private.** The excerpt and the endpoint are encrypted at rest and
+  shown only to the people who manage the agent register. Findings and evidence
+  name the probe, its class, the target's origin and the tool, never the
+  excerpt or the full endpoint.
+- **Monthly evidence**, against OWASP Agentic ASI01 and ASI02, ISO 27001 A.8.29
+  and SOC 2 CC4.1. A month counts as complete only when every run in it
+  concluded, none was stopped, and every prober whose key was live in it sent a
+  run. A month with no run is never clean, and what the agents did never
+  decides it: an agent that acted is a finding, not a gap.
 
 ## What it is not
 
@@ -202,12 +226,21 @@ three do. That is named here and designed later.
    **7b is done, and the image is not published.** On 2026-11-24 the owner
    decided that the image is built, smoke-tested and gated in CI
    (`image-probe`) but published by no release, until step 8 and a real
-   engagement. The owner also decided that the declared surface per engagement
+   engagement. Step 8 is done, so a real engagement is what remains, and
+   publishing it is still the owner's decision. The owner also decided that the declared surface per engagement
    is **checked before every request**: a request that is not on it is refused
    before it leaves. Its digest is in the signed report. See
    [The probe runner](../probe-runner.md#the-declared-surface) and
    [its image](../probe-runner.md#the-image).
-8. The Inflect ingest.
+8. The Inflect ingest. **Done (2026-11-25),** in three parts, in Inflect's
+   repository:
+   - the ingest of `scanent-probes/1`, the prober and approver key registers,
+     and the findings
+     ([#5945](https://github.com/RodnaPamet/inflect-compliance/pull/5945));
+   - the Probes tab and the two key cards
+     ([#5955](https://github.com/RodnaPamet/inflect-compliance/pull/5955));
+   - a month of runs as evidence
+     ([#5956](https://github.com/RodnaPamet/inflect-compliance/pull/5956)).
 
 ## The owner's decisions (2026-11-24)
 

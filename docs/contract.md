@@ -773,7 +773,7 @@ signed that scope.
 
 | Id | State | What it adds |
 |---|---|---|
-| `scanent-probes/1` | In the contract package; written by `scanent-probe run` from a checkout (its image is step 7b) | The first probes contract: canary and disclosure probes |
+| `scanent-probes/1` | In the contract package; written by `scanent-probe run` (its image is built in CI and not published); verified and accepted by Inflect's probe-run ingest | The first probes contract: canary and disclosure probes |
 
 **The same rules as the agent report.** The same byte limit, canonical JSON,
 signature and envelope checks in the same order (`verifySignedEnvelope`), then
