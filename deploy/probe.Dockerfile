@@ -62,7 +62,7 @@ RUN mkdir -p /out/node_modules/@rodnapamet/scanent-contract /out/packages/probe 
 # ─── Stage 2: the runtime ───
 # The read-only image's distroless base: the Node binary, its C library, the CA
 # bundle and a time-zone database. No shell and no package manager.
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:39b0407357c9fadf1a9708d22088f02de21f0e1e8a688474eea2d8701e7d5693 AS runtime
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:675c532423b908f9e56f9d60a4e62309b63cd2a3175acb90a46b96f7ee68e121 AS runtime
 
 ENV PATH=/nodejs/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
