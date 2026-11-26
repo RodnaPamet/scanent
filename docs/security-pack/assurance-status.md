@@ -14,7 +14,7 @@ production.**
 | External penetration test | **Not done** |
 | Independent code review | **Not done** |
 | 72-hour soak | **Not done.** A 75-minute soak has been run. The 72-hour one is required before 1.0 (owner decision, 2026-11-12) |
-| Signed release | **Done, and checked only by its maker.** 0.13.2, 0.14.0, 0.15.0, 0.16.0, 0.17.0 and 0.18.0 were released by the workflow, signed, with SBOMs and provenance, and each was verified once as a client would. Nobody else has verified one |
+| Signed release | **Done, and checked only by its maker.** 0.13.2, 0.14.0, 0.15.0, 0.16.0, 0.17.0, 0.18.0 and 0.18.1 were released by the workflow, signed, with SBOMs and provenance. Each up to 0.18.0 was verified once as a client would; 0.18.1 was verified in part, without `cosign` or a container runtime (below). Nobody else has verified one |
 | Any security certification of the product | **None.** None is claimed |
 
 Do not describe scanent to anyone as battle-tested, pilot-proven,
@@ -140,7 +140,7 @@ output only, and reaches no network.
 ### Signed releases, checked only by their maker
 
 0.13.2, released on 2026-11-13, was the first complete release; 0.14.0,
-0.15.0, 0.16.0, 0.17.0 and 0.18.0 followed the same way. Only their maker has checked them as
+0.15.0, 0.16.0, 0.17.0, 0.18.0 and 0.18.1 followed the same way. Only their maker has checked them as
 a client would. The first complete release is 0.13.2
 (https://github.com/RodnaPamet/scanent/releases/tag/v0.13.2). Its tag was made
 by `.github/workflows/auto-release.yml` and every job of the release workflow
@@ -193,6 +193,30 @@ publishes nothing: twice on
 The image is public (owner decision, 2026-11-12, issue 19): the organisation
 first had to allow public packages, then the package was made public by hand
 after 0.13.1 created it.
+
+What was checked on 0.18.1 as a client would, from outside GitHub Actions, on
+2026-11-26. The machine had no `cosign` and no container runtime, so this is a
+part of the list, not all of it:
+
+- The image was read from the registry with no login, under `0.18.1`; it
+  resolves to the index digest the release signed
+  (`sha256:90e5d89f8b67fd9b096447babce9bafee020c50cae5c51a3fb2d418725e8bc44`),
+  and no `latest` tag exists.
+- `gh attestation verify` passed for the index and for the amd64 and arm64
+  images by digest, for the bundle, and for each of the four provenance files
+  against its own subject, each naming `release.yml` at `refs/tags/v0.18.1`.
+  Each provenance file holds one attestation.
+- The release has its twelve files (the ten of the checklist, the contract
+  package and its checksum); the bundle and the contract package matched their
+  SHA-256, and the bundle's 40 files matched its `SHA256SUMS`.
+- Both SBOMs list `zod`, `js-yaml` and `typescript`, and `libzstd1` at
+  `1.5.7+dfsg-1+deb13u1`, the version that fixes CVE-2026-124851; the
+  published amd64 image's own package record says the same.
+- **Not done from outside for 0.18.1:** `cosign verify` and
+  `verify-attestation`, `cosign verify-blob` of the bundle's checksum list,
+  `verify.sh` and `load.sh` with networking off, and running the image by
+  digest. The release workflow's own step that verifies the signatures the way
+  a client does passed.
 
 ### Repository settings that are not on
 
