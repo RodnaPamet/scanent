@@ -54,8 +54,8 @@
 # ref it is started on, a tag's included; so does a re-run that finds the
 # version published. A run another workflow of this repository dispatches
 # with GITHUB_TOKEN is also github-actions[bot]'s: the `gates` job still holds
-# its commit to main and to its release notes, and the tag ruleset decides
-# which workflow can make the tag.
+# its commit to main and to its release notes, and the tag ruleset keeps a
+# tag, once made, from being moved or deleted.
 #
 # SIGNING IS KEYLESS. There is no signing key in this repository or its
 # secrets. `cosign` asks GitHub for a token that says "this is release.yml of

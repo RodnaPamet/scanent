@@ -31,9 +31,10 @@
 # docs/verify-a-release.md and deploy/airgap/verify.sh name. This workflow
 # signs nothing and holds no identity token.
 #
-# Two things stay a person's, once: the tag ruleset on `v*` must let GitHub
-# Actions create tags, and after the first release somebody sets the image's
-# package to Public. GitHub creates a package private and offers no API to
+# Two things stay a person's, once: the tag ruleset on `v*` must not restrict
+# creation (a repository ruleset offers no GitHub Actions actor to bypass, so
+# it restricts updates and deletions only), and after the first release
+# somebody sets the image's package to Public. GitHub creates a package private and offers no API to
 # change that (docs/release-checklist.md).
 #
 # Every action is pinned to a full commit SHA, as in ci.yml.
