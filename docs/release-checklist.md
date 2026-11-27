@@ -30,15 +30,17 @@ repository's **Settings**.
       `image-probe` ("Image (prober, not published)") is required by owner
       decision of 2026-11-24: a change that breaks the prober's image does
       not merge, though no release publishes that image.
-- [ ] **Tag protection** (a ruleset on `v*`): a version tag cannot be moved
-      or deleted, and only the release may create one. The ruleset **must
-      allow GitHub Actions to create tags** (GitHub Actions on its bypass
-      list): `auto-release.yml` pushes the tag with the workflow's
-      `GITHUB_TOKEN`, and if the ruleset refuses it no release happens. The
-      signing identity of a release is "the release workflow at this tag", so
-      whoever can create a `v*` tag, a workflow of this repository holding a
-      token that can write tags among them, can make a signed release of a
-      commit on `main` that has release notes.
+- [ ] **Tag protection** (a ruleset on `v*`, made on 2026-11-27): it
+      restricts updates and deletions, so a version tag cannot be moved or
+      deleted. It does **not** restrict creation, and its bypass list is
+      empty (owner decision, 2026-11-27): `auto-release.yml` pushes the tag
+      with the workflow's `GITHUB_TOKEN`, a repository ruleset offers no
+      GitHub Actions actor to bypass, and a ruleset that refused the push
+      would stop every release. The signing identity of a release is "the
+      release workflow at this tag", so whoever can create a `v*` tag (anyone
+      with write access, or a workflow of this repository holding
+      `contents: write`) can make a signed release of a commit on `main` that
+      has release notes; the `gates` job holds the commit to both.
 - [ ] **Actions**: workflow permissions default to read-only; "Allow GitHub
       Actions to create and approve pull requests" is off.
 - [ ] **The organisation lets its packages be public**: the organisation's
@@ -147,7 +149,8 @@ required check on `main` is a branch-protection setting.
       as the identity [Verify a release](verify-a-release.md) names.
 - [ ] The tag is annotated, not signed (owner decision, 2026-11-13): nothing
       checks a tag signature, the release's artefacts are signed by the
-      workflow, and the tag ruleset limits who can create a `v*` tag.
+      workflow, the tag ruleset keeps a `v*` tag from being moved or
+      deleted, and the `gates` job decides what a tag can release.
 - [ ] The **Release** workflow passes: `gates` (the tagged commit is on main
       and passes what main is held to), `build` on both architectures,
       `bundle`, `sign-bundle`, `publish`, `contract-package`,
@@ -240,8 +243,9 @@ when it has happened once, and say in which release.
 - ~~`sign-bundle.sh` with a real `cosign`.~~ 0.13.0.
 - ~~`auto-release.yml` and `scripts/auto-release.sh` on GitHub: the tag made
   and pushed with the workflow's token, and the dispatch of `release.yml` on
-  the tag.~~ 0.13.0. A tag ruleset letting GitHub Actions create tags has not
-  been made, so that half has not been tried.
+  the tag.~~ 0.13.0. The tag ruleset (no move, no delete, creation open) was
+  made on 2026-11-27, after 0.18.1: the next release is the first to be
+  tagged under it.
 - ~~The release workflow by tag, and with it the jobs a manual run skips:
   `sign-bundle`, `publish`, `publish-contract` and `release`, and the `gates`
   job's two tag-only steps.~~ 0.13.2, after 0.13.0 stopped at `publish` and
